@@ -1,0 +1,200 @@
+# Error Budget Policy
+#
+# Definiert die Regeln für Performance Error Budgets
+# basierend auf Google SRE Prinzipien.
+#
+# Anpassen an Ihre SLOs und Business-Anforderungen.
+
+policy:
+  name: "Shopware Performance Error Budget Policy"
+  version: "1.0"
+  effective_date: "2024-01-01"
+  owner: "Performance Champion / Engineering Lead"
+  review_frequency: "Quarterly"
+
+# Service Level Objectives (SLOs)
+slos:
+  core_web_vitals:
+    lcp:
+      metric: "Largest Contentful Paint (p75)"
+      target: 2500  # ms
+      unit: "milliseconds"
+      measurement: "RUM p75 über 28 Tage"
+
+    cls:
+      metric: "Cumulative Layout Shift (p75)"
+      target: 0.1
+      unit: "score"
+      measurement: "RUM p75 über 28 Tage"
+
+    inp:
+      metric: "Interaction to Next Paint (p75)"
+      target: 200  # ms
+      unit: "milliseconds"
+      measurement: "RUM p75 über 28 Tage"
+
+  availability:
+    metric: "Storefront Availability"
+    target: 99.9  # Prozent
+    unit: "percent"
+    measurement: "Uptime über 30 Tage"
+    # 99.9% = 43.2 Minuten Downtime/Monat erlaubt
+
+# Error Budget Berechnung
+error_budget:
+  calculation_period: "30 Tage (rolling)"
+
+  # Wie wird das Budget berechnet?
+  formula: |
+    Für jeden SLO:
+    - Total Samples = Alle RUM-Messungen im Zeitraum
+    - Violations = Samples die SLO nicht erfüllen
+    - Error Rate = Violations / Total Samples
+    - Budget Used = Error Rate / (1 - SLO Target)
+
+    Beispiel für 99.9% Availability:
+    - Erlaubte Fehler: 0.1% = 1 von 1000 Requests
+    - Bei 0.05% Fehlerrate: Budget 50% verbraucht
+    - Bei 0.1% Fehlerrate: Budget 100% verbraucht
+
+  aggregation: |
+    Overall Budget = Minimum aller einzelnen Budgets
+    (Worst performing SLO bestimmt Gesamtstatus)
+
+# Policy-Stufen
+policy_levels:
+
+  green:
+    condition: "Budget Remaining > 50%"
+    actions:
+      development:
+        - "Normale Feature-Entwicklung"
+        - "Experimente erlaubt"
+        - "Refactoring erlaubt"
+      releases:
+        - "Normale Release-Kadenz"
+        - "Standard Review-Prozess"
+      monitoring:
+        - "Standard-Alerts"
+        - "Weekly Dashboard Review"
+
+  yellow:
+    condition: "Budget Remaining 20-50%"
+    actions:
+      development:
+        - "Vorsichtige Feature-Entwicklung"
+        - "Performance-Impact-Assessment für neue Features"
+        - "Keine großen Refactorings ohne Performance-Review"
+      releases:
+        - "Zusätzlicher Performance-Review vor Release"
+        - "Rollback-Plan dokumentiert"
+        - "Kürzere Bake-Time"
+      monitoring:
+        - "Erhöhte Alert-Sensitivität"
+        - "Täglicher Dashboard Review"
+        - "Champion wird informiert"
+    communication:
+      - "Team wird informiert"
+      - "Slack-Update in #performance"
+
+  orange:
+    condition: "Budget Remaining 0-20%"
+    actions:
+      development:
+        - "Performance-Fokus hat Priorität"
+        - "50% der Sprint-Kapazität für Performance"
+        - "Neue Features nur mit positivem Performance-Impact"
+      releases:
+        - "Nur kritische Fixes und Performance-Verbesserungen"
+        - "Extended Review durch Champion und Lead"
+        - "Canary Deployments mandatory"
+      monitoring:
+        - "Echtzeit-Monitoring während Releases"
+        - "Stündlicher Dashboard Review"
+    communication:
+      - "Engineering Lead wird informiert"
+      - "Stakeholder-Update"
+      - "Daily Standup: Performance-Status"
+
+  red:
+    condition: "Budget Exhausted (≤ 0%)"
+    actions:
+      development:
+        - "Feature Freeze"
+        - "100% Fokus auf Performance-Recovery"
+        - "War Room Setup"
+      releases:
+        - "Nur P0/Security Fixes"
+        - "Jeder Release benötigt Lead-Approval"
+        - "Mandatory Rollback-Bereitschaft"
+      monitoring:
+        - "Kontinuierliche Überwachung"
+        - "Incident Commander assigned"
+    communication:
+      - "Management wird informiert"
+      - "Incident-Prozess aktiviert"
+      - "Postmortem nach Recovery"
+
+# Ausnahmen
+exceptions:
+  security:
+    description: "Security-Fixes sind immer erlaubt"
+    approval: "Security Lead"
+    documentation: "Security-Ticket referenzieren"
+
+  p0_incidents:
+    description: "P0 Production Incidents"
+    approval: "Engineering Lead"
+    documentation: "Incident-Ticket referenzieren"
+
+  business_critical:
+    description: "Business-kritische Releases"
+    approval: "VP Engineering + Product"
+    documentation: "Business-Justification dokumentieren"
+    note: "Sollte selten sein - Budget wird trotzdem belastet"
+
+# Reporting
+reporting:
+  dashboard:
+    location: "Grafana / Interne Tools"
+    refresh: "Stündlich"
+    access: "Gesamtes Engineering Team"
+
+  weekly_report:
+    format: "Slack-Post in #performance"
+    content:
+      - "Aktueller Budget-Status"
+      - "Trend (besser/schlechter)"
+      - "Nächste Aktionen"
+    owner: "Performance Champion"
+
+  monthly_report:
+    format: "Confluence / Notion Page"
+    content:
+      - "Budget-Verlauf"
+      - "SLO-Performance"
+      - "Incidents und Impact"
+      - "Aktionen und Ergebnisse"
+    audience: "Engineering + Product + Stakeholder"
+    owner: "Engineering Lead"
+
+# Review und Anpassung
+review:
+  frequency: "Quarterly"
+  participants:
+    - "Engineering Lead"
+    - "Performance Champions"
+    - "Product Owner"
+
+  topics:
+    - "Sind SLOs noch angemessen?"
+    - "Ist die Berechnung korrekt?"
+    - "Funktionieren die Policies?"
+    - "Feedback vom Team"
+
+  adjustment_process:
+    - "Änderungsvorschlag dokumentieren"
+    - "Impact-Analyse"
+    - "Stakeholder-Abstimmung"
+    - "Kommunikation an Team"
+    - "Dokumentation aktualisieren"

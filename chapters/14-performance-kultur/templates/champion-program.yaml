@@ -1,0 +1,194 @@
+# Performance Champion Programm
+#
+# Dieses Dokument definiert das Performance Champion Programm
+# für Ihr Shopware-Entwicklungsteam.
+#
+# Anpassen an Ihre Organisation und Team-Größe.
+
+program:
+  name: "Shopware Performance Champions"
+  version: "1.0"
+  last_updated: "2024-01-01"
+
+  # Empfehlung: 1 Champion pro 10-20 Entwickler
+  # Minimum: 1 Champion pro Team
+  target_ratio: "5-10% des Teams"
+
+  # Commitment
+  duration: "6-12 Monate (rolling)"
+  time_commitment: "4-6 Stunden pro Woche"
+
+  # Freiwilligkeit ist wichtig!
+  selection: "Freiwillig mit Team-Nominierung"
+
+# Rollen und Verantwortlichkeiten
+responsibilities:
+
+  daily:
+    - name: "Alert Monitoring"
+      description: "Performance-Alerts im Auge behalten"
+      time: "15 min"
+
+    - name: "Slack Support"
+      description: "Fragen im #performance Channel beantworten"
+      time: "ad-hoc"
+
+  weekly:
+    - name: "Dashboard Review"
+      description: "Core Web Vitals und Trends analysieren"
+      time: "30 min"
+      output: "Kurzes Update in Slack"
+
+    - name: "Code Reviews"
+      description: "Mindestens 2 PRs mit Performance-Fokus reviewen"
+      time: "1-2 Stunden"
+
+    - name: "Knowledge Sharing"
+      description: "1 Tip, Link oder Insight teilen"
+      time: "15 min"
+
+  monthly:
+    - name: "Performance Report"
+      description: "Monatlichen Report für Stakeholder erstellen"
+      time: "2 Stunden"
+      template: "performance-report-template.md"
+
+    - name: "Team Schulung"
+      description: "Brown Bag Session oder Workshop"
+      time: "1 Stunde Vorbereitung + 45 min Session"
+
+    - name: "Tool Evaluation"
+      description: "Neue Tools und Techniques evaluieren"
+      time: "1-2 Stunden"
+
+  quarterly:
+    - name: "Performance Audit"
+      description: "Vollständiges Audit der kritischen Seiten"
+      time: "4-8 Stunden"
+
+    - name: "Roadmap Input"
+      description: "Performance-Prioritäten für nächstes Quartal"
+      time: "2 Stunden"
+
+    - name: "Champion Network"
+      description: "Austausch mit Champions anderer Teams/Firmen"
+      time: "1-2 Stunden"
+
+# Was Champions bekommen
+benefits:
+  learning:
+    - "Dediziertes Zeitbudget für Weiterbildung (10%)"
+    - "Zugang zu Premium-Kursen (web.dev, Frontend Masters)"
+    - "Konferenz-Budget (1-2 Konferenzen/Jahr)"
+
+  recognition:
+    - "Champion Badge/Titel"
+    - "Erwähnung in Team-Präsentationen"
+    - "LinkedIn-Empfehlung"
+
+  career:
+    - "Sichtbarkeit bei Management"
+    - "Dokumentierte Expertise"
+    - "Netzwerk mit anderen Champions"
+
+  practical:
+    - "Direkter Zugang zu allen Monitoring-Tools"
+    - "Einfluss auf Tooling-Entscheidungen"
+    - "Priorität bei Performance-relevanten PRs"
+
+# Auswahlkriterien
+selection_criteria:
+  required:
+    - criterion: "Mindestens 1 Jahr Shopware/E-Commerce Erfahrung"
+      reason: "Muss das System verstehen"
+
+    - criterion: "Interesse an Performance-Themen"
+      reason: "Motivation ist essentiell"
+
+    - criterion: "Gute Kommunikationsfähigkeiten"
+      reason: "Muss Wissen vermitteln können"
+
+    - criterion: "Respekt im Team"
+      reason: "Empfehlungen werden befolgt"
+
+  preferred:
+    - criterion: "Frontend UND Backend Erfahrung"
+      reason: "Ganzheitliches Verständnis"
+
+    - criterion: "Erfahrung mit Monitoring-Tools"
+      reason: "Schnellere Einarbeitung"
+
+    - criterion: "Vorherige Präsentationen/Schulungen"
+      reason: "Knowledge Sharing Erfahrung"
+
+# Onboarding-Plan
+onboarding:
+  week_1:
+    title: "Grundlagen"
+    tasks:
+      - "Core Web Vitals Deep Dive (web.dev)"
+      - "Shopware Performance-Dokumentation"
+      - "Tool-Zugänge einrichten"
+      - "Shadowing: Senior Champion bei Code Review"
+
+  week_2:
+    title: "Tools & Monitoring"
+    tasks:
+      - "Chrome DevTools Performance Tab Mastery"
+      - "RUM-Dashboard Walkthrough"
+      - "Lighthouse CI verstehen"
+      - "Alert-Konfiguration kennenlernen"
+
+  week_3:
+    title: "Praxis"
+    tasks:
+      - "Erste eigene Performance-Reviews"
+      - "Ein Performance-Issue identifizieren"
+      - "Optimierung vorschlagen und diskutieren"
+      - "Erste Dokumentation schreiben"
+
+  week_4:
+    title: "Kommunikation"
+    tasks:
+      - "Erste Team-Präsentation (5-10 min)"
+      - "Slack-Channel Moderation übernehmen"
+      - "Performance-Report erstellen"
+      - "Feedback-Gespräch mit Mentor"
+
+# Erfolgsmessung
+success_metrics:
+
+  activity_metrics:
+    - metric: "Code Reviews mit Performance-Fokus"
+      target: "≥ 8 pro Monat"
+
+    - metric: "Knowledge Sharing Sessions"
+      target: "≥ 1 pro Monat"
+
+    - metric: "Slack-Engagement"
+      target: "Aktiv (Antworten < 24h)"
+
+  impact_metrics:
+    - metric: "Performance-Regressions erkannt"
+      target: "Tracking starten"
+
+    - metric: "Team-Knowledge Score (Survey)"
+      target: "Verbesserung über Zeit"
+
+    - metric: "Time to Fix Regressions"
+      target: "Verbesserung über Zeit"
+
+# Offboarding
+offboarding:
+  notice_period: "4 Wochen"
+  handover:
+    - "Dokumentation aktualisieren"
+    - "Nachfolger einarbeiten (2 Wochen Overlap)"
+    - "Zugänge übergeben"
+    - "Offene Action Items übergeben"
+
+# Governance
+governance:
+  sponsor: "Engineering Manager / Tech Lead"
+  review_frequency: "Quarterly"
+  escalation: "Bei Kapazitätsproblemen: Sponsor"

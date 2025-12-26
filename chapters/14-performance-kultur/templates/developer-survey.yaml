@@ -1,0 +1,321 @@
+# Developer Experience Survey - Performance Focus
+#
+# Basierend auf dem SPACE Framework:
+# - Satisfaction
+# - Performance
+# - Activity
+# - Communication
+# - Efficiency
+#
+# Empfehlung: Quarterly durchführen, anonym
+
+survey:
+  name: "Developer Experience Survey - Performance"
+  version: "1.0"
+  frequency: "Quarterly"
+  anonymous: true
+  estimated_time: "5-10 Minuten"
+
+introduction: |
+  Dieses Survey hilft uns zu verstehen, wie wir Performance-Arbeit
+  in unserem Team verbessern können. Deine Antworten sind anonym
+  und werden nur aggregiert ausgewertet.
+
+sections:
+
+  # SATISFACTION
+  - name: "Zufriedenheit"
+    description: "Wie zufrieden bist du mit Performance-Themen?"
+    questions:
+
+      - id: "sat_1"
+        question: "Wie zufrieden bist du mit unseren Performance-Tools?"
+        type: "scale"
+        scale:
+          min: 1
+          max: 5
+          labels:
+            1: "Sehr unzufrieden"
+            3: "Neutral"
+            5: "Sehr zufrieden"
+
+      - id: "sat_2"
+        question: "Fühlst du dich befähigt, Performance-Probleme anzusprechen?"
+        type: "scale"
+        scale:
+          min: 1
+          max: 5
+          labels:
+            1: "Gar nicht"
+            3: "Teilweise"
+            5: "Vollständig"
+
+      - id: "sat_3"
+        question: "Wird Performance-Arbeit in deinem Team wertgeschätzt?"
+        type: "scale"
+        scale:
+          min: 1
+          max: 5
+          labels:
+            1: "Gar nicht"
+            3: "Teilweise"
+            5: "Sehr"
+
+  # PERFORMANCE (Output Quality)
+  - name: "Output-Qualität"
+    description: "Wie gut ist unsere Performance-Arbeit?"
+    questions:
+
+      - id: "perf_1"
+        question: "Wie oft werden Performance-Regressions vor Production gefunden?"
+        type: "choice"
+        options:
+          - "Fast immer (>90%)"
+          - "Meistens (70-90%)"
+          - "Manchmal (30-70%)"
+          - "Selten (<30%)"
+          - "Weiß nicht"
+
+      - id: "perf_2"
+        question: "Wie gut sind wir darin, Performance-Issues schnell zu fixen?"
+        type: "scale"
+        scale:
+          min: 1
+          max: 5
+          labels:
+            1: "Sehr schlecht"
+            3: "OK"
+            5: "Sehr gut"
+
+      - id: "perf_3"
+        question: "Sind unsere Performance-Ziele (SLOs) klar definiert?"
+        type: "scale"
+        scale:
+          min: 1
+          max: 5
+          labels:
+            1: "Unklar"
+            3: "Teilweise klar"
+            5: "Sehr klar"
+
+  # ACTIVITY
+  - name: "Aktivität"
+    description: "Performance-bezogene Aktivitäten"
+    questions:
+
+      - id: "act_1"
+        question: "Wie oft führst du Performance-Reviews bei PRs durch?"
+        type: "choice"
+        options:
+          - "Bei jedem PR"
+          - "Bei den meisten PRs"
+          - "Gelegentlich"
+          - "Selten"
+          - "Nie"
+
+      - id: "act_2"
+        question: "Wie oft schaust du das Performance-Dashboard an?"
+        type: "choice"
+        options:
+          - "Täglich"
+          - "Mehrmals pro Woche"
+          - "Wöchentlich"
+          - "Monatlich"
+          - "Selten/Nie"
+
+      - id: "act_3"
+        question: "Wann hast du zuletzt eine Performance-Optimierung durchgeführt?"
+        type: "choice"
+        options:
+          - "Diese Woche"
+          - "Diesen Monat"
+          - "Letztes Quartal"
+          - "Länger her"
+          - "Noch nie"
+
+  # COMMUNICATION
+  - name: "Kommunikation"
+    description: "Wie funktioniert der Austausch zu Performance?"
+    questions:
+
+      - id: "com_1"
+        question: "Wie gut ist der Wissensaustausch zu Performance-Themen?"
+        type: "scale"
+        scale:
+          min: 1
+          max: 5
+          labels:
+            1: "Sehr schlecht"
+            3: "OK"
+            5: "Sehr gut"
+
+      - id: "com_2"
+        question: "Weißt du, wer der Performance-Champion in deinem Team ist?"
+        type: "choice"
+        options:
+          - "Ja, und ich nutze diese Person als Ressource"
+          - "Ja, aber ich hatte noch keinen Kontakt"
+          - "Nein"
+          - "Wir haben keinen Performance-Champion"
+
+      - id: "com_3"
+        question: "Wie gut werden Performance-Incidents kommuniziert?"
+        type: "scale"
+        scale:
+          min: 1
+          max: 5
+          labels:
+            1: "Sehr schlecht"
+            3: "OK"
+            5: "Sehr gut"
+
+  # EFFICIENCY
+  - name: "Effizienz"
+    description: "Wie effizient ist Performance-Arbeit?"
+    questions:
+
+      - id: "eff_1"
+        question: "Wie oft blockieren Performance-Issues deine Arbeit?"
+        type: "choice"
+        options:
+          - "Täglich"
+          - "Mehrmals pro Woche"
+          - "Wöchentlich"
+          - "Monatlich"
+          - "Selten/Nie"
+
+      - id: "eff_2"
+        question: "Wie einfach ist es, Performance-Probleme zu debuggen?"
+        type: "scale"
+        scale:
+          min: 1
+          max: 5
+          labels:
+            1: "Sehr schwer"
+            3: "OK"
+            5: "Sehr einfach"
+
+      - id: "eff_3"
+        question: "Haben wir die richtigen Monitoring-Tools?"
+        type: "scale"
+        scale:
+          min: 1
+          max: 5
+          labels:
+            1: "Gar nicht"
+            3: "Teilweise"
+            5: "Vollständig"
+
+      - id: "eff_4"
+        question: "Wie oft unterbricht dich langsame Performance im Dev-Workflow?"
+        type: "choice"
+        options:
+          - "Ständig"
+          - "Oft"
+          - "Manchmal"
+          - "Selten"
+          - "Nie"
+
+  # KNOWLEDGE
+  - name: "Wissen"
+    description: "Dein Performance-Wissen"
+    questions:
+
+      - id: "know_1"
+        question: "Wie gut verstehst du Core Web Vitals (LCP, CLS, INP)?"
+        type: "scale"
+        scale:
+          min: 1
+          max: 5
+          labels:
+            1: "Gar nicht"
+            3: "Grundlagen"
+            5: "Experte"
+
+      - id: "know_2"
+        question: "Wie gut verstehst du unsere Performance-Budgets?"
+        type: "scale"
+        scale:
+          min: 1
+          max: 5
+          labels:
+            1: "Gar nicht"
+            3: "Grundlagen"
+            5: "Sehr gut"
+
+      - id: "know_3"
+        question: "Welche Schulungen würdest du dir wünschen?"
+        type: "multi_choice"
+        options:
+          - "Chrome DevTools Deep Dive"
+          - "Core Web Vitals verstehen"
+          - "Shopware Performance-Optimierung"
+          - "Datenbankoptimierung"
+          - "JavaScript Performance"
+          - "Caching-Strategien"
+          - "Monitoring & Alerting"
+          - "Andere (bitte in Freitext)"
+
+  # OPEN FEEDBACK
+  - name: "Offenes Feedback"
+    description: "Deine Gedanken"
+    questions:
+
+      - id: "open_1"
+        question: "Was würde Performance-Arbeit in deinem Alltag einfacher machen?"
+        type: "text"
+        required: false
+        max_length: 500
+
+      - id: "open_2"
+        question: "Was läuft gut, das wir beibehalten sollten?"
+        type: "text"
+        required: false
+        max_length: 500
+
+      - id: "open_3"
+        question: "Sonstige Anmerkungen zu Performance-Kultur?"
+        type: "text"
+        required: false
+        max_length: 500
+
+# Analyse-Plan
+analysis:
+  aggregation:
+    - "Durchschnitt pro Frage"
+    - "Trend über Zeit (Quartal zu Quartal)"
+    - "Vergleich zwischen Teams (falls mehrere)"
+
+  key_metrics:
+    - name: "Developer Satisfaction Score"
+      calculation: "Durchschnitt aller Satisfaction-Fragen"
+
+    - name: "Knowledge Score"
+      calculation: "Durchschnitt der Know-Fragen"
+
+    - name: "Efficiency Score"
+      calculation: "Inverse der Blockaden-Häufigkeit"
+
+  action_threshold:
+    - "Score < 3.0: Sofortige Aktion erforderlich"
+    - "Score 3.0-3.5: Verbesserung planen"
+    - "Score 3.5-4.0: Monitoring"
+    - "Score > 4.0: Best Practices teilen"
+
+# Kommunikation der Ergebnisse
+communication:
+  summary:
+    audience: "Gesamtes Team"
+    format: "All-Hands Präsentation"
+    content:
+      - "Aggregierte Ergebnisse"
+      - "Trends"
+      - "Geplante Aktionen"
+
+  detailed:
+    audience: "Champions + Leads"
+    format: "Meeting + Dokument"
+    content:
+      - "Vollständige Analyse"
+      - "Freitext-Feedback (anonymisiert)"
+      - "Action Items"
