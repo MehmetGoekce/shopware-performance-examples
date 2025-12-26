@@ -1,0 +1,278 @@
+# OKR-Beispiele für Performance-Teams
+#
+# Objectives and Key Results für verschiedene Reifestufen.
+# Anpassen an eigenen Kontext und Baseline.
+#
+# OKR-Prinzipien:
+#   - Objectives: Qualitativ, inspirierend, ambitioniert
+#   - Key Results: Quantitativ, messbar, zeitgebunden
+#   - 70% Zielerreichung = Erfolg (Stretch Goals!)
+
+---
+meta:
+  version: "1.0"
+  framework: "OKR"
+  cycle: "quarterly"
+  scoring: "0.0 - 1.0"
+
+# ============================================================
+# BEGINNER: Erste Performance-OKRs
+# ============================================================
+# Für Teams, die gerade mit Performance-Arbeit beginnen
+# Fokus: Sichtbarkeit und Awareness
+
+beginner:
+  description: "Für Teams ohne etablierte Performance-Kultur"
+  typical_team_size: "5-10 Developers"
+  prerequisites:
+    - "Management Buy-In vorhanden"
+    - "Mindestens 1 Performance Champion identifiziert"
+
+  quarter_1:
+    objective: "Performance wird messbar und sichtbar"
+    rationale: "Ohne Messung keine Verbesserung"
+
+    key_results:
+      - kr: "RUM-Monitoring auf Top 10 Seiten implementiert"
+        metric: "Seiten mit RUM"
+        baseline: 0
+        target: 10
+        weight: 0.4
+
+      - kr: "Wöchentlicher Performance-Report etabliert"
+        metric: "Reports gesendet"
+        baseline: 0
+        target: 12  # 12 Wochen im Quartal
+        weight: 0.3
+
+      - kr: "Team kennt Core Web Vitals Bedeutung"
+        metric: "Quiz-Score Durchschnitt"
+        baseline: 0
+        target: 80%
+        weight: 0.3
+
+    initiatives:
+      - "RUM-Tool evaluieren und implementieren"
+      - "Dashboard erstellen"
+      - "Brown Bag Session zu CWV"
+
+    risks:
+      - "Kein Budget für Tooling"
+      - "Team sieht keinen Wert"
+
+  quarter_2:
+    objective: "Performance-Probleme werden systematisch gefunden"
+    rationale: "Awareness zu Action konvertieren"
+
+    key_results:
+      - kr: "Performance Audit für alle kritischen Seiten durchgeführt"
+        metric: "Audits completed"
+        baseline: 0
+        target: 20
+        weight: 0.4
+
+      - kr: "Top 5 Performance Issues priorisiert im Backlog"
+        metric: "Issues mit Performance Label"
+        baseline: 0
+        target: 5
+        weight: 0.3
+
+      - kr: "Erstes Performance-Review in PR-Prozess"
+        metric: "PRs mit Performance-Review"
+        baseline: 0
+        target: 50%
+        weight: 0.3
+
+# ============================================================
+# INTERMEDIATE: Systematische Optimierung
+# ============================================================
+# Für Teams mit Basis-Monitoring
+# Fokus: Kontinuierliche Verbesserung
+
+intermediate:
+  description: "Für Teams mit aktivem Monitoring"
+  typical_team_size: "10-20 Developers"
+  prerequisites:
+    - "RUM aktiv auf kritischen Seiten"
+    - "Mindestens 2 Performance Champions"
+    - "Regelmässiges Reporting etabliert"
+
+  quarter_example:
+    objective: "User Experience messbar verbessern"
+    rationale: "Positive Business Impact nachweisen"
+
+    key_results:
+      - kr: "LCP p75 unter 2.5s auf allen kritischen Seiten"
+        metric: "LCP p75 (ms)"
+        baseline: 3200
+        target: 2500
+        weight: 0.35
+
+      - kr: "Mobile Bounce Rate um 15% reduziert"
+        metric: "Bounce Rate Mobile"
+        baseline: 45%
+        target: 38%
+        weight: 0.25
+
+      - kr: "Error Budget bleibt über 50%"
+        metric: "Error Budget Remaining"
+        baseline: 35%
+        target: ">50%"
+        weight: 0.25
+
+      - kr: "Performance Reviews in 80% der PRs"
+        metric: "PR Review Coverage"
+        baseline: 50%
+        target: 80%
+        weight: 0.15
+
+    initiatives:
+      - "Image Optimization Pipeline"
+      - "Critical CSS Implementation"
+      - "Third-Party Script Audit"
+      - "Code Review Checklist Update"
+
+    dependencies:
+      - "CDN Budget genehmigt"
+      - "Design Team aligned für WebP"
+
+# ============================================================
+# ADVANCED: Excellence und Scale
+# ============================================================
+# Für Teams mit etablierter Performance-Kultur
+# Fokus: Exzellenz und Prävention
+
+advanced:
+  description: "Für Teams mit Performance-First Mindset"
+  typical_team_size: "20+ Developers"
+  prerequisites:
+    - "CWV bereits im 'Good' Bereich"
+    - "Automatisierte Performance Gates"
+    - "Performance Champion Netzwerk"
+
+  quarter_example:
+    objective: "Performance-Exzellenz als Wettbewerbsvorteil"
+    rationale: "Branchenführer bei UX Performance werden"
+
+    key_results:
+      - kr: "Top 10% der Branche bei CWV (CrUX)"
+        metric: "CrUX Percentile"
+        baseline: "Top 25%"
+        target: "Top 10%"
+        weight: 0.30
+
+      - kr: "Zero Performance Regressions in Production"
+        metric: "Regressions detected post-deploy"
+        baseline: 3
+        target: 0
+        weight: 0.25
+
+      - kr: "Performance-Innovation: 2 neue Techniken implementiert"
+        metric: "Innovations shipped"
+        baseline: 0
+        target: 2
+        weight: 0.20
+
+      - kr: "External Recognition (Talk, Blog, Award)"
+        metric: "External publications"
+        baseline: 0
+        target: 1
+        weight: 0.15
+
+      - kr: "Performance Onboarding für alle neuen Devs"
+        metric: "Onboarded new hires"
+        baseline: 0
+        target: 100%
+        weight: 0.10
+
+    initiatives:
+      - "Edge Computing Evaluation"
+      - "Predictive Prefetching"
+      - "Conference Talk Submission"
+      - "Open Source Performance Tool"
+
+# ============================================================
+# Scoring Guide
+# ============================================================
+scoring_guide:
+  ranges:
+    - range: "0.0 - 0.3"
+      label: "Off Track"
+      color: "red"
+      action: "Immediate intervention needed"
+
+    - range: "0.3 - 0.5"
+      label: "At Risk"
+      color: "orange"
+      action: "Recovery plan required"
+
+    - range: "0.5 - 0.7"
+      label: "On Track"
+      color: "yellow"
+      action: "Continue monitoring"
+
+    - range: "0.7 - 0.9"
+      label: "Strong"
+      color: "green"
+      action: "Document learnings"
+
+    - range: "0.9 - 1.0"
+      label: "Exceptional"
+      color: "blue"
+      action: "Goals possibly too easy"
+
+  best_practices:
+    - "70% ist ein gutes Ergebnis für ambitionierte OKRs"
+    - "100% bedeutet oft, dass Ziele zu einfach waren"
+    - "0.3-0.5 ist akzeptabel für experimentelle Objectives"
+    - "Konsistenz > Perfektion"
+
+# ============================================================
+# Anti-Patterns
+# ============================================================
+anti_patterns:
+  - pattern: "Zu viele Key Results"
+    problem: "Fokus geht verloren"
+    solution: "Maximum 5 KRs pro Objective"
+
+  - pattern: "Output statt Outcome"
+    problem: "'10 Tickets schliessen' misst Aktivität, nicht Impact"
+    solution: "Immer Business-Metriken verwenden"
+
+  - pattern: "Nicht messbare KRs"
+    problem: "'Performance verbessern' ist nicht trackbar"
+    solution: "Konkrete Zahlen mit Baseline und Target"
+
+  - pattern: "Sandbags (zu einfache Ziele)"
+    problem: "Team wächst nicht"
+    solution: "70% Erreichung = Erfolg kommunizieren"
+
+  - pattern: "Zu ambitioniert ohne Kontext"
+    problem: "Team demotiviert bei 20% Erreichung"
+    solution: "Schrittweise steigern, Learnings dokumentieren"
+
+# ============================================================
+# Tracking Template
+# ============================================================
+tracking_template:
+  header:
+    quarter: "Q1 2025"
+    objective: "[Objective Text]"
+    owner: "[Name]"
+    last_updated: "2025-01-15"
+
+  key_results:
+    - id: "KR1"
+      description: "[KR Text]"
+      baseline: 0
+      target: 100
+      current: 45
+      score: 0.45
+      status: "at_risk"
+      notes: "[Weekly update notes]"
+
+  weekly_updates:
+    - week: "W1"
+      progress: "Initial setup completed"
+      blockers: "None"
+      confidence: "high"

@@ -1,0 +1,384 @@
+# Performance Maintenance Calendar
+#
+# Regelmässige Aufgaben für nachhaltiges Performance-Management.
+# Von täglich bis jährlich strukturiert.
+#
+# Integration:
+#   - In Team-Kalender übernehmen
+#   - Alerts für Deadlines setzen
+#   - Verantwortlichkeiten zuweisen
+
+---
+meta:
+  version: "1.0"
+  created_at: "2025-01-01"
+  owner: "Performance Champion"
+  last_reviewed: "2025-01-01"
+
+# ============================================================
+# TÄGLICH (Daily)
+# ============================================================
+daily:
+  description: "Schnelle Checks, die jeden Tag passieren sollten"
+  time_investment: "15-30 Minuten"
+  responsible: "On-Call Engineer / Performance Champion"
+
+  tasks:
+    - id: D-1
+      name: "Dashboard Quick Check"
+      description: "Kurzer Blick auf Core Web Vitals Dashboard"
+      time: "5 min"
+      checklist:
+        - "Keine roten Metriken?"
+        - "Trends stabil?"
+        - "Neue Anomalien?"
+      automation: "Slack Alert bei Threshold-Überschreitung"
+
+    - id: D-2
+      name: "Alert Review"
+      description: "Offene Performance-Alerts prüfen"
+      time: "10 min"
+      checklist:
+        - "Neue Alerts seit gestern?"
+        - "Alerts acknowledged?"
+        - "Eskalation nötig?"
+      automation: "PagerDuty/OpsGenie Integration"
+
+    - id: D-3
+      name: "Error Budget Check"
+      description: "Aktuellen Error Budget Status prüfen"
+      time: "5 min"
+      checklist:
+        - "Budget > 50%? → Normal"
+        - "Budget 20-50%? → Vorsicht"
+        - "Budget < 20%? → Eskalieren"
+      automation: "Daily Slack Summary"
+
+# ============================================================
+# WÖCHENTLICH (Weekly)
+# ============================================================
+weekly:
+  description: "Tiefere Analysen und Team-Kommunikation"
+  time_investment: "2-3 Stunden"
+  responsible: "Performance Champion + Team Lead"
+
+  tasks:
+    - id: W-1
+      name: "Performance Team Sync"
+      description: "Wöchentliches Meeting der Performance Champions"
+      time: "30 min"
+      day: "Monday"
+      agenda:
+        - "Incidents letzte Woche"
+        - "Aktuelle Metriken Review"
+        - "Blockers besprechen"
+        - "Prioritäten für diese Woche"
+
+    - id: W-2
+      name: "PR Review Audit"
+      description: "Prüfen ob PRs Performance-Reviews bekommen"
+      time: "30 min"
+      day: "Friday"
+      checklist:
+        - "Wie viele PRs diese Woche?"
+        - "Wie viele mit Performance-Review?"
+        - "Rate > 80%?"
+      script: "./scripts/pr-stats.sh --days 7"
+
+    - id: W-3
+      name: "RUM Data Analysis"
+      description: "Wöchentliche RUM-Daten analysieren"
+      time: "45 min"
+      day: "Monday"
+      focus_areas:
+        - "p75 Trends (7-Tage-Vergleich)"
+        - "Neue Slow Pages identifizieren"
+        - "Device/Network Breakdown"
+        - "Geographic Anomalies"
+
+    - id: W-4
+      name: "Tech Debt Review"
+      description: "Performance-relevante Tech Debt prüfen"
+      time: "30 min"
+      day: "Wednesday"
+      checklist:
+        - "Neue Tech Debt Items?"
+        - "Priorisierung aktuell?"
+        - "Quick Wins identifiziert?"
+
+    - id: W-5
+      name: "Stakeholder Update"
+      description: "Kurzes Update an Product/Management"
+      time: "15 min"
+      day: "Friday"
+      format: "Slack Message oder kurze Email"
+      template: |
+        **Performance Update KW {week}**
+        - CWV Status: {green|yellow|red}
+        - Error Budget: {x}% remaining
+        - Key Win: {achievement}
+        - Watch Item: {concern}
+
+# ============================================================
+# MONATLICH (Monthly)
+# ============================================================
+monthly:
+  description: "Detaillierte Analysen und Stakeholder-Reporting"
+  time_investment: "4-6 Stunden"
+  responsible: "Performance Lead + Engineering Manager"
+
+  tasks:
+    - id: M-1
+      name: "Monthly Performance Report"
+      description: "Detaillierter Monatsbericht erstellen"
+      time: "2 hours"
+      week: "First week"
+      script: "./scripts/generate-report.sh monthly"
+      recipients:
+        - "Engineering Leadership"
+        - "Product Management"
+        - "C-Level (Summary)"
+
+    - id: M-2
+      name: "Lighthouse Audit Refresh"
+      description: "Vollständiger Lighthouse Audit aller kritischen Seiten"
+      time: "1 hour"
+      week: "Second week"
+      pages:
+        - "Homepage"
+        - "Category Pages (Top 5)"
+        - "Product Pages (Sample)"
+        - "Checkout Flow"
+        - "Search Results"
+
+    - id: M-3
+      name: "Third-Party Script Review"
+      description: "Alle Third-Party Scripts auf Impact prüfen"
+      time: "1 hour"
+      week: "Third week"
+      checklist:
+        - "Liste aller Scripts aktuell?"
+        - "Impact pro Script gemessen?"
+        - "Unused Scripts identifiziert?"
+        - "Async/Defer korrekt?"
+
+    - id: M-4
+      name: "Budget Review"
+      description: "Performance-Budget Status prüfen"
+      time: "30 min"
+      week: "Last week"
+      checklist:
+        - "Ausgaben vs. Plan"
+        - "Forecast für nächsten Monat"
+        - "Anpassungen nötig?"
+
+    - id: M-5
+      name: "Champion 1:1s"
+      description: "Einzelgespräche mit Performance Champions"
+      time: "1 hour total"
+      week: "Throughout month"
+      agenda:
+        - "Wie läuft es?"
+        - "Blockers?"
+        - "Weiterbildung gewünscht?"
+        - "Feedback zum Programm"
+
+# ============================================================
+# QUARTALSWEISE (Quarterly)
+# ============================================================
+quarterly:
+  description: "Strategische Reviews und Planungszyklen"
+  time_investment: "1-2 Tage"
+  responsible: "Performance Lead + Engineering Manager + Product"
+
+  tasks:
+    - id: Q-1
+      name: "OKR Review & Planning"
+      description: "Quartal abschliessen, neues Quartal planen"
+      time: "4 hours"
+      week: "Last week of quarter"
+      activities:
+        - "OKR Scoring (bisheriges Quartal)"
+        - "Retrospective: Was funktionierte?"
+        - "OKR Draft (neues Quartal)"
+        - "Alignment mit Product Roadmap"
+
+    - id: Q-2
+      name: "Roadmap Review"
+      description: "Performance Roadmap prüfen und anpassen"
+      time: "2 hours"
+      week: "First week of quarter"
+      checklist:
+        - "Milestones erreicht?"
+        - "Roadmap noch aktuell?"
+        - "Neue Prioritäten?"
+        - "Ressourcen-Anpassung?"
+
+    - id: Q-3
+      name: "Tool & Process Audit"
+      description: "Tools und Prozesse auf Effektivität prüfen"
+      time: "3 hours"
+      week: "Mid-quarter"
+      areas:
+        - "Monitoring Tools: Ausreichend?"
+        - "CI/CD Performance Gates: Effektiv?"
+        - "Review Process: Funktioniert?"
+        - "Documentation: Aktuell?"
+
+    - id: Q-4
+      name: "Team Health Check"
+      description: "Performance-Kultur im Team messen"
+      time: "2 hours"
+      week: "Mid-quarter"
+      methods:
+        - "Anonymous Survey"
+        - "Champion Feedback Sessions"
+        - "Incident Retrospectives Review"
+
+    - id: Q-5
+      name: "Stakeholder Presentation"
+      description: "Quarterly Business Review für Leadership"
+      time: "2 hours (prep + meeting)"
+      week: "First week of new quarter"
+      content:
+        - "KPI Summary"
+        - "Business Impact"
+        - "Wins & Challenges"
+        - "Next Quarter Plan"
+        - "Budget Status"
+
+# ============================================================
+# JÄHRLICH (Annually)
+# ============================================================
+annually:
+  description: "Strategische Planung und Reflexion"
+  time_investment: "3-5 Tage (verteilt)"
+  responsible: "Performance Lead + Engineering Leadership"
+
+  tasks:
+    - id: A-1
+      name: "Annual Performance Strategy"
+      description: "Strategie für nächstes Jahr definieren"
+      time: "1 day"
+      month: "November"
+      deliverables:
+        - "Strategic Goals (3-5)"
+        - "Key Initiatives"
+        - "Resource Requirements"
+        - "Budget Request"
+
+    - id: A-2
+      name: "Budget Planning"
+      description: "Performance-Budget für nächstes Jahr"
+      time: "4 hours"
+      month: "November"
+      inputs:
+        - "Learnings aus diesem Jahr"
+        - "Neue Tool-Requirements"
+        - "Team-Wachstum"
+        - "Strategic Initiatives"
+
+    - id: A-3
+      name: "Annual Report"
+      description: "Jahresbericht Performance"
+      time: "1 day"
+      month: "December"
+      script: "./scripts/annual-report.sh"
+      content:
+        - "Year in Review"
+        - "Key Achievements"
+        - "Business Impact"
+        - "Team Growth"
+        - "Lessons Learned"
+
+    - id: A-4
+      name: "Roadmap Creation"
+      description: "12-Monats-Roadmap erstellen"
+      time: "4 hours"
+      month: "December/January"
+      template: "templates/roadmap.yaml"
+
+    - id: A-5
+      name: "Tool Vendor Review"
+      description: "Tool-Verträge prüfen und verhandeln"
+      time: "4 hours"
+      month: "Q4"
+      checklist:
+        - "Aktuelle Verträge auslaufend?"
+        - "Bessere Alternativen?"
+        - "Volumen-Rabatte möglich?"
+        - "Neue Requirements?"
+
+    - id: A-6
+      name: "Champion Program Review"
+      description: "Champion-Programm evaluieren"
+      time: "2 hours"
+      month: "December"
+      checklist:
+        - "Wie viele aktive Champions?"
+        - "Attrition Rate?"
+        - "Effectiveness Feedback"
+        - "Program Improvements"
+
+    - id: A-7
+      name: "Industry Benchmark"
+      description: "Mit Industrie-Benchmarks vergleichen"
+      time: "2 hours"
+      month: "January"
+      sources:
+        - "CrUX Dashboard (industry comparison)"
+        - "HTTP Archive Trends"
+        - "Web Almanac Annual Report"
+        - "Competitor Analysis"
+
+# ============================================================
+# Spezielle Events
+# ============================================================
+special_events:
+  black_friday:
+    name: "Black Friday / Peak Season"
+    preparation_start: "6 weeks before"
+    tasks:
+      - week: "-6"
+        task: "Load Testing beginnen"
+      - week: "-4"
+        task: "Capacity Planning finalisieren"
+      - week: "-2"
+        task: "CDN Scale-Up"
+      - week: "-1"
+        task: "War Room Setup"
+      - week: "0"
+        task: "24/7 Monitoring"
+      - week: "+1"
+        task: "Retrospective"
+
+  major_release:
+    name: "Major Release / Relaunch"
+    tasks:
+      - "Performance Baseline vor Release"
+      - "A/B Test Setup"
+      - "Rollback-Plan"
+      - "Enhanced Monitoring"
+      - "Post-Release Analysis"
+
+# ============================================================
+# Automatisierung
+# ============================================================
+automation_opportunities:
+  already_automated:
+    - "Daily Dashboard Alerts"
+    - "Weekly PR Stats Report"
+    - "Error Budget Slack Notification"
+    - "Lighthouse CI in PRs"
+
+  to_automate:
+    - "Monthly Report Generation"
+    - "Third-Party Script Tracking"
+    - "Champion Activity Tracking"
+    - "Budget vs. Actual Report"
+
+  tools_for_automation:
+    - "GitHub Actions"
+    - "Slack Workflows"
+    - "Custom Scripts (this repo)"
+    - "Zapier/n8n for Integrations"

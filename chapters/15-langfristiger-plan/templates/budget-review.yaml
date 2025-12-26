@@ -1,0 +1,278 @@
+# Jahres-Budget-Review Template
+#
+# Template für das jährliche Performance-Budget-Review.
+# Dokumentiert Ist vs. Plan und leitet Learnings ab.
+#
+# Verwendung:
+#   - Am Ende jedes Quartals aktualisieren
+#   - Im Dezember für Jahresabschluss finalisieren
+#   - Als Basis für nächstes Budget verwenden
+
+---
+meta:
+  year: 2024
+  created_at: "2024-01-15"
+  last_updated: "2024-12-20"
+  owner: "Engineering Manager"
+  status: "final"  # draft, in_progress, final
+
+# ============================================================
+# Budget-Übersicht
+# ============================================================
+budget_summary:
+  total_planned: 50000  # CHF
+  total_actual: 47500   # CHF
+  variance: -2500       # CHF (negativ = unter Budget)
+  variance_percent: -5%
+
+# ============================================================
+# Kategorie-Details
+# ============================================================
+categories:
+  tooling:
+    description: "Monitoring, APM, Testing Tools"
+    planned: 15000
+    actual: 14200
+    variance: -800
+
+    items:
+      - name: "RUM Tool (web-vitals.js + Custom)"
+        planned: 0  # Open Source
+        actual: 0
+        notes: "Eigene Implementierung statt SaaS"
+
+      - name: "Lighthouse CI"
+        planned: 0  # Open Source
+        actual: 0
+        notes: "Self-hosted"
+
+      - name: "Load Testing (k6)"
+        planned: 2000
+        actual: 1800
+        notes: "k6 Cloud für Peak-Tests"
+
+      - name: "APM (Datadog/New Relic)"
+        planned: 8000
+        actual: 8400
+        notes: "Mehr Traffic als erwartet"
+
+      - name: "Error Tracking (Sentry)"
+        planned: 3000
+        actual: 2500
+        notes: "Team-Plan ausreichend"
+
+      - name: "Browser Testing (BrowserStack)"
+        planned: 2000
+        actual: 1500
+        notes: "Weniger Cross-Browser-Tests nötig"
+
+    learnings:
+      - "Open Source Tools haben sich bewährt"
+      - "APM-Kosten unterschätzt (Traffic-basiert)"
+      - "Browser-Testing-Budget kann reduziert werden"
+
+  infrastructure:
+    description: "CDN, Redis, Server-Upgrades"
+    planned: 20000
+    actual: 22000
+    variance: +2000
+
+    items:
+      - name: "CDN (Bunny.net)"
+        planned: 6000
+        actual: 7200
+        notes: "Traffic +20% durch Black Friday"
+
+      - name: "Redis Cluster Upgrade"
+        planned: 8000
+        actual: 8500
+        notes: "Sentinel Setup komplexer"
+
+      - name: "Server-Upgrades (RAM/CPU)"
+        planned: 4000
+        actual: 4500
+        notes: "Zusätzliche PHP Worker"
+
+      - name: "Edge Functions"
+        planned: 2000
+        actual: 1800
+        notes: "Weniger genutzt als geplant"
+
+    learnings:
+      - "CDN-Kosten bei Traffic-Spikes einplanen"
+      - "Sentinel-Setup braucht Expertise"
+      - "Edge Functions für nächstes Jahr evaluieren"
+
+  training:
+    description: "Schulungen, Konferenzen, Zertifizierungen"
+    planned: 10000
+    actual: 8300
+    variance: -1700
+
+    items:
+      - name: "Web Performance Kurs (Online)"
+        planned: 3000
+        actual: 2500
+        notes: "5 Team-Member geschult"
+
+      - name: "Performance Konferenz"
+        planned: 4000
+        actual: 3200
+        notes: "Nur 2 statt 3 Teilnehmer"
+
+      - name: "Internal Brown Bags"
+        planned: 1000
+        actual: 600
+        notes: "Catering + Materialien"
+
+      - name: "Books & Subscriptions"
+        planned: 1000
+        actual: 1000
+        notes: "Safari Books, Blogs"
+
+      - name: "Certifications"
+        planned: 1000
+        actual: 1000
+        notes: "Google/AWS Certifications"
+
+    learnings:
+      - "Online-Kurse sind kosteneffektiver"
+      - "Konferenz-Teilnahme früher planen"
+      - "Brown Bags haben hohen ROI"
+
+  contingency:
+    description: "Buffer für Unvorhergesehenes"
+    planned: 5000
+    actual: 3000
+    variance: -2000
+
+    items:
+      - name: "Emergency CDN Scale-Up"
+        planned: 0
+        actual: 1500
+        notes: "Black Friday Traffic-Spike"
+
+      - name: "External Consultant"
+        planned: 0
+        actual: 1500
+        notes: "Redis-Cluster Troubleshooting"
+
+    learnings:
+      - "Contingency wurde gebraucht (60%)"
+      - "Für Peak-Saison mehr Buffer"
+      - "Consultant für spezifische Probleme wertvoll"
+
+# ============================================================
+# ROI-Analyse
+# ============================================================
+roi_analysis:
+  investment:
+    total: 47500
+    description: "Gesamtausgaben Performance"
+
+  returns:
+    conversion_improvement:
+      metric: "Conversion Rate"
+      before: 2.5%
+      after: 3.1%
+      improvement: "+24%"
+      estimated_revenue_impact: 180000  # CHF
+
+    bounce_rate_reduction:
+      metric: "Mobile Bounce Rate"
+      before: 45%
+      after: 32%
+      improvement: "-29%"
+      estimated_revenue_impact: 45000  # CHF
+
+    operational_savings:
+      items:
+        - "Weniger Support-Tickets (Performance-bezogen): CHF 8.000"
+        - "Effizientere Server-Nutzung: CHF 5.000"
+        - "Schnellere Development: CHF 12.000"
+      total: 25000
+
+  summary:
+    total_return: 250000  # CHF
+    roi: "426%"  # (250000 - 47500) / 47500
+    payback_period: "3 Monate"
+
+# ============================================================
+# Empfehlungen für nächstes Jahr
+# ============================================================
+recommendations:
+  budget_adjustments:
+    - category: "tooling"
+      current: 15000
+      recommended: 12000
+      rationale: "Open Source bewährt, weniger Browser-Testing"
+
+    - category: "infrastructure"
+      current: 20000
+      recommended: 25000
+      rationale: "CDN-Kosten steigen mit Traffic"
+
+    - category: "training"
+      current: 10000
+      recommended: 12000
+      rationale: "Mehr Champions ausbilden"
+
+    - category: "contingency"
+      current: 5000
+      recommended: 8000
+      rationale: "Black Friday braucht mehr Buffer"
+
+  new_investments:
+    - item: "Edge Computing Platform"
+      estimated: 5000
+      rationale: "Personalisierung ohne Latenz"
+
+    - item: "Advanced APM Features"
+      estimated: 3000
+      rationale: "Distributed Tracing für Microservices"
+
+  total_recommended: 65000
+
+# ============================================================
+# Lessons Learned
+# ============================================================
+lessons_learned:
+  what_worked:
+    - "Open Source RUM statt teures SaaS"
+    - "Champions-Programm für Skalierung"
+    - "Quarterly Reviews für Korrekturen"
+    - "Black Friday Preparation 2 Monate vorher"
+
+  what_didnt_work:
+    - "Zu späte CDN-Skalierung"
+    - "Unterschätzte Redis-Komplexität"
+    - "Konferenz-Buchung zu kurzfristig"
+
+  surprises:
+    - "Traffic-Wachstum +20% über Prognose"
+    - "Edge Functions weniger relevant als gedacht"
+    - "Developer-Schulungen haben hohen ROI"
+
+  changes_for_next_year:
+    - "Peak-Budget explizit ausweisen"
+    - "Consultant-Budget für Spezialthemen"
+    - "Monatliche Budget-Reviews statt quartalsweise"
+
+# ============================================================
+# Sign-Off
+# ============================================================
+approvals:
+  - role: "Performance Lead"
+    name: "Max Muster"
+    date: "2024-12-15"
+    status: "approved"
+
+  - role: "Engineering Manager"
+    name: "Anna Beispiel"
+    date: "2024-12-18"
+    status: "approved"
+
+  - role: "Finance"
+    name: "Thomas Budget"
+    date: "2024-12-20"
+    status: "approved"

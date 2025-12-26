@@ -1,0 +1,352 @@
+# KPI Targets für Performance-Management
+#
+# Definiert Zielwerte für Leading und Lagging Indicators
+# über einen 3-Jahres-Horizont.
+#
+# Verwendung:
+#   - Als Referenz für OKR-Planung
+#   - Für automatisiertes Tracking
+#   - Als Basis für Reporting
+
+---
+meta:
+  version: "1.0"
+  created_at: "2025-01-01"
+  last_updated: "2025-01-01"
+  owner: "Performance Lead"
+  review_frequency: "annually"
+
+# ============================================================
+# LEADING INDICATORS
+# ============================================================
+# Frühindikatoren, die zukünftige Performance vorhersagen
+
+leading_indicators:
+
+  # Core Web Vitals
+  core_web_vitals:
+    lcp_p75:
+      unit: "ms"
+      thresholds:
+        good: 2500
+        needs_improvement: 4000
+      targets:
+        year_1: 2500
+        year_2: 2200
+        year_3: 2000
+      current_baseline: 3200
+
+    inp_p75:
+      unit: "ms"
+      thresholds:
+        good: 200
+        needs_improvement: 500
+      targets:
+        year_1: 200
+        year_2: 175
+        year_3: 150
+      current_baseline: 250
+
+    cls_p75:
+      unit: "score"
+      thresholds:
+        good: 0.1
+        needs_improvement: 0.25
+      targets:
+        year_1: 0.1
+        year_2: 0.08
+        year_3: 0.05
+      current_baseline: 0.15
+
+  # CWV Good Rate (Prozent der Page Views im "Good" Bereich)
+  cwv_good_rate:
+    unit: "percent"
+    targets:
+      year_1: 75
+      year_2: 85
+      year_3: 95
+    current_baseline: 60
+
+  # Process Metrics
+  process_metrics:
+
+    performance_review_rate:
+      description: "Prozent der PRs mit Performance-Review"
+      unit: "percent"
+      targets:
+        year_1: 80
+        year_2: 90
+        year_3: 95
+      current_baseline: 50
+
+    ci_performance_gates:
+      description: "Prozent der Pipelines mit Performance-Checks"
+      unit: "percent"
+      targets:
+        year_1: 100
+        year_2: 100
+        year_3: 100
+      current_baseline: 30
+
+    performance_champion_ratio:
+      description: "Champions pro 10 Developers"
+      unit: "ratio"
+      targets:
+        year_1: 1
+        year_2: 2
+        year_3: 2
+      current_baseline: 0
+
+  # Tech Debt
+  tech_debt:
+
+    tech_debt_score:
+      description: "Score 0-100, niedriger = besser"
+      unit: "score"
+      targets:
+        year_1: 40
+        year_2: 30
+        year_3: 25
+      current_baseline: 55
+
+    tech_debt_resolution_rate:
+      description: "Prozent des 25% Budgets genutzt"
+      unit: "percent"
+      targets:
+        year_1: 80
+        year_2: 90
+        year_3: 95
+      current_baseline: 40
+
+  # Error Budget
+  error_budget:
+
+    remaining_budget:
+      description: "Verbleibendes Error Budget"
+      unit: "percent"
+      targets:
+        year_1: ">50"
+        year_2: ">60"
+        year_3: ">70"
+      current_baseline: 35
+
+    budget_policy:
+      description: "Häufigste Policy-Farbe"
+      unit: "status"
+      targets:
+        year_1: "green_or_yellow"
+        year_2: "mostly_green"
+        year_3: "always_green"
+      current_baseline: "yellow"
+
+# ============================================================
+# LAGGING INDICATORS
+# ============================================================
+# Nachlaufende Indikatoren, die Business-Impact zeigen
+
+lagging_indicators:
+
+  # Business Metrics
+  business:
+
+    conversion_rate:
+      description: "E-Commerce Conversion Rate"
+      unit: "percent"
+      targets:
+        year_1: 3.0
+        year_2: 3.5
+        year_3: 4.0
+      current_baseline: 2.5
+
+    bounce_rate:
+      description: "Bounce Rate (niedriger = besser)"
+      unit: "percent"
+      targets:
+        year_1: 35
+        year_2: 30
+        year_3: 25
+      current_baseline: 45
+
+    pages_per_session:
+      description: "Durchschnittliche Seitenaufrufe pro Session"
+      unit: "count"
+      targets:
+        year_1: 4.0
+        year_2: 4.5
+        year_3: 5.0
+      current_baseline: 3.2
+
+    session_duration:
+      description: "Durchschnittliche Session-Dauer"
+      unit: "seconds"
+      targets:
+        year_1: 180
+        year_2: 210
+        year_3: 240
+      current_baseline: 150
+
+  # SEO Metrics
+  seo:
+
+    search_ranking_position:
+      description: "Durchschnittliche Position für Top-Keywords"
+      unit: "position"
+      targets:
+        year_1: 8
+        year_2: 5
+        year_3: 3
+      current_baseline: 12
+
+    organic_traffic_growth:
+      description: "YoY Wachstum organischer Traffic"
+      unit: "percent"
+      targets:
+        year_1: 20
+        year_2: 25
+        year_3: 30
+      current_baseline: 10
+
+  # Reliability Metrics
+  reliability:
+
+    uptime:
+      description: "Service Uptime"
+      unit: "percent"
+      targets:
+        year_1: 99.9
+        year_2: 99.95
+        year_3: 99.99
+      current_baseline: 99.5
+
+    p0_incidents_per_year:
+      description: "Kritische Performance-Incidents pro Jahr"
+      unit: "count"
+      targets:
+        year_1: 2
+        year_2: 1
+        year_3: 0
+      current_baseline: 5
+
+    mttr:
+      description: "Mean Time to Recovery (Stunden)"
+      unit: "hours"
+      targets:
+        year_1: 2
+        year_2: 1
+        year_3: 0.5
+      current_baseline: 4
+
+# ============================================================
+# TEAM & CULTURE METRICS
+# ============================================================
+
+team_culture:
+
+  culture_score:
+    description: "Performance Culture Score (0-100)"
+    unit: "score"
+    targets:
+      year_1: 70
+      year_2: 80
+      year_3: 90
+    current_baseline: 55
+
+  developer_satisfaction:
+    description: "Survey Score zu Performance-Tooling (1-5)"
+    unit: "score"
+    targets:
+      year_1: 3.5
+      year_2: 4.0
+      year_3: 4.5
+    current_baseline: 2.8
+
+  knowledge_sharing_score:
+    description: "Brown Bags, Wiki Updates, Slack Activity"
+    unit: "score"
+    targets:
+      year_1: 60
+      year_2: 75
+      year_3: 85
+    current_baseline: 40
+
+# ============================================================
+# TRACKING CONFIGURATION
+# ============================================================
+
+tracking:
+
+  # Wie oft messen
+  measurement_frequency:
+    cwv: "daily"
+    conversion: "weekly"
+    tech_debt: "weekly"
+    culture: "monthly"
+    developer_satisfaction: "quarterly"
+
+  # Datenquellen
+  data_sources:
+    cwv: "rum_api"
+    conversion: "analytics_api"
+    tech_debt: "jira_api"
+    culture: "survey + slack + wiki"
+    seo: "search_console_api"
+
+  # Alerting Thresholds
+  alerts:
+    - metric: "lcp_p75"
+      condition: "> 2500"
+      severity: "warning"
+      channel: "slack"
+
+    - metric: "lcp_p75"
+      condition: "> 4000"
+      severity: "critical"
+      channel: "pagerduty"
+
+    - metric: "error_budget_remaining"
+      condition: "< 30"
+      severity: "warning"
+      channel: "slack"
+
+    - metric: "error_budget_remaining"
+      condition: "< 10"
+      severity: "critical"
+      channel: "pagerduty"
+
+# ============================================================
+# REVIEW SCHEDULE
+# ============================================================
+
+review_schedule:
+  weekly:
+    metrics:
+      - "cwv_good_rate"
+      - "error_budget_remaining"
+    participants:
+      - "Performance Champion"
+
+  monthly:
+    metrics:
+      - "all leading indicators"
+      - "conversion_rate"
+      - "bounce_rate"
+    participants:
+      - "Performance Lead"
+      - "Product Manager"
+
+  quarterly:
+    metrics:
+      - "all metrics"
+    participants:
+      - "Performance Lead"
+      - "Engineering Manager"
+      - "Product Manager"
+      - "Stakeholders"
+
+  annually:
+    metrics:
+      - "all metrics"
+      - "3-year targets review"
+    participants:
+      - "Leadership Team"
+      - "Performance Team"

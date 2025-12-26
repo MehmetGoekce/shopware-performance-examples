@@ -1,0 +1,257 @@
+# Performance Roadmap Template
+#
+# 12-Monats-Plan für nachhaltiges Performance-Management.
+# Anpassen an eigene Prioritäten und Ressourcen.
+#
+# Verwendung:
+#   cp roadmap.yaml config/roadmap-2025.yaml
+#   # Mit eigenen Werten anpassen
+
+---
+meta:
+  version: "1.0"
+  year: 2025
+  created_at: "2025-01-01"
+  owner: "Performance Champion"
+  review_frequency: "quarterly"
+
+# Strategische Ziele für das Jahr
+strategic_goals:
+  - id: SG-1
+    title: "Core Web Vitals Optimierung"
+    description: "Alle kritischen Seiten erreichen 'Good' Status"
+    target_metric: "CWV Good Rate"
+    baseline: 60%
+    target: 90%
+
+  - id: SG-2
+    title: "Error Budget Stabilität"
+    description: "Error Budget bleibt ganzjährig über 50%"
+    target_metric: "Error Budget Remaining"
+    baseline: 35%
+    target: ">50% durchgehend"
+
+  - id: SG-3
+    title: "Technical Debt Reduktion"
+    description: "Performance-relevante Tech Debt um 30% reduzieren"
+    target_metric: "Tech Debt Score"
+    baseline: 45
+    target: 30
+
+# Quartalsweise Roadmap
+quarters:
+  Q1:
+    theme: "Foundation & Quick Wins"
+    description: "Basis schaffen und schnelle Erfolge erzielen"
+    focus_areas:
+      - "Monitoring Setup vervollständigen"
+      - "Low-Hanging Fruits identifizieren"
+      - "Team-Schulungen durchführen"
+
+    milestones:
+      - id: M-Q1-1
+        title: "RUM Dashboard vollständig"
+        target_date: "2025-01-31"
+        dependencies: []
+        owner: "DevOps Team"
+
+      - id: M-Q1-2
+        title: "Top 10 Pages optimiert"
+        target_date: "2025-02-28"
+        dependencies: ["M-Q1-1"]
+        owner: "Frontend Team"
+
+      - id: M-Q1-3
+        title: "Performance Champion Program gestartet"
+        target_date: "2025-03-15"
+        dependencies: []
+        owner: "Engineering Manager"
+
+    okrs:
+      - objective: "Performance-Monitoring etablieren"
+        key_results:
+          - "RUM auf 100% der kritischen Seiten"
+          - "Alerting für alle Core Web Vitals"
+          - "Weekly Performance Review eingeführt"
+
+    budget_allocation:
+      tooling: 30%
+      optimization: 50%
+      training: 20%
+
+    risks:
+      - risk: "Team-Kapazität durch andere Projekte"
+        mitigation: "20% Performance-Zeit vertraglich festlegen"
+        probability: "medium"
+        impact: "high"
+
+  Q2:
+    theme: "Systematic Optimization"
+    description: "Systematische Optimierung der kritischen Pfade"
+    focus_areas:
+      - "Checkout-Flow Optimierung"
+      - "Mobile Performance"
+      - "Cache-Strategie überarbeiten"
+
+    milestones:
+      - id: M-Q2-1
+        title: "Checkout LCP < 2s"
+        target_date: "2025-04-30"
+        dependencies: ["M-Q1-2"]
+        owner: "Checkout Team"
+
+      - id: M-Q2-2
+        title: "Mobile CWV alle 'Good'"
+        target_date: "2025-05-31"
+        dependencies: []
+        owner: "Mobile Team"
+
+      - id: M-Q2-3
+        title: "Redis Cluster produktiv"
+        target_date: "2025-06-15"
+        dependencies: []
+        owner: "DevOps Team"
+
+    okrs:
+      - objective: "Conversion-kritische Seiten optimieren"
+        key_results:
+          - "Checkout Conversion +5%"
+          - "Mobile Bounce Rate -20%"
+          - "Search LCP < 1.5s"
+
+    budget_allocation:
+      tooling: 15%
+      optimization: 70%
+      training: 15%
+
+  Q3:
+    theme: "Scale & Automate"
+    description: "Skalierung und Automatisierung der Performance-Prozesse"
+    focus_areas:
+      - "CI/CD Performance Gates"
+      - "Automatische Regression Detection"
+      - "Self-Service Performance Tools"
+
+    milestones:
+      - id: M-Q3-1
+        title: "Performance Gates in CI/CD"
+        target_date: "2025-07-31"
+        dependencies: ["M-Q2-3"]
+        owner: "Platform Team"
+
+      - id: M-Q3-2
+        title: "Automated Performance Reports"
+        target_date: "2025-08-31"
+        dependencies: ["M-Q3-1"]
+        owner: "DevOps Team"
+
+      - id: M-Q3-3
+        title: "Developer Self-Service Portal"
+        target_date: "2025-09-30"
+        dependencies: []
+        owner: "Platform Team"
+
+    okrs:
+      - objective: "Performance-Arbeit skalieren"
+        key_results:
+          - "100% der PRs haben Performance-Check"
+          - "MTTR für Performance Issues < 2h"
+          - "0 Performance-Regressions in Production"
+
+    budget_allocation:
+      tooling: 40%
+      optimization: 40%
+      training: 20%
+
+  Q4:
+    theme: "Optimize & Prepare"
+    description: "Feintuning und Vorbereitung auf Peak Season"
+    focus_areas:
+      - "Black Friday Vorbereitung"
+      - "Kapazitätsplanung"
+      - "Jahresreview und Planung"
+
+    milestones:
+      - id: M-Q4-1
+        title: "Load Testing abgeschlossen"
+        target_date: "2025-10-31"
+        dependencies: []
+        owner: "QA Team"
+
+      - id: M-Q4-2
+        title: "Black Friday Ready"
+        target_date: "2025-11-15"
+        dependencies: ["M-Q4-1"]
+        owner: "All Teams"
+
+      - id: M-Q4-3
+        title: "2026 Roadmap erstellt"
+        target_date: "2025-12-15"
+        dependencies: []
+        owner: "Engineering Manager"
+
+    okrs:
+      - objective: "Peak Season erfolgreich meistern"
+        key_results:
+          - "Black Friday 99.9% Uptime"
+          - "Keine Performance-Incidents während Peak"
+          - "LCP während Peak < 2.5s (p95)"
+
+    budget_allocation:
+      tooling: 20%
+      optimization: 30%
+      training: 10%
+      buffer: 40%  # Für unerwartete Issues
+
+# Ressourcen-Planung
+resources:
+  team_allocation:
+    performance_champions: 2
+    dedicated_performance_time: "20% pro Developer"
+    external_consultants: "Nach Bedarf (Budget: CHF 20.000)"
+
+  budget:
+    annual_total: 50000  # CHF
+    breakdown:
+      tooling_licenses: 15000
+      infrastructure: 20000
+      training: 10000
+      contingency: 5000
+
+# Review-Checkpoints
+review_schedule:
+  weekly:
+    - "Dashboard Review"
+    - "Alert Triage"
+
+  monthly:
+    - "KPI Review mit Stakeholdern"
+    - "Budget-Status"
+    - "Risk Assessment Update"
+
+  quarterly:
+    - "OKR Scoring"
+    - "Roadmap Adjustment"
+    - "Retrospective"
+
+  annually:
+    - "Strategy Review"
+    - "Budget Planning"
+    - "Team Growth Planning"
+
+# Success Metrics (End of Year)
+success_criteria:
+  must_have:
+    - "CWV Good Rate > 85%"
+    - "Error Budget nie unter 20%"
+    - "0 P0 Performance Incidents"
+
+  should_have:
+    - "CWV Good Rate > 90%"
+    - "Tech Debt Score < 35"
+    - "All Champions trained"
+
+  nice_to_have:
+    - "CWV Good Rate > 95%"
+    - "Fully automated Performance Pipeline"
+    - "External Performance Award/Recognition"
