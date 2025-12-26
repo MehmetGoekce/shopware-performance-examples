@@ -1,0 +1,55 @@
+# Shopware 6 Application Cache mit Redis
+# Kopieren nach: config/packages/framework.yaml
+#
+# Voraussetzung: Redis installiert und gestartet
+# .env: REDIS_URL=redis://localhost:6379
+
+framework:
+    cache:
+        # Standard-Adapter fuer alle Pools
+        app: cache.adapter.redis
+        system: cache.adapter.system
+
+        # Redis-Verbindung definieren
+        default_redis_provider: '%env(REDIS_URL)%'
+
+        pools:
+            # Object Cache fuer Entities und DAL
+            cache.object:
+                adapter: cache.adapter.redis
+                default_lifetime: 3600  # 1 Stunde
+
+            # HTTP Cache Daten
+            cache.http:
+                adapter: cache.adapter.redis
+                default_lifetime: 7200  # 2 Stunden
+
+            # Tag-basierte Invalidierung
+            cache.tags:
+                adapter: cache.adapter.redis
+
+            # Anwendungsdaten (API-Responses, etc.)
+            cache.app:
+                adapter: cache.adapter.redis
+                default_lifetime: 3600
+
+    # Sessions in Redis (optional, aber empfohlen)
+    session:
+        handler_id: '%env(REDIS_SESSION_URL)%'
+        cookie_secure: auto
+        cookie_samesite: lax
+
+# Fuer Multi-Redis-Setup (Fortgeschritten):
+#
+# pools:
+#     cache.session:
+#         adapter: cache.adapter.redis
+#         provider: 'redis://localhost:6379/0'
+#
+#     cache.object:
+#         adapter: cache.adapter.redis
+#         provider: 'redis://localhost:6379/1'
+#
+#     cache.http:
+#         adapter: cache.adapter.redis
+#         provider: 'redis://redis-cache:6379/0'  # Separater Server

@@ -1,0 +1,32 @@
+# Shopware Cache-Invalidierung Konfiguration
+# Kopieren nach: config/packages/shopware.yaml
+
+shopware:
+    cache:
+        # Granulare Invalidierung (empfohlen)
+        invalidation:
+            # Nur spezifische Produkte invalidieren
+            product_detail_route: true
+
+            # Listings NICHT bei jeder Produktaenderung invalidieren
+            # (Kuerzere TTLs stattdessen verwenden)
+            product_listing_route: false
+
+            # Weitere Routen
+            product_review_route: true
+            product_search_route: false  # Kuerzere TTL verwenden
+
+    http_cache:
+        # Kuerzere TTL statt aggressiver Invalidierung
+        default_ttl: 1800  # 30 Minuten
+
+        # Stale-While-Revalidate: Alte Version zeigen waehrend neu geladen wird
+        stale_while_revalidate: 3600  # 1 Stunde
+
+        # Stale-If-Error: Bei Fehlern alte Version zeigen
+        stale_if_error: 86400  # 24 Stunden
+
+# Optimierung fuer grosse Kataloge:
+# - product_listing_route: false + TTL von 30 Min
+# - Vermeidet Cache-Stampede bei Massenimporten
+# - Trade-off: Aenderungen erscheinen mit bis zu 30 Min Verzoegerung
