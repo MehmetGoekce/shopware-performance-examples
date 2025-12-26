@@ -1,0 +1,107 @@
+# Message Queue Configuration
+#
+# This configuration optimizes the Shopware message queue for production.
+#
+# Key settings:
+# - Disable admin worker (use CLI worker instead)
+# - Route heavy messages to separate queue
+# - Configure retry strategies
+#
+# Place in: config/packages/shopware.yaml or config/packages/message-queue.yaml
+
+shopware:
+    # ============================================
+    # Admin Worker Settings
+    # ============================================
+    admin_worker:
+        # IMPORTANT: Disable in production!
+        # Admin worker is slow and causes high CPU when multiple admins are logged in
+        enable_admin_worker: false
+
+        # How often to poll for new messages (ms)
+        # Only relevant if admin_worker is enabled
+        poll_interval: 30000
+
+        # Transports to consume via admin worker
+        # Empty = all transports
+        transports: []
+
+    # ============================================
+    # Message Routing
+    # ============================================
+    messenger:
+        # Route specific messages to different transports
+        routing_overwrite:
+            # Heavy indexing tasks -> low priority queue
+            'Shopware\Core\Content\Product\DataAbstractionLayer\ProductIndexingMessage': low_priority
+
+            # Product export -> low priority
+            'Shopware\Core\Content\ProductExport\ScheduledTask\ProductExportGenerateTask': low_priority
+
+            # Sitemap generation -> low priority
+            'Shopware\Core\Content\Sitemap\ScheduledTask\SitemapGenerateTaskHandler': low_priority
+
+            # Newsletter sync -> low priority
+            'Shopware\Core\Content\Newsletter\ScheduledTask\NewsletterRecipientTask': low_priority
+
+            # Custom import messages -> low priority
+            'App\MessageQueue\ProductImportMessage': low_priority
+
+# ============================================
+# Framework Messenger Configuration
+# ============================================
+framework:
+    messenger:
+        # Transport configuration
+        transports:
+            # Main async transport (default)
+            async:
+                dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
+                options:
+                    auto_setup: true
+                    use_notify: true
+                    check_delayed_interval: 1000
+                retry_strategy:
+                    max_retries: 3
+                    delay: 1000
+                    multiplier: 2
+                    max_delay: 60000
+
+            # Low priority transport for heavy tasks
+            low_priority:
+                dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
+                options:
+                    auto_setup: true
+                    queue_name: low_priority
+                retry_strategy:
+                    max_retries: 3
+                    delay: 5000
+                    multiplier: 3
+                    max_delay: 300000
+
+            # Failed messages transport
+            failed:
+                dsn: 'doctrine://default?queue_name=failed'
+
+        # Failure transport for all transports
+        failure_transport: failed
+
+        # Default bus configuration
+        default_bus: messenger.bus.shopware
+
+# ============================================
+# Notes
+# ============================================
+#
+# Start workers with:
+#   bin/console messenger:consume async --time-limit=60 --memory-limit=256M
+#   bin/console messenger:consume low_priority --time-limit=120 --memory-limit=512M
+#
+# Monitor failed messages:
+#   bin/console messenger:failed:show
+#
+# Retry failed messages:
+#   bin/console messenger:failed:retry
+#
+# For RabbitMQ instead of database:
+#   MESSENGER_TRANSPORT_DSN=amqp://guest:guest@localhost:5672/%2f/messages

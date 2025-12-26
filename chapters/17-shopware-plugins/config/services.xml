@@ -1,0 +1,77 @@
+<?xml version="1.0" ?>
+<container xmlns="http://symfony.com/schema/dic/services"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xsi:schemaLocation="http://symfony.com/schema/dic/services
+           http://symfony.com/schema/dic/services/services-1.0.xsd">
+
+    <services>
+        <!-- ============================================ -->
+        <!-- Services -->
+        <!-- ============================================ -->
+
+        <!-- Optimized Product Service -->
+        <service id="App\Service\OptimizedProductService">
+            <argument type="service" id="product.repository"/>
+        </service>
+
+        <!-- Fast ID Lookup Service (DBAL-based) -->
+        <service id="App\Service\FastIdLookupService">
+            <argument type="service" id="Doctrine\DBAL\Connection"/>
+            <argument type="service" id="Psr\Log\LoggerInterface"/>
+        </service>
+
+        <!-- ============================================ -->
+        <!-- Event Subscribers -->
+        <!-- ============================================ -->
+
+        <!-- Performance-Aware Subscriber -->
+        <service id="App\Subscriber\PerformanceAwareSubscriber">
+            <argument type="service" id="Doctrine\DBAL\Connection"/>
+            <argument type="service" id="Psr\Log\LoggerInterface"/>
+            <tag name="kernel.event_subscriber"/>
+        </service>
+
+        <!-- Changeset-Aware Subscriber -->
+        <service id="App\Subscriber\ChangesetAwareSubscriber">
+            <argument type="service" id="Psr\Log\LoggerInterface"/>
+            <tag name="kernel.event_subscriber"/>
+        </service>
+
+        <!-- Cache Tag Subscriber -->
+        <service id="App\Subscriber\CacheTagSubscriber">
+            <argument type="service" id="Shopware\Core\Framework\Adapter\Cache\CacheTagCollector"/>
+            <tag name="kernel.event_subscriber"/>
+        </service>
+
+        <!-- Selective Cache Invalidation Subscriber -->
+        <service id="App\Subscriber\SelectiveCacheInvalidationSubscriber">
+            <argument type="service" id="Shopware\Core\Framework\Adapter\Cache\CacheInvalidator"/>
+            <tag name="kernel.event_subscriber"/>
+        </service>
+
+        <!-- ============================================ -->
+        <!-- Entity Indexer -->
+        <!-- ============================================ -->
+
+        <!-- Optimized Entity Indexer -->
+        <service id="App\Indexer\OptimizedEntityIndexer">
+            <argument type="service" id="Doctrine\DBAL\Connection"/>
+            <argument type="service" id="Psr\Log\LoggerInterface"/>
+            <!-- Register as entity indexer -->
+            <tag name="shopware.entity_indexer" priority="-1000"/>
+        </service>
+
+        <!-- ============================================ -->
+        <!-- Message Handlers -->
+        <!-- ============================================ -->
+
+        <!-- Async Product Handler -->
+        <service id="App\MessageQueue\AsyncProductHandler">
+            <argument type="service" id="Doctrine\DBAL\Connection"/>
+            <argument type="service" id="Psr\Log\LoggerInterface"/>
+            <!-- Symfony Messenger will auto-detect due to #[AsMessageHandler] -->
+            <tag name="messenger.message_handler"/>
+        </service>
+
+    </services>
+</container>
