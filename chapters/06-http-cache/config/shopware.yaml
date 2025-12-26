@@ -1,0 +1,105 @@
+# HTTP-Cache Konfiguration für Shopware 6
+# Kapitel 6: HTTP-Caching
+#
+# Kopieren nach: config/packages/shopware.yaml
+# Oder mergen mit bestehender Konfiguration
+#
+# @see https://github.com/MehmetGoekce/shopware-performance-examples
+
+shopware:
+    # ============================================================
+    # HTTP-Cache Konfiguration
+    # ============================================================
+    http_cache:
+        # Cache aktivieren (WICHTIG: Standard ist deaktiviert!)
+        enabled: true
+
+        # Standard-TTL: 2 Stunden
+        # Gilt wenn Response keinen eigenen Cache-Control Header setzt
+        default_ttl: 7200
+
+        # Stale-While-Revalidate: 4 Stunden
+        # Erlaubt Auslieferung von "veraltetem" Cache während Refresh
+        # Browser-Support: Chrome 75+, Firefox 68+ (seit 2019/2020)
+        stale_while_revalidate: 14400
+
+        # Stale-If-Error: 24 Stunden
+        # Liefert veralteten Cache bei Backend-Fehlern
+        stale_if_error: 86400
+
+        # URL-Parameter die den Cache NICHT invalidieren
+        # Wichtig für Marketing-Tracking
+        ignored_url_parameters:
+            # Piwik/Matomo
+            - 'pk_campaign'
+            - 'pk_kwd'
+            - 'pk_keyword'
+            - 'pk_source'
+            - 'pk_medium'
+            - 'pk_content'
+            # Google Analytics / UTM
+            - 'utm_source'
+            - 'utm_medium'
+            - 'utm_campaign'
+            - 'utm_term'
+            - 'utm_content'
+            # Advertising Click IDs
+            - 'gclid'      # Google Ads
+            - 'fbclid'     # Facebook
+            - 'msclkid'    # Microsoft Ads
+            - 'dclid'      # DoubleClick
+            - 'mc_cid'     # Mailchimp
+            - 'mc_eid'     # Mailchimp
+
+        # Query-Parameter die private Cache erzwingen
+        # Regex-Pattern für Parameter die Session-spezifisch sind
+        private_allowed_query_pattern: '/^(currency|language|preview)$/'
+
+        # Automatische Cache-Invalidierung
+        cache_invalidation:
+            product_listing: true      # Kategorieseiten bei Produktänderung
+            product_detail: true       # Produktseiten bei Änderung
+            cms_page: true             # CMS-Seiten bei Änderung
+            category: true             # Kategorien bei Änderung
+            landing_page: true         # Landingpages bei Änderung
+
+    # ============================================================
+    # Reverse Proxy (Varnish) Konfiguration
+    # Nur aktivieren wenn Varnish im Einsatz ist!
+    # ============================================================
+    # http_cache:
+    #     reverse_proxy:
+    #         enabled: true
+    #         ban_method: "BAN"
+    #         hosts:
+    #             - "127.0.0.1:6081"    # Varnish auf localhost
+    #             # - "varnish:6081"    # Docker-Setup
+    #         max_parallel_invalidations: 3
+    #         use_varnish_xkey: true    # Für Varnish 6.0+ mit xkey
+
+# ============================================================
+# Framework Cache Pools
+# ============================================================
+framework:
+    cache:
+        pools:
+            # HTTP-Cache Pool
+            cache.http:
+                adapter: cache.adapter.filesystem
+                default_lifetime: 7200
+
+# ============================================================
+# Seitentyp-spezifische TTLs (via Controller)
+# ============================================================
+#
+# Diese Werte werden im Code gesetzt, hier zur Dokumentation:
+#
+# | Seitentyp        | TTL      | Begründung                        |
+# |------------------|----------|-----------------------------------|
+# | Startseite       | 5-15 Min | Häufige Änderungen (Slider)       |
+# | Kategorie-Seiten | 1-2 Std  | Ändern sich selten                |
+# | Produktseiten    | 2-4 Std  | Preise via ESI                    |
+# | CMS-Seiten       | 24 Std   | Statischer Content                |
+# | Warenkorb        | 0 (priv) | Benutzer-spezifisch               |
+# | Checkout         | 0 (priv) | Benutzer-spezifisch               |
+# | Account          | 0 (priv) | Benutzer-spezifisch               |
