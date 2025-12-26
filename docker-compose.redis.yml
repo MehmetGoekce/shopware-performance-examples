@@ -1,0 +1,101 @@
+version: '3.8'
+
+# Redis Sentinel Setup für Kapitel 10
+# Startet 3 Redis-Instanzen + 3 Sentinels für High Availability
+
+services:
+  redis-master:
+    image: redis:7-alpine
+    container_name: redis-master
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_master_data:/data
+    networks:
+      - redis-sentinel
+
+  redis-replica1:
+    image: redis:7-alpine
+    container_name: redis-replica1
+    command: redis-server --replicaof redis-master 6379 --appendonly yes
+    depends_on:
+      - redis-master
+    volumes:
+      - redis_replica1_data:/data
+    networks:
+      - redis-sentinel
+
+  redis-replica2:
+    image: redis:7-alpine
+    container_name: redis-replica2
+    command: redis-server --replicaof redis-master 6379 --appendonly yes
+    depends_on:
+      - redis-master
+    volumes:
+      - redis_replica2_data:/data
+    networks:
+      - redis-sentinel
+
+  sentinel1:
+    image: redis:7-alpine
+    container_name: sentinel1
+    command: >
+      sh -c 'echo "sentinel monitor mymaster redis-master 6379 2" > /etc/sentinel.conf &&
+             echo "sentinel down-after-milliseconds mymaster 5000" >> /etc/sentinel.conf &&
+             echo "sentinel failover-timeout mymaster 10000" >> /etc/sentinel.conf &&
+             echo "sentinel parallel-syncs mymaster 1" >> /etc/sentinel.conf &&
+             redis-sentinel /etc/sentinel.conf'
+    depends_on:
+      - redis-master
+      - redis-replica1
+      - redis-replica2
+    ports:
+      - "26379:26379"
+    networks:
+      - redis-sentinel
+
+  sentinel2:
+    image: redis:7-alpine
+    container_name: sentinel2
+    command: >
+      sh -c 'echo "sentinel monitor mymaster redis-master 6379 2" > /etc/sentinel.conf &&
+             echo "sentinel down-after-milliseconds mymaster 5000" >> /etc/sentinel.conf &&
+             echo "sentinel failover-timeout mymaster 10000" >> /etc/sentinel.conf &&
+             echo "sentinel parallel-syncs mymaster 1" >> /etc/sentinel.conf &&
+             redis-sentinel /etc/sentinel.conf'
+    depends_on:
+      - redis-master
+      - redis-replica1
+      - redis-replica2
+    ports:
+      - "26380:26379"
+    networks:
+      - redis-sentinel
+
+  sentinel3:
+    image: redis:7-alpine
+    container_name: sentinel3
+    command: >
+      sh -c 'echo "sentinel monitor mymaster redis-master 6379 2" > /etc/sentinel.conf &&
+             echo "sentinel down-after-milliseconds mymaster 5000" >> /etc/sentinel.conf &&
+             echo "sentinel failover-timeout mymaster 10000" >> /etc/sentinel.conf &&
+             echo "sentinel parallel-syncs mymaster 1" >> /etc/sentinel.conf &&
+             redis-sentinel /etc/sentinel.conf'
+    depends_on:
+      - redis-master
+      - redis-replica1
+      - redis-replica2
+    ports:
+      - "26381:26379"
+    networks:
+      - redis-sentinel
+
+volumes:
+  redis_master_data:
+  redis_replica1_data:
+  redis_replica2_data:
+
+networks:
+  redis-sentinel:
+    driver: bridge

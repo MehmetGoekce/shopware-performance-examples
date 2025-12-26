@@ -1,0 +1,36 @@
+<?xml version="1.0" ?>
+<container xmlns="http://symfony.com/schema/dic/services"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xsi:schemaLocation="http://symfony.com/schema/dic/services
+           http://symfony.com/schema/dic/services/services-1.0.xsd">
+
+    <services>
+        <!-- Cache Warmer Service -->
+        <service id="PerformanceExamples\Service\CacheWarmer">
+            <argument type="service" id="product.repository"/>
+            <argument type="service" id="category.repository"/>
+            <argument type="service" id="Shopware\Core\Framework\Adapter\Cache\CacheInvalidator"/>
+            <argument type="service" id="logger"/>
+        </service>
+
+        <!-- Query Optimizer Service -->
+        <service id="PerformanceExamples\Service\QueryOptimizer">
+            <argument type="service" id="product.repository"/>
+            <argument type="service" id="order.repository"/>
+        </service>
+
+        <!-- Redis Sentinel Factory -->
+        <service id="PerformanceExamples\Service\RedisSentinelFactory">
+            <argument>%env(csv:REDIS_SENTINEL_HOSTS)%</argument>
+            <argument>%env(REDIS_SENTINEL_MASTER)%</argument>
+            <argument>%env(default::REDIS_PASSWORD)%</argument>
+            <argument type="service" id="logger"/>
+        </service>
+
+        <!-- Benchmark Command -->
+        <service id="PerformanceExamples\Command\BenchmarkCommand">
+            <argument type="service" id="PerformanceExamples\Service\QueryOptimizer"/>
+            <tag name="console.command"/>
+        </service>
+    </services>
+</container>

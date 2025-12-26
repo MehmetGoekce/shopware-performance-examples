@@ -1,0 +1,55 @@
+# Redis-Konfiguration für Shopware
+# Kapitel 10: Redis High Availability
+
+# Standard Redis (Single Instance)
+# Verwende dies für Entwicklung oder kleine Shops
+parameters:
+    env(REDIS_URL): 'redis://localhost:6379'
+    env(REDIS_SENTINEL_HOSTS): 'localhost:26379,localhost:26380,localhost:26381'
+    env(REDIS_SENTINEL_MASTER): 'mymaster'
+
+# Framework-Cache mit Redis
+framework:
+    cache:
+        default_redis_provider: '%env(REDIS_URL)%'
+
+# Session-Handling mit Redis
+framework:
+    session:
+        handler_id: 'redis://%env(REDIS_URL)%'
+        cookie_secure: auto
+        cookie_samesite: lax
+
+# Shopware Redis-Konfiguration
+shopware:
+    cache:
+        redis_url: '%env(REDIS_URL)%'
+
+    # Cart in Redis (wichtig für HA)
+    cart:
+        redis_url: '%env(REDIS_URL)%'
+
+    # Number Ranges in Redis
+    number_range:
+        redis_url: '%env(REDIS_URL)%'
+
+    # Lock-Store mit Redis
+    lock:
+        enabled: true
+
+# Redis Sentinel Konfiguration (Produktion)
+# Auskommentieren für High Availability Setup:
+#
+# services:
+#     performance.redis_sentinel_factory:
+#         class: PerformanceExamples\Service\RedisSentinelFactory
+#         arguments:
+#             - '%env(csv:REDIS_SENTINEL_HOSTS)%'
+#             - '%env(REDIS_SENTINEL_MASTER)%'
+#             - '%env(default::REDIS_PASSWORD)%'
+#             - '@logger'
+#
+#     # Redis-Client via Sentinel
+#     Redis:
+#         class: Redis
+#         factory: ['@performance.redis_sentinel_factory', 'createConnection']
