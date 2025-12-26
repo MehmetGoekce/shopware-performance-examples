@@ -1,0 +1,154 @@
+# Lighthouse CI Workflow
+# Kapitel 3: Core Web Vitals messen und optimieren
+#
+# Automatisierte Performance-Tests bei jedem Push
+# Prüft Core Web Vitals und gibt Warnungen bei Regression
+#
+# @see https://github.com/MehmetGoekce/shopware-performance-examples
+
+name: Lighthouse CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  # Manueller Trigger für Ad-hoc Tests
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'URL to test (optional)'
+        required: false
+        default: ''
+
+jobs:
+  lighthouse:
+    name: Performance Audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Lighthouse CI
+        run: npm install -g @lhci/cli@0.13.x
+
+      - name: Run Lighthouse CI
+        run: |
+          # URL aus Input oder Standard-URL verwenden
+          URL="${{ github.event.inputs.url }}"
+          if [ -z "$URL" ]; then
+            URL="https://ihr-shop.example.com"
+          fi
+
+          echo "Testing URL: $URL"
+
+          lhci autorun \
+            --collect.url="$URL" \
+            --config=chapters/03-core-web-vitals/lighthouserc.json
+        env:
+          LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
+
+      - name: Upload Lighthouse Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lighthouse-results
+          path: .lighthouseci
+          retention-days: 30
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = '.lighthouseci/manifest.json';
+
+            if (!fs.existsSync(path)) {
+              console.log('No Lighthouse results found');
+              return;
+            }
+
+            const manifest = JSON.parse(fs.readFileSync(path, 'utf8'));
+            const summary = manifest[0]?.summary || {};
+
+            const score = (cat) => Math.round((summary[cat] || 0) * 100);
+            const emoji = (s) => s >= 90 ? '🟢' : s >= 50 ? '🟡' : '🔴';
+
+            const perf = score('performance');
+            const a11y = score('accessibility');
+            const bp = score('best-practices');
+            const seo = score('seo');
+
+            const body = `## Lighthouse Results
+
+            | Category | Score |
+            |----------|-------|
+            | ${emoji(perf)} Performance | ${perf} |
+            | ${emoji(a11y)} Accessibility | ${a11y} |
+            | ${emoji(bp)} Best Practices | ${bp} |
+            | ${emoji(seo)} SEO | ${seo} |
+
+            ### Core Web Vitals
+
+            - **LCP**: ${summary.largestContentfulPaint || 'N/A'}
+            - **CLS**: ${summary.cumulativeLayoutShift || 'N/A'}
+            - **TBT**: ${summary.totalBlockingTime || 'N/A'}
+
+            > 🔗 [Full Report](${manifest[0]?.htmlPath || '#'})
+            `;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+  # Separater Job für Mobile-Tests
+  lighthouse-mobile:
+    name: Mobile Performance Audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Lighthouse CI
+        run: npm install -g @lhci/cli@0.13.x
+
+      - name: Run Lighthouse CI (Mobile)
+        run: |
+          URL="${{ github.event.inputs.url }}"
+          if [ -z "$URL" ]; then
+            URL="https://ihr-shop.example.com"
+          fi
+
+          echo "Testing URL (Mobile): $URL"
+
+          lhci autorun \
+            --collect.url="$URL" \
+            --collect.settings.preset=mobile \
+            --collect.settings.formFactor=mobile \
+            --config=chapters/03-core-web-vitals/lighthouserc.json
+        env:
+          LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
+
+      - name: Upload Mobile Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lighthouse-results-mobile
+          path: .lighthouseci
+          retention-days: 30

@@ -1,0 +1,133 @@
+{#
+ # Font Preloading und Optimierung Template
+ # Kapitel 3: Core Web Vitals messen und optimieren
+ #
+ # Zeigt verschiedene Strategien für Web Font Optimierung:
+ # 1. Preloading kritischer Fonts
+ # 2. font-display: swap für FOIT-Vermeidung
+ # 3. Preconnect für externe Fonts
+ #
+ # @see https://github.com/MehmetGoekce/shopware-performance-examples
+ #}
+
+{% block layout_head_meta %}
+    {{ parent() }}
+
+    {# ============================================================ #}
+    {# Strategie 1: Selbst gehostete Fonts (empfohlen)              #}
+    {# ============================================================ #}
+
+    {# Preload für kritische Fonts - nur die wichtigsten! #}
+    <link
+        rel="preload"
+        href="{{ asset('bundles/storefront/fonts/inter-var.woff2') }}"
+        as="font"
+        type="font/woff2"
+        crossorigin
+    >
+
+    {# Optional: Zweiter Font-Weight wenn häufig verwendet #}
+    <link
+        rel="preload"
+        href="{{ asset('bundles/storefront/fonts/inter-bold.woff2') }}"
+        as="font"
+        type="font/woff2"
+        crossorigin
+    >
+
+    {# ============================================================ #}
+    {# Strategie 2: Google Fonts mit Preconnect                     #}
+    {# (Falls selbst hosten nicht möglich)                          #}
+    {# ============================================================ #}
+
+    {# DNS-Prefetch und Preconnect für schnellere Verbindung #}
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    {# Google Fonts mit display=swap laden #}
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap"
+        rel="stylesheet"
+    >
+{% endblock %}
+
+
+{# ============================================================ #}
+{# CSS: font-display für FOIT-Vermeidung                        #}
+{# ============================================================ #}
+
+{% block layout_head_stylesheet %}
+    {{ parent() }}
+
+    <style>
+        /* Selbst gehostete Fonts mit font-display: swap */
+        @font-face {
+            font-family: 'Inter';
+            src: url('../fonts/inter-var.woff2') format('woff2-variations'),
+                 url('../fonts/inter-var.woff2') format('woff2');
+            font-weight: 100 900;
+            font-style: normal;
+            font-display: swap; /* Kritisch! Verhindert FOIT */
+        }
+
+        @font-face {
+            font-family: 'Inter';
+            src: url('../fonts/inter-italic.woff2') format('woff2');
+            font-weight: 400;
+            font-style: italic;
+            font-display: swap;
+        }
+
+        /* Fallback-Stack für System Fonts */
+        :root {
+            --font-family-base: 'Inter',
+                -apple-system,
+                BlinkMacSystemFont,
+                'Segoe UI',
+                Roboto,
+                'Helvetica Neue',
+                Arial,
+                sans-serif;
+        }
+
+        body {
+            font-family: var(--font-family-base);
+        }
+
+        /* Optional: size-adjust für bessere CLS bei Font-Swap */
+        @font-face {
+            font-family: 'Inter-fallback';
+            src: local('Arial');
+            size-adjust: 107%; /* Anpassen basierend auf Font-Metrik */
+            ascent-override: 90%;
+            descent-override: 22%;
+            line-gap-override: 0%;
+        }
+    </style>
+{% endblock %}
+
+
+{# ============================================================ #}
+{# Fortgeschritten: Kritische CSS inline + Font-Loading API     #}
+{# ============================================================ #}
+
+{% block layout_head_javascript_tracking %}
+    {{ parent() }}
+
+    <script>
+    // Font-Loading API für progressive Enhancement
+    if ('fonts' in document) {
+        // Warten bis kritische Fonts geladen sind
+        Promise.all([
+            document.fonts.load('400 1em Inter'),
+            document.fonts.load('700 1em Inter')
+        ]).then(() => {
+            // Fonts geladen - Klasse für CSS hinzufügen
+            document.documentElement.classList.add('fonts-loaded');
+        }).catch(() => {
+            // Fallback bei Fehler
+            console.warn('Web fonts konnten nicht geladen werden');
+        });
+    }
+    </script>
+{% endblock %}

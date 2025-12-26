@@ -1,0 +1,54 @@
+{
+  "$schema": "https://raw.githubusercontent.com/GoogleChrome/lighthouse-ci/main/docs/configuration.json",
+  "ci": {
+    "collect": {
+      "numberOfRuns": 3,
+      "settings": {
+        "preset": "desktop",
+        "throttling": {
+          "cpuSlowdownMultiplier": 1
+        },
+        "formFactor": "desktop",
+        "screenEmulation": {
+          "mobile": false,
+          "width": 1350,
+          "height": 940,
+          "deviceScaleFactor": 1,
+          "disabled": false
+        }
+      }
+    },
+    "assert": {
+      "assertions": {
+        "categories:performance": ["error", { "minScore": 0.9 }],
+        "categories:accessibility": ["warn", { "minScore": 0.9 }],
+        "categories:best-practices": ["warn", { "minScore": 0.9 }],
+        "categories:seo": ["warn", { "minScore": 0.9 }],
+
+        "largest-contentful-paint": ["error", { "maxNumericValue": 2500 }],
+        "cumulative-layout-shift": ["error", { "maxNumericValue": 0.1 }],
+        "total-blocking-time": ["error", { "maxNumericValue": 200 }],
+
+        "first-contentful-paint": ["warn", { "maxNumericValue": 1800 }],
+        "speed-index": ["warn", { "maxNumericValue": 3400 }],
+        "interactive": ["warn", { "maxNumericValue": 3800 }],
+
+        "uses-responsive-images": "warn",
+        "uses-optimized-images": "warn",
+        "uses-webp-images": "warn",
+        "uses-text-compression": "warn",
+        "render-blocking-resources": "warn",
+        "unminified-css": "warn",
+        "unminified-javascript": "warn",
+        "unused-css-rules": "warn",
+        "unused-javascript": "warn",
+        "efficient-animated-content": "warn",
+        "preload-lcp-image": "warn",
+        "font-display": "warn"
+      }
+    },
+    "upload": {
+      "target": "temporary-public-storage"
+    }
+  }
+}
