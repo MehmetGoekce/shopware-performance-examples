@@ -1,0 +1,116 @@
+# MySQL/MariaDB Konfiguration fuer Shopware 6
+# Kopieren nach: /etc/mysql/mysql.conf.d/shopware.cnf
+# Nach Aenderungen: sudo systemctl restart mysql
+
+[mysqld]
+
+# ==============================================================================
+# SPEICHER-EINSTELLUNGEN
+# ==============================================================================
+
+# InnoDB Buffer Pool: 70-80% des verfuegbaren RAM
+# Anpassen an Ihren Server:
+# - 8 GB RAM Server: 6G
+# - 16 GB RAM Server: 12G
+# - 32 GB RAM Server: 24G
+innodb_buffer_pool_size = 12G
+
+# Buffer Pool Instances (1 pro GB, max 64)
+# Verbessert Parallelitaet bei Multi-Core CPUs
+innodb_buffer_pool_instances = 12
+
+# Log File Groesse (groesser = besser fuer Schreiboperationen)
+# Empfehlung: 25% des Buffer Pool, max 2G
+innodb_log_file_size = 2G
+innodb_log_buffer_size = 64M
+
+# Flush-Verhalten: 1 = Sicher, 2 = Schneller
+# Fuer SSD/NVMe kann 2 sicher sein
+innodb_flush_log_at_trx_commit = 1
+
+# Flush-Methode (O_DIRECT empfohlen fuer Linux)
+innodb_flush_method = O_DIRECT
+
+# ==============================================================================
+# VERBINDUNGEN
+# ==============================================================================
+
+# Max gleichzeitige Verbindungen
+# Formel: PHP-FPM Workers * 2 + Admin/Cron
+max_connections = 200
+
+# Timeout fuer inaktive Verbindungen (Sekunden)
+wait_timeout = 600
+interactive_timeout = 600
+
+# ==============================================================================
+# TEMPORAERE TABELLEN
+# ==============================================================================
+
+# Groesse fuer temporaere Tabellen im RAM
+# Wenn ueberschritten, wird auf Disk geschrieben
+tmp_table_size = 256M
+max_heap_table_size = 256M
+
+# ==============================================================================
+# TABELLEN-CACHE
+# ==============================================================================
+
+# Anzahl offener Tabellen-Handles
+table_open_cache = 4000
+table_definition_cache = 2000
+
+# ==============================================================================
+# SORTIERUNG UND JOINS
+# ==============================================================================
+
+# Buffer pro Verbindung fuer Sortierung
+sort_buffer_size = 4M
+
+# Buffer fuer JOINs ohne Index
+join_buffer_size = 4M
+
+# Buffer fuer sequentielle Reads
+read_buffer_size = 2M
+read_rnd_buffer_size = 4M
+
+# ==============================================================================
+# SLOW QUERY LOG (WICHTIG!)
+# ==============================================================================
+
+# Immer aktivieren - auch in Production
+slow_query_log = 1
+slow_query_log_file = /var/log/mysql/slow.log
+
+# Queries ueber 1 Sekunde loggen
+long_query_time = 1
+
+# Auch Queries ohne Index loggen
+log_queries_not_using_indexes = 1
+
+# ==============================================================================
+# PERFORMANCE SCHEMA
+# ==============================================================================
+
+# Fuer detaillierte Performance-Analyse
+performance_schema = ON
+
+# ==============================================================================
+# BINARY LOG (fuer Replikation)
+# ==============================================================================
+
+# Automatische Bereinigung nach 7 Tagen
+# MySQL 8.0+:
+binlog_expire_logs_seconds = 604800
+# MySQL 5.7:
+# expire_logs_days = 7
+
+# ==============================================================================
+# QUERY CACHE
+# ==============================================================================
+
+# HINWEIS: MySQL 8.0+ hat keinen Query Cache mehr!
+# Verwenden Sie Redis fuer Application-Level Caching.
+# Fuer MySQL 5.7:
+# query_cache_type = 0
+# query_cache_size = 0

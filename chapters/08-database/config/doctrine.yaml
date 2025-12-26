@@ -1,0 +1,62 @@
+# Read Replica Konfiguration fuer Shopware/Doctrine
+# Kopieren nach: config/packages/prod/doctrine.yaml
+#
+# Voraussetzung: MySQL Read Replica eingerichtet
+# .env:
+#   DATABASE_URL=mysql://user:pass@master:3306/shopware
+#   DATABASE_REPLICA_URL=mysql://user:pass@replica:3306/shopware
+
+doctrine:
+    dbal:
+        default_connection: default
+        connections:
+            # Master-Verbindung fuer Schreiboperationen
+            default:
+                url: '%env(DATABASE_URL)%'
+                driver: 'pdo_mysql'
+                charset: utf8mb4
+                server_version: '8.0'
+
+                # Verbindungs-Pooling
+                options:
+                    # Persistent Connections (optional)
+                    # PDO::ATTR_PERSISTENT: true
+
+            # Replica fuer Lesezugriffe
+            replica:
+                url: '%env(DATABASE_REPLICA_URL)%'
+                driver: 'pdo_mysql'
+                charset: utf8mb4
+                server_version: '8.0'
+
+        # Replica-Konfiguration
+        # Lesezugriffe werden automatisch auf Replicas verteilt
+        replica:
+            replica:
+                - replica
+
+# ==============================================================================
+# WANN READ REPLICAS NUTZEN
+# ==============================================================================
+#
+# Sinnvoll bei:
+# - Hoher Leselast (>100 Requests/s)
+# - Reports/Exporte die den Shop nicht blockieren sollen
+# - Backups von Replica statt Master
+#
+# ACHTUNG:
+# - Replikation hat Latenz (Millisekunden bis Sekunden)
+# - Schreibt ein Kunde eine Bestellung, koennte er sie bei
+#   sofortigem Lesen von der Replica noch nicht sehen
+# - Shopware handhabt das korrekt - eigene Queries muessen das beachten!
+#
+# ==============================================================================
+
+# Alternative: Connection Wrapper fuer manuelles Routing
+# Nuetzlich wenn bestimmte Queries immer vom Master lesen sollen
+#
+# services:
+#     App\Database\ReadWriteConnection:
+#         arguments:
+#             $master: '@doctrine.dbal.default_connection'
+#             $replica: '@doctrine.dbal.replica_connection'
