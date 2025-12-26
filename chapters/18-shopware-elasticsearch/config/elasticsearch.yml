@@ -1,0 +1,158 @@
+# Elasticsearch/OpenSearch Server Configuration
+#
+# This is the main ES server configuration file.
+# Place in: /etc/elasticsearch/elasticsearch.yml (ES)
+#        or /etc/opensearch/opensearch.yml (OpenSearch)
+#
+# Documentation:
+# - https://www.elastic.co/guide/en/elasticsearch/reference/current/settings.html
+# - https://opensearch.org/docs/latest/install-and-configure/configuring-opensearch/
+
+# ============================================
+# Cluster Settings
+# ============================================
+
+# Cluster name (all nodes must have same name)
+cluster.name: shopware-cluster
+
+# Node name (unique per node)
+node.name: node-1
+
+# Node roles (for single-node: all roles)
+# For multi-node, specialize: master, data, ingest
+node.roles: [master, data, ingest]
+
+# ============================================
+# Paths
+# ============================================
+
+# Data directory (use fast SSD!)
+path.data: /var/lib/elasticsearch
+
+# Log directory
+path.logs: /var/log/elasticsearch
+
+# ============================================
+# Network
+# ============================================
+
+# Bind address
+# localhost for single-server, 0.0.0.0 for cluster
+network.host: 127.0.0.1
+
+# HTTP port
+http.port: 9200
+
+# Transport port (node-to-node communication)
+transport.port: 9300
+
+# ============================================
+# Discovery (Single-Node)
+# ============================================
+
+# For single-node setup (NO cluster)
+discovery.type: single-node
+
+# For multi-node cluster, use:
+# discovery.seed_hosts:
+#   - node-1.example.com:9300
+#   - node-2.example.com:9300
+# cluster.initial_master_nodes:
+#   - node-1
+#   - node-2
+
+# ============================================
+# Memory
+# ============================================
+
+# Lock memory (prevents swapping)
+# Requires: LimitMEMLOCK=infinity in systemd
+bootstrap.memory_lock: true
+
+# ============================================
+# Thread Pools
+# ============================================
+
+# Search thread pool
+thread_pool:
+    search:
+        size: 4
+        queue_size: 1000
+    write:
+        size: 4
+        queue_size: 1000
+
+# ============================================
+# Indexing
+# ============================================
+
+# Index defaults
+indices:
+    # Query cache (10% of heap)
+    queries:
+        cache:
+            size: 10%
+
+    # Fielddata cache (20% of heap max)
+    fielddata:
+        cache:
+            size: 20%
+
+    # Request cache for aggregations
+    requests:
+        cache:
+            size: 2%
+
+# ============================================
+# Slow Log (for debugging)
+# ============================================
+
+# Search slow log thresholds
+index.search.slowlog.threshold.query.warn: 2s
+index.search.slowlog.threshold.query.info: 1s
+index.search.slowlog.threshold.query.debug: 500ms
+index.search.slowlog.threshold.query.trace: 200ms
+
+# Fetch slow log thresholds
+index.search.slowlog.threshold.fetch.warn: 1s
+index.search.slowlog.threshold.fetch.info: 500ms
+index.search.slowlog.threshold.fetch.debug: 200ms
+index.search.slowlog.threshold.fetch.trace: 100ms
+
+# Indexing slow log thresholds
+index.indexing.slowlog.threshold.index.warn: 10s
+index.indexing.slowlog.threshold.index.info: 5s
+index.indexing.slowlog.threshold.index.debug: 2s
+index.indexing.slowlog.threshold.index.trace: 500ms
+
+# ============================================
+# Security (OpenSearch)
+# ============================================
+
+# For OpenSearch, security plugin is enabled by default
+# Disable for local development:
+# plugins.security.disabled: true
+
+# For production, configure properly:
+# plugins.security.ssl.transport.enabled: true
+# plugins.security.ssl.http.enabled: true
+
+# ============================================
+# Cross-Cluster (Advanced)
+# ============================================
+
+# Remote clusters for cross-cluster search
+# cluster.remote:
+#   cluster_two:
+#     seeds:
+#       - remote-node.example.com:9300
+
+# ============================================
+# Monitoring
+# ============================================
+
+# X-Pack monitoring (Elasticsearch only)
+# xpack.monitoring.collection.enabled: true
+
+# For OpenSearch, use:
+# https://opensearch.org/docs/latest/monitoring-plugins/

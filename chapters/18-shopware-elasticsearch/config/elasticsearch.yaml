@@ -1,0 +1,168 @@
+# Shopware 6 Elasticsearch/OpenSearch Configuration
+#
+# This configuration optimizes Elasticsearch for production use.
+#
+# Place in: config/packages/elasticsearch.yaml
+#
+# Requirements:
+# - Elasticsearch 7.x or OpenSearch 2.x
+# - For Shopware 6.6+: OpenSearch required for Advanced Search 2.0
+
+elasticsearch:
+    # Enable Elasticsearch
+    enabled: true
+
+    # ES/OpenSearch hosts
+    hosts:
+        - '%env(ELASTICSEARCH_URL)%'
+
+    # Enable indexing (set false for read-only replicas)
+    indexing_enabled: true
+
+    # Index prefix for multi-shop setups
+    # Results in: sw_product, sw_category, etc.
+    index_prefix: 'sw_'
+
+    # Request timeout in seconds
+    # Increase for large catalogs (100k+ products)
+    timeout: 30
+
+    # ============================================
+    # Index Settings
+    # ============================================
+    # These settings are applied when creating new indices
+
+    index_settings:
+        # Single-node setup: 1 shard, 0 replicas
+        # Multi-node: Adjust based on cluster size
+        number_of_shards: 1
+        number_of_replicas: 0
+
+        # Refresh interval
+        # Higher = better indexing performance, slower search updates
+        # Production: 5s-30s
+        # Bulk import: -1 (disabled)
+        refresh_interval: '5s'
+
+        # Merge policy for optimal segment count
+        merge:
+            policy:
+                floor_segment: '2mb'
+                max_merged_segment: '5gb'
+                segments_per_tier: 10
+            scheduler:
+                max_thread_count: 2
+
+        # Translog settings for durability
+        translog:
+            # 'async' for better performance
+            # 'request' for guaranteed durability
+            durability: 'async'
+            # Flush threshold
+            flush_threshold_size: '512mb'
+
+        # ============================================
+        # Analysis Configuration
+        # ============================================
+        # German language optimization
+
+        analysis:
+            analyzer:
+                # Default analyzer for text fields
+                default:
+                    type: 'custom'
+                    tokenizer: 'standard'
+                    filter:
+                        - 'lowercase'
+                        - 'german_normalization'
+                        - 'german_stemmer'
+
+                # German-specific analyzer
+                german_analyzer:
+                    type: 'custom'
+                    tokenizer: 'standard'
+                    filter:
+                        - 'lowercase'
+                        - 'german_stop'
+                        - 'german_normalization'
+                        - 'german_stemmer'
+
+                # Autocomplete analyzer for search-as-you-type
+                autocomplete_analyzer:
+                    type: 'custom'
+                    tokenizer: 'standard'
+                    filter:
+                        - 'lowercase'
+                        - 'edge_ngram_filter'
+
+                # Keyword analyzer for exact matches
+                keyword_lowercase:
+                    type: 'custom'
+                    tokenizer: 'keyword'
+                    filter:
+                        - 'lowercase'
+
+            filter:
+                # German stopwords
+                german_stop:
+                    type: 'stop'
+                    stopwords: '_german_'
+
+                # German stemmer (light version for better precision)
+                german_stemmer:
+                    type: 'stemmer'
+                    language: 'light_german'
+
+                # Edge n-grams for autocomplete
+                edge_ngram_filter:
+                    type: 'edge_ngram'
+                    min_gram: 2
+                    max_gram: 15
+                    preserve_original: true
+
+                # Synonym filter (customize for your domain)
+                german_synonyms:
+                    type: 'synonym'
+                    synonyms:
+                        - 'notebook, laptop, mobilrechner'
+                        - 'handy, smartphone, mobiltelefon'
+                        - 'fernseher, tv, television'
+
+# ============================================
+# Shopware Search Configuration
+# ============================================
+shopware:
+    elasticsearch:
+        # Enable for product search
+        product:
+            enabled: true
+
+        # Search field boost values
+        # Higher = more important for relevance
+        product_search_fields:
+            name:
+                boost: 100
+            productNumber:
+                boost: 80
+            manufacturerName:
+                boost: 50
+            description:
+                boost: 20
+            customSearchKeywords:
+                boost: 150
+
+        # Admin worker (DISABLE in production!)
+        # Use CLI workers instead
+        admin_worker:
+            enable_admin_worker: false
+            poll_interval: 30000
+
+# ============================================
+# Environment Variables
+# ============================================
+# Add to .env:
+#
+# ELASTICSEARCH_URL=http://localhost:9200
+#
+# For OpenSearch with auth:
+# ELASTICSEARCH_URL=https://admin:admin@localhost:9200

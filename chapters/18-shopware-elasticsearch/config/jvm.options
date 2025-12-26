@@ -1,0 +1,118 @@
+# JVM Configuration for Elasticsearch/OpenSearch
+#
+# CRITICAL: This file determines ES performance!
+#
+# Place in: /etc/elasticsearch/jvm.options.d/custom.options (ES)
+#        or /etc/opensearch/jvm.options.d/custom.options (OpenSearch)
+#
+# The 50% Rule:
+# - Set heap to 50% of available RAM
+# - Never exceed 31-32 GB (Compressed OOPs limit)
+# - Always set Xms = Xmx (same value!)
+
+# ============================================
+# Heap Size
+# ============================================
+# ADJUST BASED ON YOUR SERVER RAM!
+#
+# Server RAM | Heap Size
+# -----------|----------
+# 8 GB       | 4g
+# 16 GB      | 8g
+# 32 GB      | 16g
+# 64 GB      | 31g (max recommended)
+
+# For 16 GB RAM server:
+-Xms8g
+-Xmx8g
+
+# ============================================
+# Garbage Collector
+# ============================================
+# G1GC recommended for Elasticsearch 7.x+
+
+# Use G1GC
+-XX:+UseG1GC
+
+# G1GC settings
+-XX:G1HeapRegionSize=16m
+-XX:MaxGCPauseMillis=200
+-XX:G1ReservePercent=25
+-XX:InitiatingHeapOccupancyPercent=30
+
+# ============================================
+# Memory Optimization
+# ============================================
+
+# Pre-touch memory pages (reduces latency)
+-XX:+AlwaysPreTouch
+
+# Disable explicit GC calls
+-XX:+DisableExplicitGC
+
+# String deduplication (reduces memory)
+-XX:+UseStringDeduplication
+
+# ============================================
+# Error Handling
+# ============================================
+
+# Heap dump on OOM
+-XX:+HeapDumpOnOutOfMemoryError
+-XX:HeapDumpPath=/var/log/elasticsearch/
+
+# Exit on OOM (let systemd restart)
+-XX:+ExitOnOutOfMemoryError
+
+# ============================================
+# JIT Compiler
+# ============================================
+
+# Reserve code cache
+-XX:ReservedCodeCacheSize=512m
+
+# ============================================
+# Logging
+# ============================================
+
+# GC logging (for debugging)
+# -Xlog:gc*,gc+age=trace,safepoint:file=/var/log/elasticsearch/gc.log:utctime,pid,tags:filecount=32,filesize=64m
+
+# ============================================
+# Performance Tuning
+# ============================================
+
+# Use large pages if available
+# Requires: vm.nr_hugepages in sysctl
+# -XX:+UseLargePages
+
+# Optimize for throughput (not latency)
+# -XX:+UseParallelGC
+
+# ============================================
+# Java Version Specific
+# ============================================
+
+# For Java 17+
+--add-opens java.base/java.lang=ALL-UNNAMED
+--add-opens java.base/java.util=ALL-UNNAMED
+
+# ============================================
+# NOTES
+# ============================================
+#
+# 1. Why max 31GB?
+#    Above 32GB, JVM loses Compressed OOPs optimization
+#    31GB with OOPs is often FASTER than 40GB without
+#
+# 2. Why Xms = Xmx?
+#    Prevents heap resizing during operation
+#    Reduces GC overhead and latency spikes
+#
+# 3. How to check current settings?
+#    curl -s localhost:9200/_nodes/stats/jvm | jq
+#
+# 4. Monitoring heap usage:
+#    curl -s localhost:9200/_nodes/stats/jvm | \
+#      jq '.nodes[].jvm.mem.heap_used_percent'
+#    Keep below 85%!
