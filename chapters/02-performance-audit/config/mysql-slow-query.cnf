@@ -1,0 +1,30 @@
+# MySQL Slow Query Log Konfiguration
+# Kapitel 2: Performance-Audit
+#
+# Installation:
+# 1. sudo cp mysql-slow-query.cnf /etc/mysql/conf.d/
+# 2. sudo systemctl restart mysql
+#
+# @see https://github.com/MehmetGoekce/shopware-performance-examples
+
+[mysqld]
+# Slow Query Log aktivieren
+slow_query_log = 1
+
+# Log-Datei Pfad
+slow_query_log_file = /var/log/mysql/slow.log
+
+# Schwellwert in Sekunden (Queries > 1s werden geloggt)
+long_query_time = 1
+
+# Queries ohne Index loggen
+log_queries_not_using_indexes = 1
+
+# Aber nicht zu viele (Limit pro Minute)
+log_throttle_queries_not_using_indexes = 10
+
+# Auch Admin-Statements loggen
+log_slow_admin_statements = 1
+
+# Row-Count in Output
+log_slow_extra = 1
