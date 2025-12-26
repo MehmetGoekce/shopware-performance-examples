@@ -1,0 +1,190 @@
+{
+  "_comment": "Cloudflare Page Rules für Shopware - via Dashboard oder API erstellen",
+  "_documentation": "https://developers.cloudflare.com/rules/page-rules/",
+
+  "page_rules": [
+    {
+      "_comment": "Statische Assets - Maximales Caching",
+      "targets": [
+        {
+          "target": "url",
+          "constraint": {
+            "operator": "matches",
+            "value": "*shop.de/bundles/*"
+          }
+        }
+      ],
+      "actions": [
+        {
+          "id": "cache_level",
+          "value": "cache_everything"
+        },
+        {
+          "id": "edge_cache_ttl",
+          "value": 2678400
+        },
+        {
+          "id": "browser_cache_ttl",
+          "value": 31536000
+        }
+      ],
+      "priority": 1,
+      "status": "active"
+    },
+    {
+      "_comment": "Media/Bilder - Langes Caching",
+      "targets": [
+        {
+          "target": "url",
+          "constraint": {
+            "operator": "matches",
+            "value": "*shop.de/media/*"
+          }
+        }
+      ],
+      "actions": [
+        {
+          "id": "cache_level",
+          "value": "cache_everything"
+        },
+        {
+          "id": "edge_cache_ttl",
+          "value": 2678400
+        },
+        {
+          "id": "browser_cache_ttl",
+          "value": 31536000
+        },
+        {
+          "id": "polish",
+          "value": "lossless"
+        }
+      ],
+      "priority": 2,
+      "status": "active"
+    },
+    {
+      "_comment": "Theme Assets - Versioniert durch Hash",
+      "targets": [
+        {
+          "target": "url",
+          "constraint": {
+            "operator": "matches",
+            "value": "*shop.de/theme/*"
+          }
+        }
+      ],
+      "actions": [
+        {
+          "id": "cache_level",
+          "value": "cache_everything"
+        },
+        {
+          "id": "edge_cache_ttl",
+          "value": 2678400
+        },
+        {
+          "id": "browser_cache_ttl",
+          "value": 31536000
+        }
+      ],
+      "priority": 3,
+      "status": "active"
+    },
+    {
+      "_comment": "Checkout - NIEMALS cachen",
+      "targets": [
+        {
+          "target": "url",
+          "constraint": {
+            "operator": "matches",
+            "value": "*shop.de/checkout/*"
+          }
+        }
+      ],
+      "actions": [
+        {
+          "id": "cache_level",
+          "value": "bypass"
+        },
+        {
+          "id": "disable_apps",
+          "value": true
+        }
+      ],
+      "priority": 10,
+      "status": "active"
+    },
+    {
+      "_comment": "Account-Bereich - Bypass",
+      "targets": [
+        {
+          "target": "url",
+          "constraint": {
+            "operator": "matches",
+            "value": "*shop.de/account/*"
+          }
+        }
+      ],
+      "actions": [
+        {
+          "id": "cache_level",
+          "value": "bypass"
+        }
+      ],
+      "priority": 11,
+      "status": "active"
+    },
+    {
+      "_comment": "Admin-Bereich - Bypass + Security",
+      "targets": [
+        {
+          "target": "url",
+          "constraint": {
+            "operator": "matches",
+            "value": "*shop.de/admin/*"
+          }
+        }
+      ],
+      "actions": [
+        {
+          "id": "cache_level",
+          "value": "bypass"
+        },
+        {
+          "id": "security_level",
+          "value": "high"
+        }
+      ],
+      "priority": 12,
+      "status": "active"
+    },
+    {
+      "_comment": "Store API - Kein Caching",
+      "targets": [
+        {
+          "target": "url",
+          "constraint": {
+            "operator": "matches",
+            "value": "*shop.de/store-api/*"
+          }
+        }
+      ],
+      "actions": [
+        {
+          "id": "cache_level",
+          "value": "bypass"
+        }
+      ],
+      "priority": 13,
+      "status": "active"
+    }
+  ],
+
+  "_usage_notes": {
+    "create_via_api": "curl -X POST 'https://api.cloudflare.com/client/v4/zones/{zone_id}/pagerules' -H 'Authorization: Bearer {token}' -H 'Content-Type: application/json' -d '{rule}'",
+    "max_rules_free": 3,
+    "max_rules_pro": 20,
+    "priority": "Niedrigere Zahl = höhere Priorität"
+  }
+}

@@ -1,0 +1,144 @@
+{
+  "_comment": "Bunny CDN Pull Zone Konfiguration - via API oder Dashboard",
+  "_documentation": "https://docs.bunny.net/docs/getting-started",
+
+  "pull_zone": {
+    "Name": "shopware-shop",
+    "OriginUrl": "https://origin.shop.de",
+    "Type": 0,
+    "EnableGeoZoneEU": true,
+    "EnableGeoZoneUS": false,
+    "EnableGeoZoneASIA": false,
+
+    "_comment_zones": "EU-only für DACH-fokussierte Shops günstiger",
+
+    "CacheControlMaxAgeOverride": -1,
+    "CacheControlPublicMaxAgeOverride": -1,
+
+    "_comment_cache": "-1 = Origin Cache-Control Header respektieren",
+
+    "EnableCacheSlice": false,
+    "EnableQueryStringSort": true,
+    "QueryStringVaryParameters": [],
+
+    "_comment_query": "Query-Strings ignorieren für bessere Hit-Rate",
+
+    "IgnoreQueryStrings": true,
+
+    "EnableWebPVary": true,
+    "EnableAvifVary": true,
+
+    "_comment_images": "Automatische WebP/AVIF-Konvertierung",
+
+    "EnableSmartCache": false,
+    "EnableMobileVary": false,
+    "EnableCountryCodeVary": false,
+    "EnableHostnameVary": false,
+
+    "_comment_vary": "Vary-Header minimal halten für bessere Hit-Rate",
+
+    "EnableCookieVary": false,
+    "CookieVaryParameters": [],
+
+    "_comment_cookies": "WICHTIG: Cookies NICHT varieren für anonyme Seiten",
+
+    "BlockedIps": [],
+    "BlockedCountries": [],
+    "BlockedReferrers": [],
+
+    "EnableOriginShield": true,
+    "OriginShieldZone": "DE",
+
+    "_comment_shield": "Origin Shield reduziert Origin-Requests drastisch",
+
+    "EnableTLS1": false,
+    "EnableTLS1_1": false,
+
+    "_comment_tls": "Nur TLS 1.2+ für Sicherheit",
+
+    "EnableLogging": true,
+    "LoggingIPAnonymizationEnabled": true,
+
+    "_comment_logging": "IP-Anonymisierung für DSGVO",
+
+    "ErrorPageEnableStatuspageWidget": false,
+    "ErrorPageWhitelabel": false,
+
+    "OriginRetries": 2,
+    "OriginConnectTimeout": 10,
+    "OriginResponseTimeout": 60,
+
+    "RequestLimit": 0,
+    "LimitRatePerSecond": 0,
+    "LimitRateAfter": 0,
+
+    "_comment_limits": "0 = keine Rate-Limits (nur für vertrauenswürdigen Traffic)",
+
+    "BurstSize": 0,
+    "ConnectionLimitPerIPCount": 0,
+
+    "DisableCookies": false,
+    "EnableSafeHop": false,
+    "OriginShieldEnableConcurrencyLimit": false,
+
+    "BudgetRedirectedCountries": [],
+    "FollowRedirects": false,
+
+    "EnableAccessControlOriginHeader": true,
+    "AccessControlOriginHeaderExtensions": [
+      "eot",
+      "ttf",
+      "woff",
+      "woff2",
+      "css",
+      "js"
+    ],
+
+    "_comment_cors": "CORS für Fonts und Assets aktivieren"
+  },
+
+  "edge_rules": [
+    {
+      "_comment": "Checkout/Account vom Caching ausschließen",
+      "ActionType": 3,
+      "Triggers": [
+        {
+          "Type": 0,
+          "PatternMatchingType": 0,
+          "PatternMatches": [
+            "/checkout/*",
+            "/account/*",
+            "/admin/*",
+            "/store-api/*"
+          ]
+        }
+      ],
+      "Description": "Bypass sensitive paths",
+      "Enabled": true
+    },
+    {
+      "_comment": "Statische Assets lange cachen",
+      "ActionType": 2,
+      "ActionParameter1": "31536000",
+      "Triggers": [
+        {
+          "Type": 0,
+          "PatternMatchingType": 0,
+          "PatternMatches": [
+            "/bundles/*",
+            "/theme/*",
+            "/media/*"
+          ]
+        }
+      ],
+      "Description": "Long cache for static assets",
+      "Enabled": true
+    }
+  ],
+
+  "_api_example": {
+    "create_pull_zone": "curl -X POST 'https://api.bunny.net/pullzone' -H 'AccessKey: YOUR_API_KEY' -H 'Content-Type: application/json' -d '{pull_zone}'",
+    "purge_cache": "curl -X POST 'https://api.bunny.net/pullzone/{id}/purgeCache' -H 'AccessKey: YOUR_API_KEY'",
+    "purge_url": "curl -X POST 'https://api.bunny.net/purge?url=https://cdn.shop.de/path' -H 'AccessKey: YOUR_API_KEY'"
+  }
+}

@@ -1,0 +1,124 @@
+# Shopware CDN-Konfiguration
+#
+# Installation:
+#   1. Diese Datei nach config/packages/cdn.yaml kopieren
+#   2. Umgebungsvariablen in .env.local setzen
+#   3. Cache leeren: bin/console cache:clear
+#
+# Quelle: https://developer.shopware.com/docs/guides/hosting/infrastructure/cdn.html
+
+# ============================================================================
+# Option 1: Einfache CDN-URL (empfohlen für Cloudflare/Bunny)
+# ============================================================================
+
+# Bei Cloudflare/Bunny als Proxy: Keine Änderung nötig!
+# Das CDN cached automatisch basierend auf Cache-Control Headern.
+
+# Für separate Asset-Domain (z.B. cdn.shop.de):
+
+shopware:
+    filesystem:
+        public:
+            # CDN-URL für öffentliche Assets
+            url: '%env(ASSET_URL)%'
+        theme:
+            # CDN-URL für Theme-Assets
+            url: '%env(ASSET_URL)%'
+
+    cdn:
+        # Basis-URL für alle CDN-Assets
+        url: '%env(CDN_URL)%'
+
+# ============================================================================
+# Option 2: Separate Domains für verschiedene Asset-Typen
+# ============================================================================
+
+# shopware:
+#     filesystem:
+#         public:
+#             url: 'https://media.shop.de'
+#         theme:
+#             url: 'https://static.shop.de'
+#         sitemap:
+#             url: 'https://static.shop.de'
+#         asset:
+#             url: 'https://static.shop.de'
+
+# ============================================================================
+# Option 3: S3/Cloud Storage als Origin
+# ============================================================================
+
+# shopware:
+#     filesystem:
+#         public:
+#             type: amazon-s3
+#             config:
+#                 bucket: '%env(S3_BUCKET)%'
+#                 region: '%env(S3_REGION)%'
+#                 endpoint: '%env(S3_ENDPOINT)%'
+#                 url: 'https://cdn.shop.de'  # CDN vor S3
+#                 options:
+#                     ACL: public-read
+
+# ============================================================================
+# Cache-Buster für Asset-URLs
+# ============================================================================
+
+# Automatische Cache-Invalidierung durch Hash im URL
+# Aktiviert in: config/packages/shopware.yaml
+
+# shopware:
+#     storefront:
+#         theme:
+#             # Hash in Theme-URLs (empfohlen)
+#             config_loader_id: Shopware\Storefront\Theme\ConfigLoader\DatabaseAvailableThemeProvider
+#
+#     # Asset-Version für Bundle-URLs
+#     asset:
+#         version_strategy: asset_version
+
+# ============================================================================
+# .env.local Beispiel
+# ============================================================================
+
+# Für Cloudflare (Proxy-Modus):
+# ASSET_URL=https://shop.de
+# CDN_URL=https://shop.de
+
+# Für separate CDN-Domain:
+# ASSET_URL=https://cdn.shop.de
+# CDN_URL=https://cdn.shop.de
+
+# Für Bunny CDN Pull Zone:
+# ASSET_URL=https://shop-cdn.b-cdn.net
+# CDN_URL=https://shop-cdn.b-cdn.net
+
+# ============================================================================
+# HTTP-Cache Konfiguration (ergänzend zu CDN)
+# ============================================================================
+
+# config/packages/shopware.yaml
+
+# shopware:
+#     http_cache:
+#         # Reverse Proxy (Varnish) deaktivieren wenn CDN genutzt wird
+#         reverse_proxy:
+#             enabled: false
+#
+#         # Default TTL für gecachte Responses
+#         default_ttl: 7200  # 2 Stunden
+#
+#         # Cache-Tags für selektives Purging
+#         tag_headers:
+#             - 'X-Cache-Tags'
+
+# ============================================================================
+# Performance-Tipp: Preload für kritische Assets
+# ============================================================================
+
+# In Twig-Templates:
+# {% sw_include '@Storefront/storefront/layout/meta.html.twig' %}
+#
+# Oder manuell:
+# <link rel="preload" href="{{ asset('theme/css/all.css') }}" as="style">
+# <link rel="preload" href="{{ asset('bundles/storefront/assets/fonts/Inter.woff2') }}" as="font" type="font/woff2" crossorigin>
