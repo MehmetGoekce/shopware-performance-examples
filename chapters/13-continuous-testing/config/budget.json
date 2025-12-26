@@ -1,0 +1,132 @@
+{
+  "$schema": "https://web.dev/performance-budgets-101/",
+  "_comment": "Performance Budget für Shopware 6 - Standalone-Version für Tools ohne lighthouserc.js",
+
+  "budgets": [
+    {
+      "path": "/*",
+      "name": "Alle Seiten",
+      "timings": [
+        {
+          "metric": "largest-contentful-paint",
+          "budget": 2500,
+          "comment": "Google Core Web Vitals: LCP ≤ 2.5s"
+        },
+        {
+          "metric": "cumulative-layout-shift",
+          "budget": 0.1,
+          "comment": "Google Core Web Vitals: CLS ≤ 0.1"
+        },
+        {
+          "metric": "total-blocking-time",
+          "budget": 300,
+          "comment": "Korreliert mit INP"
+        },
+        {
+          "metric": "first-contentful-paint",
+          "budget": 1800,
+          "comment": "Erster sichtbarer Content"
+        },
+        {
+          "metric": "time-to-interactive",
+          "budget": 3800,
+          "comment": "Seite vollständig interaktiv"
+        }
+      ],
+      "resourceSizes": [
+        {
+          "resourceType": "script",
+          "budget": 300,
+          "comment": "JavaScript-Limit in KB"
+        },
+        {
+          "resourceType": "stylesheet",
+          "budget": 100,
+          "comment": "CSS-Limit in KB"
+        },
+        {
+          "resourceType": "image",
+          "budget": 500,
+          "comment": "Bilder-Limit in KB"
+        },
+        {
+          "resourceType": "font",
+          "budget": 150,
+          "comment": "Fonts-Limit in KB"
+        },
+        {
+          "resourceType": "total",
+          "budget": 2000,
+          "comment": "Gesamtlimit in KB"
+        }
+      ],
+      "resourceCounts": [
+        {
+          "resourceType": "script",
+          "budget": 15,
+          "comment": "Max. JS-Dateien"
+        },
+        {
+          "resourceType": "stylesheet",
+          "budget": 5,
+          "comment": "Max. CSS-Dateien"
+        },
+        {
+          "resourceType": "third-party",
+          "budget": 10,
+          "comment": "Max. Third-Party Requests"
+        },
+        {
+          "resourceType": "total",
+          "budget": 75,
+          "comment": "Max. Requests insgesamt"
+        }
+      ]
+    },
+    {
+      "path": "/",
+      "name": "Startseite",
+      "timings": [
+        {
+          "metric": "largest-contentful-paint",
+          "budget": 2000,
+          "comment": "Startseite sollte schneller sein"
+        }
+      ],
+      "resourceSizes": [
+        {
+          "resourceType": "total",
+          "budget": 1500,
+          "comment": "Startseite kompakter"
+        }
+      ]
+    },
+    {
+      "path": "/checkout/*",
+      "name": "Checkout",
+      "timings": [
+        {
+          "metric": "largest-contentful-paint",
+          "budget": 2000,
+          "comment": "Checkout = Conversion-kritisch"
+        },
+        {
+          "metric": "total-blocking-time",
+          "budget": 200,
+          "comment": "Checkout muss reaktiv sein"
+        }
+      ]
+    },
+    {
+      "path": "/detail/*",
+      "name": "Produktdetail",
+      "resourceSizes": [
+        {
+          "resourceType": "image",
+          "budget": 800,
+          "comment": "Produktbilder dürfen größer sein"
+        }
+      ]
+    }
+  ]
+}
