@@ -32,5 +32,13 @@
             <argument type="service" id="PerformanceExamples\Service\QueryOptimizer"/>
             <tag name="console.command"/>
         </service>
+
+        <!-- Chapter 1: HTTP Cache Subscriber -->
+        <service id="PerformanceExamples\Subscriber\HttpCacheSubscriber">
+            <tag name="kernel.event_subscriber"/>
+        </service>
+
+        <!-- Chapter 1: Performance ROI Calculator -->
+        <service id="PerformanceExamples\Service\PerformanceRoiCalculator"/>
     </services>
 </container>
