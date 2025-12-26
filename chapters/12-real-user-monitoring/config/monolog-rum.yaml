@@ -1,0 +1,34 @@
+# Monolog Konfiguration für RUM-Logging
+#
+# Installation:
+#   Kopieren nach: config/packages/monolog-rum.yaml
+#
+# Log-Datei: var/log/rum.log (täglich rotiert)
+
+monolog:
+    channels:
+        - rum
+
+    handlers:
+        # RUM-spezifischer Handler
+        rum:
+            type: rotating_file
+            path: '%kernel.logs_dir%/rum.log'
+            level: info
+            channels: ['rum']
+            max_files: 30
+            formatter: monolog.formatter.json
+
+        # Optional: RUM-Daten auch an externes System senden
+        # rum_graylog:
+        #     type: gelf
+        #     publisher:
+        #         hostname: graylog.example.com
+        #         port: 12201
+        #     level: info
+        #     channels: ['rum']
+
+# Für Produktion: JSON-Format für einfacheres Parsing
+services:
+    monolog.formatter.json:
+        class: Monolog\Formatter\JsonFormatter

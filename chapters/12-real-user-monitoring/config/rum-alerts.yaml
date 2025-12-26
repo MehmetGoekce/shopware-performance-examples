@@ -1,0 +1,56 @@
+# RUM Alert Konfiguration
+#
+# Installation:
+#   1. Kopieren nach: config/packages/rum-alerts.yaml
+#   2. Umgebungsvariablen setzen
+#
+# Umgebungsvariablen:
+#   RUM_SLACK_WEBHOOK=https://hooks.slack.com/services/...
+#   RUM_ALERT_EMAIL=ops@example.com
+
+parameters:
+    rum.slack_webhook: '%env(default::RUM_SLACK_WEBHOOK)%'
+    rum.alert_email: '%env(default::RUM_ALERT_EMAIL)%'
+
+services:
+    App\Service\RumAlertService:
+        arguments:
+            $slackWebhook: '%rum.slack_webhook%'
+            $alertEmail: '%rum.alert_email%'
+
+# =============================================================================
+# Schwellenwerte (referenz - hardcoded in RumAlertService)
+# =============================================================================
+#
+# Diese Werte basieren auf den offiziellen Core Web Vitals Schwellenwerten.
+# Sie können in RumAlertService.php angepasst werden.
+#
+# Metrik     | Warning | Critical | Quelle
+# -----------|---------|----------|----------------------------------
+# LCP (ms)   | 2500    | 4000     | web.dev/articles/lcp
+# INP (ms)   | 200     | 500      | web.dev/articles/inp
+# CLS        | 0.1     | 0.25     | web.dev/articles/cls
+# FCP (ms)   | 1800    | 3000     | web.dev/articles/fcp
+# TTFB (ms)  | 800     | 1800     | web.dev/articles/ttfb
+#
+# =============================================================================
+# Mindestanzahl Samples
+# =============================================================================
+#
+# Alerts werden nur ausgelöst, wenn mindestens 100 Samples vorliegen.
+# Dies verhindert False Positives bei geringem Traffic.
+#
+# Für High-Traffic-Sites: 500+ Samples empfohlen
+# Für Low-Traffic-Sites: 50 Samples als Minimum
+#
+# =============================================================================
+# Cron-Job Konfiguration
+# =============================================================================
+#
+# Empfohlener Intervall: Alle 15 Minuten
+#
+# /etc/cron.d/rum-alerts:
+# */15 * * * * www-data cd /var/www/shop && bin/console rum:check-alerts
+#
+# Für sofortige Alerts bei kritischen Problemen:
+# */5 * * * * www-data cd /var/www/shop && bin/console rum:check-alerts --critical-only
