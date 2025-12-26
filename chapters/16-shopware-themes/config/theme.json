@@ -1,0 +1,136 @@
+{
+  "$schema": "https://developer.shopware.com/schemas/theme.json",
+  "name": "PerformanceTheme",
+  "technicalName": "PerformanceTheme",
+  "author": "MEMOTECH",
+  "description": {
+    "en-GB": "Performance-optimized Shopware 6 theme with selective Bootstrap imports",
+    "de-DE": "Performance-optimiertes Shopware 6 Theme mit selektiven Bootstrap-Imports"
+  },
+  "views": [
+    "@Storefront",
+    "@Plugins",
+    "@PerformanceTheme"
+  ],
+  "style": [
+    "app/storefront/src/scss/overrides.scss",
+    "@Storefront",
+    "app/storefront/src/scss/base.scss"
+  ],
+  "script": [
+    "@Storefront",
+    "app/storefront/dist/storefront/js/performance-theme.js"
+  ],
+  "asset": [
+    "@Storefront",
+    "app/storefront/src/assets"
+  ],
+  "previewMedia": "app/storefront/src/assets/preview.png",
+  "config": {
+    "blocks": {
+      "performance": {
+        "label": {
+          "en-GB": "Performance Settings",
+          "de-DE": "Performance-Einstellungen"
+        }
+      }
+    },
+    "sections": {
+      "lazyLoading": {
+        "label": {
+          "en-GB": "Lazy Loading",
+          "de-DE": "Lazy Loading"
+        }
+      },
+      "criticalCss": {
+        "label": {
+          "en-GB": "Critical CSS",
+          "de-DE": "Critical CSS"
+        }
+      },
+      "plugins": {
+        "label": {
+          "en-GB": "Plugin Optimization",
+          "de-DE": "Plugin-Optimierung"
+        }
+      }
+    },
+    "fields": {
+      "enableLazyLoadImages": {
+        "label": {
+          "en-GB": "Enable lazy loading for images",
+          "de-DE": "Lazy Loading für Bilder aktivieren"
+        },
+        "type": "switch",
+        "value": true,
+        "editable": true,
+        "block": "performance",
+        "section": "lazyLoading",
+        "helpText": {
+          "en-GB": "Loads images only when they enter the viewport. Excludes above-the-fold images.",
+          "de-DE": "Lädt Bilder erst, wenn sie sichtbar werden. Above-the-fold Bilder sind ausgenommen."
+        }
+      },
+      "enableCriticalCss": {
+        "label": {
+          "en-GB": "Enable Critical CSS",
+          "de-DE": "Critical CSS aktivieren"
+        },
+        "type": "switch",
+        "value": false,
+        "editable": true,
+        "block": "performance",
+        "section": "criticalCss",
+        "helpText": {
+          "en-GB": "Inlines critical CSS and loads rest async. Requires manual CSS extraction.",
+          "de-DE": "Lädt kritisches CSS inline und Rest async. Erfordert manuelle CSS-Extraktion."
+        }
+      },
+      "disableDatePicker": {
+        "label": {
+          "en-GB": "Disable DatePicker Plugin",
+          "de-DE": "DatePicker Plugin deaktivieren"
+        },
+        "type": "switch",
+        "value": true,
+        "editable": true,
+        "block": "performance",
+        "section": "plugins",
+        "helpText": {
+          "en-GB": "Saves 115 KB JavaScript (Flatpickr). Enable only if you use date inputs.",
+          "de-DE": "Spart 115 KB JavaScript (Flatpickr). Nur aktivieren wenn Datumseingaben benötigt."
+        }
+      },
+      "disableImageZoom": {
+        "label": {
+          "en-GB": "Disable ImageZoom Plugin",
+          "de-DE": "ImageZoom Plugin deaktivieren"
+        },
+        "type": "switch",
+        "value": false,
+        "editable": true,
+        "block": "performance",
+        "section": "plugins",
+        "helpText": {
+          "en-GB": "Saves 72 KB JavaScript (Hammer.js). Disable if zoom is not needed.",
+          "de-DE": "Spart 72 KB JavaScript (Hammer.js). Deaktivieren wenn Zoom nicht benötigt."
+        }
+      },
+      "asyncSliderLoading": {
+        "label": {
+          "en-GB": "Async Slider Loading",
+          "de-DE": "Slider async laden"
+        },
+        "type": "switch",
+        "value": true,
+        "editable": true,
+        "block": "performance",
+        "section": "plugins",
+        "helpText": {
+          "en-GB": "Loads TinySlider (100 KB) only when slider enters viewport.",
+          "de-DE": "Lädt TinySlider (100 KB) erst wenn Slider sichtbar wird."
+        }
+      }
+    }
+  }
+}

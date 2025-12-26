@@ -1,0 +1,249 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicholasbraun/lighthouse-budget/main/schema.json",
+  "description": "Shopware 6 Theme Performance Budget",
+  "budgets": [
+    {
+      "path": "/*",
+      "name": "Global Performance Budget",
+      "resourceSizes": [
+        {
+          "resourceType": "script",
+          "budget": 300
+        },
+        {
+          "resourceType": "stylesheet",
+          "budget": 150
+        },
+        {
+          "resourceType": "image",
+          "budget": 500
+        },
+        {
+          "resourceType": "font",
+          "budget": 100
+        },
+        {
+          "resourceType": "total",
+          "budget": 1500
+        },
+        {
+          "resourceType": "third-party",
+          "budget": 200
+        }
+      ],
+      "resourceCounts": [
+        {
+          "resourceType": "script",
+          "budget": 15
+        },
+        {
+          "resourceType": "stylesheet",
+          "budget": 5
+        },
+        {
+          "resourceType": "image",
+          "budget": 50
+        },
+        {
+          "resourceType": "font",
+          "budget": 4
+        },
+        {
+          "resourceType": "third-party",
+          "budget": 10
+        }
+      ],
+      "timings": [
+        {
+          "metric": "first-contentful-paint",
+          "budget": 1800
+        },
+        {
+          "metric": "largest-contentful-paint",
+          "budget": 2500
+        },
+        {
+          "metric": "cumulative-layout-shift",
+          "budget": 0.1
+        },
+        {
+          "metric": "total-blocking-time",
+          "budget": 300
+        },
+        {
+          "metric": "interactive",
+          "budget": 3800
+        },
+        {
+          "metric": "speed-index",
+          "budget": 3400
+        }
+      ]
+    },
+    {
+      "path": "/",
+      "name": "Homepage Budget",
+      "resourceSizes": [
+        {
+          "resourceType": "script",
+          "budget": 250
+        },
+        {
+          "resourceType": "stylesheet",
+          "budget": 100
+        },
+        {
+          "resourceType": "image",
+          "budget": 400
+        },
+        {
+          "resourceType": "total",
+          "budget": 1200
+        }
+      ],
+      "timings": [
+        {
+          "metric": "first-contentful-paint",
+          "budget": 1500
+        },
+        {
+          "metric": "largest-contentful-paint",
+          "budget": 2000
+        },
+        {
+          "metric": "cumulative-layout-shift",
+          "budget": 0.05
+        }
+      ]
+    },
+    {
+      "path": "/*/product/*",
+      "name": "Product Detail Page Budget",
+      "resourceSizes": [
+        {
+          "resourceType": "script",
+          "budget": 280
+        },
+        {
+          "resourceType": "stylesheet",
+          "budget": 120
+        },
+        {
+          "resourceType": "image",
+          "budget": 600
+        },
+        {
+          "resourceType": "total",
+          "budget": 1400
+        }
+      ],
+      "timings": [
+        {
+          "metric": "first-contentful-paint",
+          "budget": 1600
+        },
+        {
+          "metric": "largest-contentful-paint",
+          "budget": 2200
+        },
+        {
+          "metric": "cumulative-layout-shift",
+          "budget": 0.1
+        }
+      ]
+    },
+    {
+      "path": "/*/listing/*",
+      "name": "Category Listing Budget",
+      "resourceSizes": [
+        {
+          "resourceType": "script",
+          "budget": 280
+        },
+        {
+          "resourceType": "stylesheet",
+          "budget": 130
+        },
+        {
+          "resourceType": "image",
+          "budget": 800
+        },
+        {
+          "resourceType": "total",
+          "budget": 1600
+        }
+      ],
+      "timings": [
+        {
+          "metric": "first-contentful-paint",
+          "budget": 1700
+        },
+        {
+          "metric": "largest-contentful-paint",
+          "budget": 2400
+        }
+      ]
+    },
+    {
+      "path": "/checkout/*",
+      "name": "Checkout Budget",
+      "resourceSizes": [
+        {
+          "resourceType": "script",
+          "budget": 320
+        },
+        {
+          "resourceType": "stylesheet",
+          "budget": 100
+        },
+        {
+          "resourceType": "total",
+          "budget": 800
+        }
+      ],
+      "timings": [
+        {
+          "metric": "first-contentful-paint",
+          "budget": 1500
+        },
+        {
+          "metric": "interactive",
+          "budget": 3500
+        },
+        {
+          "metric": "total-blocking-time",
+          "budget": 200
+        }
+      ]
+    }
+  ],
+  "assertions": {
+    "performance-budget": ["error", {"budget": 85}],
+    "resource-summary:script:size": ["warn", {"maxNumericValue": 307200}],
+    "resource-summary:stylesheet:size": ["warn", {"maxNumericValue": 153600}],
+    "first-contentful-paint": ["error", {"maxNumericValue": 1800}],
+    "largest-contentful-paint": ["error", {"maxNumericValue": 2500}],
+    "cumulative-layout-shift": ["warn", {"maxNumericValue": 0.1}],
+    "total-blocking-time": ["warn", {"maxNumericValue": 300}],
+    "interactive": ["warn", {"maxNumericValue": 3800}],
+    "uses-responsive-images": "warn",
+    "uses-webp-images": "warn",
+    "uses-optimized-images": "warn",
+    "unminified-javascript": "error",
+    "unminified-css": "error",
+    "render-blocking-resources": "warn",
+    "unused-javascript": "warn",
+    "unused-css-rules": "warn"
+  },
+  "metadata": {
+    "shopwareVersion": "6.6+",
+    "themeType": "performance-optimized",
+    "lastUpdated": "2024-12-26",
+    "notes": [
+      "Budget basiert auf 3G Mobilfunk (1.6 Mbps, 150ms RTT)",
+      "LCP-Ziel: 2.5s (Good), FCP-Ziel: 1.8s (Good)",
+      "JavaScript-Limit: 300 KB (nach @StorefrontBootstrap + Plugin-Entfernung)",
+      "CSS-Limit: 150 KB (nach selektiven Bootstrap-Imports)"
+    ]
+  }
+}

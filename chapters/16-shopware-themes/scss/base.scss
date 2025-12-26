@@ -1,0 +1,175 @@
+// ============================================================
+// Performance-Optimierte Basis-Styles
+// ============================================================
+//
+// Diese Datei lädt nur die tatsächlich benötigten Bootstrap-
+// Komponenten und eigene Styles.
+//
+// Für maximale Kontrolle kann @StorefrontBootstrap verwendet werden:
+// "style": [
+//   "@StorefrontBootstrap",  // Statt @Storefront
+//   "app/storefront/src/scss/base.scss"
+// ]
+// Dies spart ~50% CSS-Grösse, erfordert aber mehr manuelle Arbeit.
+
+// ============================================================
+// Bootstrap Core (immer benötigt)
+// ============================================================
+
+// Diese Imports sind erforderlich für alle anderen Komponenten
+@import "~bootstrap/scss/functions";
+@import "~bootstrap/scss/variables";
+@import "~bootstrap/scss/variables-dark";
+@import "~bootstrap/scss/maps";
+@import "~bootstrap/scss/mixins";
+@import "~bootstrap/scss/root";
+
+// ============================================================
+// Bootstrap Components (selektiv!)
+// ============================================================
+
+// Layout (fast immer benötigt)
+@import "~bootstrap/scss/reboot";
+@import "~bootstrap/scss/type";
+@import "~bootstrap/scss/containers";
+@import "~bootstrap/scss/grid";
+
+// Komponenten (nach Bedarf)
+@import "~bootstrap/scss/buttons";
+@import "~bootstrap/scss/button-group";
+@import "~bootstrap/scss/forms";
+@import "~bootstrap/scss/card";
+@import "~bootstrap/scss/nav";
+@import "~bootstrap/scss/navbar";
+@import "~bootstrap/scss/dropdown";
+@import "~bootstrap/scss/modal";
+@import "~bootstrap/scss/close";
+@import "~bootstrap/scss/alert";
+@import "~bootstrap/scss/badge";
+@import "~bootstrap/scss/breadcrumb";
+@import "~bootstrap/scss/pagination";
+
+// Offcanvas für Mobile Menu
+@import "~bootstrap/scss/offcanvas";
+
+// Spinners für Loading States
+@import "~bootstrap/scss/spinners";
+
+// ============================================================
+// Komponenten die oft NICHT benötigt werden
+// (Auskommentiert = kleineres CSS Bundle)
+// ============================================================
+
+// @import "~bootstrap/scss/accordion";      // Wenn keine Accordions
+// @import "~bootstrap/scss/carousel";       // Wenn kein Bootstrap Carousel
+// @import "~bootstrap/scss/list-group";     // Selten benötigt
+// @import "~bootstrap/scss/placeholders";   // Skeleton Loading
+// @import "~bootstrap/scss/popover";        // Wenn keine Popovers
+// @import "~bootstrap/scss/progress";       // Wenn keine Progress Bars
+// @import "~bootstrap/scss/toasts";         // Wenn keine Toasts
+// @import "~bootstrap/scss/tooltip";        // Wenn keine Tooltips (spart auch JS)
+
+// ============================================================
+// Utilities (selektiv laden)
+// ============================================================
+
+// Alle Utilities (einfach, aber grösser)
+// @import "~bootstrap/scss/utilities";
+// @import "~bootstrap/scss/utilities/api";
+
+// ODER: Nur benötigte Utilities
+@import "~bootstrap/scss/helpers";
+
+// Selektive Utility-Imports
+.d-none { display: none !important; }
+.d-block { display: block !important; }
+.d-flex { display: flex !important; }
+.d-inline-flex { display: inline-flex !important; }
+.d-grid { display: grid !important; }
+
+// Responsive Display Utilities
+@each $breakpoint in map-keys($grid-breakpoints) {
+  @include media-breakpoint-up($breakpoint) {
+    $infix: breakpoint-infix($breakpoint, $grid-breakpoints);
+
+    .d#{$infix}-none { display: none !important; }
+    .d#{$infix}-block { display: block !important; }
+    .d#{$infix}-flex { display: flex !important; }
+  }
+}
+
+// Flexbox Utilities
+.flex-row { flex-direction: row !important; }
+.flex-column { flex-direction: column !important; }
+.justify-content-start { justify-content: flex-start !important; }
+.justify-content-center { justify-content: center !important; }
+.justify-content-end { justify-content: flex-end !important; }
+.justify-content-between { justify-content: space-between !important; }
+.align-items-start { align-items: flex-start !important; }
+.align-items-center { align-items: center !important; }
+.align-items-end { align-items: flex-end !important; }
+
+// Spacing Utilities (nur häufig genutzte)
+@each $prop, $abbrev in (margin: m, padding: p) {
+  @each $size, $length in $spacers {
+    .#{$abbrev}-#{$size} { #{$prop}: $length !important; }
+    .#{$abbrev}t-#{$size}, .#{$abbrev}y-#{$size} { #{$prop}-top: $length !important; }
+    .#{$abbrev}b-#{$size}, .#{$abbrev}y-#{$size} { #{$prop}-bottom: $length !important; }
+    .#{$abbrev}s-#{$size}, .#{$abbrev}x-#{$size} { #{$prop}-left: $length !important; }
+    .#{$abbrev}e-#{$size}, .#{$abbrev}x-#{$size} { #{$prop}-right: $length !important; }
+  }
+}
+
+// ============================================================
+// Eigene Komponenten
+// ============================================================
+
+// Header
+@import "./components/header";
+
+// Navigation
+@import "./components/navigation";
+
+// Product
+@import "./components/product-box";
+@import "./components/product-detail";
+
+// Checkout
+@import "./components/checkout";
+
+// Footer
+@import "./components/footer";
+
+// ============================================================
+// Performance Optimierungen
+// ============================================================
+
+// GPU-beschleunigte Animationen
+.gpu-accelerated {
+  transform: translateZ(0);
+  will-change: transform;
+}
+
+// Content-Visibility für Off-Screen Content
+.content-lazy {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 500px; // Geschätzte Höhe
+}
+
+// Kritische Bilder
+.lcp-image {
+  // Keine lazy loading für LCP-Bilder
+  // loading: eager ist default, aber explizit für Klarheit
+}
+
+// Lazy Loading Placeholder
+.lazy-placeholder {
+  background-color: #f0f0f0;
+  aspect-ratio: 1 / 1;
+}
+
+// ============================================================
+// Print Styles (optional, reduziert CSS wenn nicht benötigt)
+// ============================================================
+
+// @import "~bootstrap/scss/print"; // Nur wenn Print benötigt
