@@ -1,0 +1,84 @@
+# FroshPlatformThumbnailProcessor Konfiguration
+# Kapitel 4: Bildoptimierung
+#
+# Dieses Plugin generiert Thumbnails on-the-fly und unterstützt WebP.
+# Kopieren nach: config/packages/frosh_thumbnail.yaml
+#
+# Installation:
+#   composer require frosh/platform-thumbnail-processor
+#   bin/console plugin:refresh
+#   bin/console plugin:install --activate FroshPlatformThumbnailProcessor
+#
+# @see https://github.com/FriendsOfShopware/FroshPlatformThumbnailProcessor
+# @see https://github.com/MehmetGoekce/shopware-performance-examples
+
+frosh_platform_thumbnail_processor:
+    # ============================================================
+    # Bildformat
+    # ============================================================
+    # Unterstützte Formate: original, webp, avif
+    # WebP hat ~96% Browser-Support und 25-34% kleinere Dateien
+    format: webp
+
+    # ============================================================
+    # Qualität
+    # ============================================================
+    # Wert zwischen 0-100
+    # 80 ist ein guter Kompromiss zwischen Qualität und Dateigröße
+    # Unter 70: Artefakte sichtbar
+    # Über 85: Größere Dateien ohne sichtbaren Qualitätsgewinn
+    quality: 80
+
+    # ============================================================
+    # Hintergrundfarbe
+    # ============================================================
+    # Für transparente Bilder (PNG) die zu JPEG/WebP konvertiert werden
+    # Hex-Farbe ohne #
+    background_color: 'ffffff'
+
+    # ============================================================
+    # Cache-Konfiguration
+    # ============================================================
+    # Wie lange generierte Thumbnails gecacht werden (in Sekunden)
+    # 604800 = 7 Tage
+    # 2592000 = 30 Tage
+    cache_max_age: 2592000
+
+    # ============================================================
+    # Adapter
+    # ============================================================
+    # Standard: GD (auf den meisten Servern verfügbar)
+    # Alternative: imagick (bessere Qualität, aber muss installiert sein)
+    adapter: gd
+
+# ============================================================
+# Erweiterte Konfiguration (Optional)
+# ============================================================
+
+# Wenn Sie imgproxy oder einen externen Bildservice nutzen:
+# frosh_platform_thumbnail_processor:
+#     url_template: 'https://cdn.example.com/media/{mediaPath}?width={width}&format=webp&quality=80'
+
+# ============================================================
+# Alternative: AVIF für maximale Kompression
+# ============================================================
+# AVIF hat ~94% Browser-Support und 35-50% kleinere Dateien
+# Achtung: Langsamer zu generieren als WebP
+
+# frosh_platform_thumbnail_processor:
+#     format: avif
+#     quality: 75  # AVIF braucht niedrigere Qualitätswerte
+
+# ============================================================
+# Shopware Standard-Thumbnail-Konfiguration
+# ============================================================
+# Die Thumbnail-Größen werden in Shopware Admin konfiguriert:
+# Einstellungen → System → Medien → Thumbnails
+#
+# Standard-Größen:
+#   400×400  - Produktboxen, Warenkorb
+#   800×800  - Produktdetail (Mobile)
+#   1920×1920 - Hero-Bilder, Produktdetail (Desktop)
+#
+# Nach Änderungen ausführen:
+#   bin/console media:generate-thumbnails
