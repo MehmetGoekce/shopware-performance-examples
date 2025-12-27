@@ -1,0 +1,217 @@
+# Experiment Definitions
+#
+# Definiert aktive Experimente mit Performance-Budgets und Traffic-Split.
+#
+# @author Mehmet Gökçe
+# @since 1.0.0
+
+experiments:
+  # Checkout Optimization
+  checkout_optimization:
+    name: "Checkout Performance Optimization"
+    description: "Testet optimierten Checkout-Flow mit reduziertem JavaScript"
+    status: running
+    start_date: "2024-01-15"
+
+    variants:
+      - name: control
+        description: "Standard Checkout"
+        traffic_percentage: 50
+
+      - name: optimized_ajax
+        description: "AJAX-basierter Checkout ohne Page Reload"
+        traffic_percentage: 50
+
+    performance_budget:
+      lcp: 2500      # Largest Contentful Paint in ms
+      fid: 100       # First Input Delay in ms
+      cls: 0.1       # Cumulative Layout Shift
+      ttfb: 600      # Time to First Byte in ms
+
+    target_metrics:
+      - lcp
+      - fid
+      - cls
+      - time_to_interactive
+
+    min_sample_size: 1000
+    duration_days: 14
+
+    targeting:
+      sales_channels:
+        - default
+      devices:
+        - desktop
+        - mobile
+
+  # Product Listing Lazy Loading
+  product_listing_lazy_loading:
+    name: "Product Listing Image Lazy Loading"
+    description: "Native Lazy Loading vs Intersection Observer"
+    status: running
+    start_date: "2024-01-20"
+
+    variants:
+      - name: control
+        description: "Eager Loading (Standard)"
+        traffic_percentage: 33
+
+      - name: lazy_native
+        description: "Native Lazy Loading (loading=lazy)"
+        traffic_percentage: 33
+
+      - name: lazy_intersection
+        description: "Intersection Observer + Blur Placeholder"
+        traffic_percentage: 34
+
+    performance_budget:
+      lcp: 2000
+      cls: 0.1
+      resource_count: 50
+
+    target_metrics:
+      - lcp
+      - cls
+      - load_event_end
+      - resource_count
+
+    min_sample_size: 1500
+    duration_days: 21
+
+  # Search Optimization
+  search_optimization:
+    name: "Elasticsearch vs Database Search"
+    description: "Vergleicht Performance von Elasticsearch vs MySQL"
+    status: draft
+
+    variants:
+      - name: control
+        description: "MySQL Fulltext Search"
+        traffic_percentage: 50
+
+      - name: elasticsearch
+        description: "Elasticsearch with Caching"
+        traffic_percentage: 50
+
+    performance_budget:
+      response_time: 200   # Server Response Time in ms
+      ttfb: 150
+      memory_used: 50      # MB
+
+    target_metrics:
+      - response_time
+      - ttfb
+      - memory_used
+      - cpu_time
+
+    min_sample_size: 2000
+    duration_days: 14
+
+  # Mobile PWA
+  mobile_pwa_test:
+    name: "Progressive Web App Features"
+    description: "Service Worker Caching Impact"
+    status: paused
+    pause_reason: "Performance budget exceeded (LCP > 3000ms)"
+
+    variants:
+      - name: control
+        description: "Standard Mobile Site"
+        traffic_percentage: 50
+
+      - name: pwa_enabled
+        description: "PWA with Service Worker"
+        traffic_percentage: 50
+
+    performance_budget:
+      lcp: 2500
+      fid: 100
+      cls: 0.1
+      js_heap_size: 100    # MB
+
+    target_metrics:
+      - lcp
+      - fid
+      - cls
+      - ttfb
+      - js_heap_size
+
+    min_sample_size: 1000
+    duration_days: 14
+
+    targeting:
+      devices:
+        - mobile
+        - tablet
+
+  # Critical CSS
+  critical_css_test:
+    name: "Critical CSS Extraction"
+    description: "Inline Critical CSS vs Standard Loading"
+    status: completed
+    start_date: "2024-01-01"
+    end_date: "2024-01-15"
+    winner: critical_inline
+
+    variants:
+      - name: control
+        description: "Standard CSS Loading"
+        traffic_percentage: 50
+
+      - name: critical_inline
+        description: "Inline Critical CSS + Async Load Rest"
+        traffic_percentage: 50
+
+    performance_budget:
+      fcp: 1500      # First Contentful Paint
+      lcp: 2500
+      cls: 0.1
+
+    target_metrics:
+      - fcp
+      - lcp
+      - cls
+
+    results:
+      improvement_percent: 18.5
+      p_value: 0.003
+      statistical_power: 0.92
+      recommendation: "Deploy critical_inline to 100% traffic"
+
+    min_sample_size: 1200
+    duration_days: 14
+
+# Global Settings
+settings:
+  # Cookie Settings
+  cookie_prefix: "exp_"
+  cookie_lifetime_days: 30
+
+  # Performance Monitoring
+  auto_pause_on_budget_exceeded: true
+  alert_webhook: "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+
+  # Sample Size
+  default_min_sample_size: 1000
+  default_confidence_level: 0.95
+
+  # Traffic Ramping
+  enable_gradual_rollout: true
+  rollout_steps:
+    - percentage: 10
+      duration_days: 2
+    - percentage: 25
+      duration_days: 3
+    - percentage: 50
+      duration_days: 5
+    - percentage: 100
+      duration_days: 0
+
+  # Metrics Collection
+  collect_server_metrics: true
+  collect_client_metrics: true
+  flush_interval_seconds: 60
+
+  # Data Retention
+  retention_days: 90
+  auto_cleanup: true

@@ -1,0 +1,302 @@
+# Feature Flags Configuration
+#
+# Lightweight Feature Flags für Performance-Experimente und Feature-Rollouts.
+#
+# @author Mehmet Gökçe
+# @since 1.0.0
+
+flags:
+  # Optimized Checkout
+  optimized_checkout:
+    enabled: true
+    rollout_percent: 25              # Schrittweiser Rollout
+    description: "AJAX-basierter Checkout ohne Page Reload"
+
+    performance_budget:
+      lcp: 2000
+      fid: 50
+      cls: 0.05
+
+    targeting:
+      rules:
+        - customer_group: premium    # Nur Premium-Kunden
+        - device_type: desktop       # Nur Desktop
+
+    metadata:
+      owner: "checkout-team"
+      jira_ticket: "PERF-123"
+      created_at: "2024-01-15"
+
+  # Native Lazy Loading
+  native_lazy_loading:
+    enabled: true
+    rollout_percent: 100             # Vollständig ausgerollt
+    description: "Native Browser Lazy Loading für Produktbilder"
+
+    performance_budget:
+      lcp: 2500
+      cls: 0.1
+
+    metadata:
+      owner: "frontend-team"
+      deployed_at: "2024-01-10"
+      status: stable
+
+  # Elasticsearch Search
+  elasticsearch_search:
+    enabled: true
+    rollout_percent: 50
+    description: "Elasticsearch statt MySQL für Produktsuche"
+
+    performance_budget:
+      response_time: 150
+      ttfb: 200
+
+    targeting:
+      rules:
+        - sales_channel: default
+        - custom_field:
+            beta_tester: true
+
+    metadata:
+      owner: "search-team"
+      jira_ticket: "PERF-145"
+
+  # Critical CSS
+  critical_css_inline:
+    enabled: true
+    rollout_percent: 100
+    description: "Inline Critical CSS für Above-the-Fold Content"
+
+    performance_budget:
+      fcp: 1500
+      lcp: 2000
+
+    metadata:
+      owner: "performance-team"
+      status: stable
+      deployed_at: "2024-01-20"
+
+  # Service Worker Caching
+  service_worker_cache:
+    enabled: false                   # Pausiert wegen Budget-Überschreitung
+    rollout_percent: 0
+    description: "Service Worker für aggressive Caching"
+
+    performance_budget:
+      lcp: 2500
+      js_heap_size: 50
+
+    disabled_reason: "Performance budget exceeded - LCP increased by 15%"
+    disabled_at: "2024-01-18 14:32:00"
+
+    metadata:
+      owner: "pwa-team"
+      jira_ticket: "PERF-167"
+
+  # WebP Images
+  webp_images:
+    enabled: true
+    rollout_percent: 75
+    description: "WebP Format für Produktbilder (mit Fallback)"
+
+    performance_budget:
+      lcp: 2500
+      total_size_kb: 1200
+
+    targeting:
+      rules:
+        - device_type: mobile        # Primär für Mobile
+
+    metadata:
+      owner: "media-team"
+      jira_ticket: "PERF-189"
+
+  # Prefetch Next Page
+  prefetch_navigation:
+    enabled: true
+    rollout_percent: 10              # Vorsichtiger Rollout
+    description: "Prefetch wahrscheinlicher nächster Seiten"
+
+    performance_budget:
+      resource_count: 60
+      total_size_kb: 2000
+
+    targeting:
+      rules:
+        - device_type: desktop
+        - customer_group: premium
+
+    metadata:
+      owner: "performance-team"
+      experimental: true
+
+  # Database Query Caching
+  db_query_cache:
+    enabled: true
+    rollout_percent: 100
+    description: "Redis-basiertes Query Caching"
+
+    performance_budget:
+      response_time: 100
+      memory_mb: 256
+
+    metadata:
+      owner: "backend-team"
+      status: stable
+
+  # React Product Slider
+  react_product_slider:
+    enabled: true
+    rollout_percent: 50
+    description: "React-basierter Produktslider (statt jQuery)"
+
+    performance_budget:
+      lcp: 2500
+      js_size_kb: 350
+      main_thread_time_ms: 3000
+
+    targeting:
+      rules:
+        - sales_channel: default
+
+    metadata:
+      owner: "frontend-team"
+      jira_ticket: "PERF-201"
+
+  # GraphQL API
+  graphql_api:
+    enabled: false
+    rollout_percent: 0
+    description: "GraphQL statt REST für Product Listings"
+
+    performance_budget:
+      response_time: 150
+      ttfb: 200
+
+    metadata:
+      owner: "api-team"
+      status: development
+      jira_ticket: "PERF-234"
+
+# Global Settings
+settings:
+  # Cache
+  cache_ttl_seconds: 300             # 5 Minuten
+
+  # Defaults
+  default_rollout_percent: 0         # Opt-in per Flag
+  default_enabled: false
+
+  # Performance Monitoring
+  track_performance_impact: true
+  auto_disable_on_regression: true
+  regression_threshold_percent: 20   # 20% Verschlechterung = Auto-Disable
+
+  # Rollout Strategy
+  gradual_rollout:
+    enabled: true
+    steps:
+      - percent: 5
+        duration_hours: 24
+      - percent: 10
+        duration_hours: 24
+      - percent: 25
+        duration_hours: 48
+      - percent: 50
+        duration_hours: 72
+      - percent: 100
+        duration_hours: 0
+
+  # Alerts
+  alerts:
+    slack_webhook: "${SLACK_WEBHOOK_URL}"
+    notify_on:
+      - auto_disabled
+      - rollout_started
+      - rollout_completed
+      - budget_exceeded
+
+# Kill Switches (Emergency Disable)
+kill_switches:
+  # Alle Feature Flags deaktivieren
+  global_kill_switch:
+    enabled: false
+    reason: ""
+
+  # Einzelne Kategorien
+  experimental_features:
+    enabled: true
+    affects:
+      - prefetch_navigation
+      - graphql_api
+
+  performance_experiments:
+    enabled: true
+    affects:
+      - react_product_slider
+      - service_worker_cache
+
+# Targeting Rules Schema
+targeting_schema:
+  customer_group:
+    type: string
+    values:
+      - premium
+      - standard
+      - wholesale
+
+  device_type:
+    type: string
+    values:
+      - mobile
+      - tablet
+      - desktop
+
+  sales_channel:
+    type: string
+    values:
+      - default
+      - mobile_app
+      - b2b
+
+  custom_field:
+    type: object
+    description: "Custom fields on customer entity"
+
+  ab_test_group:
+    type: string
+    description: "Assigned A/B test group (a, b, control)"
+
+# Performance Budget Presets
+budget_presets:
+  strict:
+    lcp: 2000
+    fid: 50
+    cls: 0.05
+    ttfb: 400
+
+  moderate:
+    lcp: 2500
+    fid: 100
+    cls: 0.1
+    ttfb: 600
+
+  relaxed:
+    lcp: 3000
+    fid: 150
+    cls: 0.15
+    ttfb: 800
+
+# Metadata Schema
+metadata_schema:
+  required:
+    - owner
+  optional:
+    - jira_ticket
+    - created_at
+    - deployed_at
+    - status
+    - experimental
+    - disabled_reason
+    - disabled_at

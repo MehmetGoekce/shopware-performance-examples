@@ -1,0 +1,241 @@
+# Performance Budgets für A/B Tests
+#
+# Definiert maximale Werte für Performance-Metriken.
+# Wenn ein Experiment diese überschreitet, wird es automatisch pausiert.
+#
+# @author Mehmet Gökçe
+# @since 1.0.0
+
+# Global Budgets (gelten für alle Experimente wenn nicht überschrieben)
+global:
+  # Core Web Vitals (Google-Empfehlungen)
+  core_web_vitals:
+    lcp: 2500        # Largest Contentful Paint (ms) - "Good" threshold
+    fid: 100         # First Input Delay (ms) - "Good" threshold
+    cls: 0.1         # Cumulative Layout Shift - "Good" threshold
+    inp: 200         # Interaction to Next Paint (ms) - "Good" threshold
+
+  # Additional Web Vitals
+  web_vitals:
+    fcp: 1800        # First Contentful Paint (ms)
+    ttfb: 600        # Time to First Byte (ms)
+    tti: 3800        # Time to Interactive (ms)
+    tbt: 200         # Total Blocking Time (ms)
+    si: 3400         # Speed Index
+
+  # Resource Budgets
+  resources:
+    total_size_kb: 1500      # Total page size
+    js_size_kb: 300          # JavaScript bundle size
+    css_size_kb: 100         # CSS size
+    image_size_kb: 800       # Total images
+    font_size_kb: 100        # Web fonts
+    request_count: 50        # Total HTTP requests
+
+  # Server Performance
+  server:
+    response_time_ms: 200    # Server response time
+    memory_mb: 128           # Peak memory usage
+    cpu_percent: 70          # CPU usage
+    db_queries: 50           # Database queries per request
+
+  # JavaScript Performance
+  javascript:
+    main_thread_time_ms: 4000    # Total main thread time
+    js_heap_size_mb: 50          # JavaScript heap size
+    dom_nodes: 1500              # DOM node count
+    event_listeners: 100         # Event listener count
+
+# Device-Specific Budgets
+devices:
+  mobile:
+    lcp: 2500
+    fid: 100
+    cls: 0.1
+    total_size_kb: 1000      # Strenger für Mobile
+    js_size_kb: 200
+    ttfb: 800                # Langsamere Verbindungen
+
+  tablet:
+    lcp: 2500
+    fid: 100
+    cls: 0.1
+    total_size_kb: 1200
+
+  desktop:
+    lcp: 2000                # Schneller auf Desktop
+    fid: 100
+    cls: 0.1
+    total_size_kb: 2000      # Mehr Bandbreite
+
+# Page-Type Specific Budgets
+page_types:
+  # Homepage
+  homepage:
+    lcp: 2000                # Kritischste Seite
+    fid: 100
+    cls: 0.05                # Strenger
+    ttfb: 400
+    total_size_kb: 1200
+
+  # Product Listing
+  listing:
+    lcp: 2500
+    fid: 100
+    cls: 0.1
+    total_size_kb: 1500
+    image_size_kb: 1000      # Viele Produktbilder
+
+  # Product Detail
+  detail:
+    lcp: 2500
+    fid: 100
+    cls: 0.1
+    total_size_kb: 1800
+    image_size_kb: 1200      # Hochauflösende Produktbilder
+
+  # Checkout
+  checkout:
+    lcp: 2000                # Kritisch für Conversion
+    fid: 50                  # Sehr responsive
+    cls: 0.05                # Keine Layout-Shifts
+    ttfb: 500
+    total_size_kb: 1000      # Minimal halten
+
+  # Search Results
+  search:
+    lcp: 2000
+    fid: 100
+    ttfb: 300                # Schnelle Suche wichtig
+    response_time_ms: 150
+
+# Network Condition Budgets
+networks:
+  # 4G
+  fast_4g:
+    lcp: 2500
+    ttfb: 600
+
+  # 3G
+  slow_3g:
+    lcp: 4000                # Realistischere Erwartungen
+    ttfb: 1500
+    total_size_kb: 800       # Weniger Daten
+
+  # 2G (Edge Cases)
+  slow_2g:
+    lcp: 8000
+    ttfb: 3000
+    total_size_kb: 500
+
+# Experiment-Specific Overrides
+experiments:
+  # Checkout Optimization - Strengere Budgets
+  checkout_optimization:
+    lcp: 2000
+    fid: 50
+    cls: 0.05
+    ttfb: 400
+    total_size_kb: 800
+
+  # Product Listing - Fokus auf Images
+  product_listing_lazy_loading:
+    lcp: 2500
+    cls: 0.1
+    image_size_kb: 1000
+    resource_count: 60       # Viele Bilder
+
+  # Search - Fokus auf Response Time
+  search_optimization:
+    response_time_ms: 150
+    ttfb: 200
+    memory_mb: 64
+    db_queries: 20
+
+# Alert Thresholds
+alerts:
+  # Prozent über Budget für Warnung
+  warning_threshold_percent: 10
+
+  # Prozent über Budget für Auto-Pause
+  critical_threshold_percent: 25
+
+  # Alert Channels
+  channels:
+    - type: slack
+      webhook: "${SLACK_WEBHOOK_URL}"
+      on:
+        - budget_exceeded
+        - experiment_paused
+
+    - type: email
+      recipients:
+        - "dev-team@example.com"
+      on:
+        - budget_exceeded
+        - experiment_completed
+
+    - type: pagerduty
+      integration_key: "${PAGERDUTY_KEY}"
+      on:
+        - critical_threshold
+
+# Monitoring Settings
+monitoring:
+  # Sampling Rate (0.0 - 1.0)
+  client_metrics_sample_rate: 0.1    # 10% der Requests tracken
+
+  # Server Metrics immer sammeln
+  server_metrics_sample_rate: 1.0
+
+  # Real User Monitoring Integration
+  rum_enabled: true
+  rum_sample_rate: 0.05              # 5% für RUM
+
+  # Performance Observer Types
+  observer_types:
+    - largest-contentful-paint
+    - first-input
+    - layout-shift
+    - navigation
+    - resource
+    - measure
+
+# Budget Enforcement
+enforcement:
+  # Auto-Pause bei Budget-Überschreitung
+  auto_pause: true
+
+  # Grace Period vor Auto-Pause (Minuten)
+  grace_period_minutes: 30
+
+  # Anzahl Überschreitungen bis Pause
+  violations_before_pause: 3
+
+  # Rollback bei kritischer Überschreitung
+  auto_rollback: true
+  rollback_threshold_percent: 50
+
+# Reporting
+reporting:
+  # Daily Budget Reports
+  daily_report_enabled: true
+  daily_report_time: "09:00"
+
+  # Recipients
+  report_recipients:
+    - "performance-team@example.com"
+
+  # Include in Report
+  include_charts: true
+  include_recommendations: true
+  include_cost_estimate: true
+
+# Budget Baselines
+baselines:
+  # Aus Production-Daten der letzten 30 Tage
+  source: production_p75
+  update_frequency_days: 7
+
+  # Toleranz für Variationen
+  tolerance_percent: 10
