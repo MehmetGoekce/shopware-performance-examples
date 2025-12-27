@@ -1,0 +1,363 @@
+# Third-Party Scripts Whitelist & Performance Budgets
+#
+# Konfiguriert erlaubte Third-Party Scripts mit Performance-Constraints.
+# Scripts die nicht gelistet sind, werden geblockt oder gewarnt.
+#
+# @author Mehmet Gökçe
+# @since 1.0.0
+
+# Globale Performance-Budgets
+global_budgets:
+  # Maximale Gesamtgröße aller Third-Party Scripts
+  max_total_size: 500  # KB
+
+  # Maximum Anzahl Scripts pro Seite
+  max_script_count: 20
+
+  # Maximum Loading-Zeit für alle Scripts
+  max_total_load_time: 5000  # ms
+
+  # Maximum Total Blocking Time
+  max_blocking_time: 300  # ms
+
+# Erlaubte Script-Kategorien
+categories:
+  - essential      # Essenziell für Shop-Funktion
+  - analytics      # Web Analytics
+  - marketing      # Marketing & Tracking
+  - advertising    # Werbe-Pixel
+  - support        # Support/Chat Tools
+  - performance    # Performance Monitoring
+
+# Erlaubte Scripts
+allowed_scripts:
+  # Google Tag Manager (Analytics)
+  google_tag_manager:
+    name: "Google Tag Manager"
+    category: analytics
+    consent_required: true
+    consent_category: analytics
+
+    patterns:
+      - "googletagmanager.com/gtm.js"
+      - "googletagmanager.com/gtag/js"
+
+    budgets:
+      max_size: 100  # KB
+      max_load_time: 2000  # ms
+      max_blocking_time: 100  # ms
+
+    loading:
+      strategy: lazy  # immediate, lazy, interaction
+      delay: 2000  # ms (für lazy)
+      async: true
+      defer: false
+
+    optimization:
+      partytown_compatible: true  # Kann in Web Worker laufen
+      server_side_available: true  # Server-Side Tagging verfügbar
+
+  # Google Analytics 4
+  google_analytics:
+    name: "Google Analytics 4"
+    category: analytics
+    consent_required: true
+    consent_category: analytics
+
+    patterns:
+      - "google-analytics.com/analytics.js"
+      - "googletagmanager.com/gtag/js"
+
+    budgets:
+      max_size: 50  # KB
+      max_load_time: 1500  # ms
+      max_blocking_time: 50  # ms
+
+    loading:
+      strategy: lazy
+      delay: 3000
+      async: true
+      defer: false
+
+    optimization:
+      partytown_compatible: true
+      server_side_available: true
+
+  # Facebook Pixel
+  facebook_pixel:
+    name: "Facebook Pixel"
+    category: marketing
+    consent_required: true
+    consent_category: marketing
+
+    patterns:
+      - "connect.facebook.net/*/fbevents.js"
+      - "facebook.com/tr"
+
+    budgets:
+      max_size: 75  # KB
+      max_load_time: 2000  # ms
+      max_blocking_time: 100  # ms
+
+    loading:
+      strategy: interaction  # Nur bei User-Interaktion
+      async: true
+      defer: false
+
+    optimization:
+      partytown_compatible: true
+      server_side_available: true  # via Conversions API
+
+  # Hotjar
+  hotjar:
+    name: "Hotjar Analytics"
+    category: analytics
+    consent_required: true
+    consent_category: analytics
+
+    patterns:
+      - "static.hotjar.com/c/hotjar-*.js"
+
+    budgets:
+      max_size: 100  # KB
+      max_load_time: 2500  # ms
+      max_blocking_time: 150  # ms
+
+    loading:
+      strategy: lazy
+      delay: 5000  # Niedrige Priorität
+      async: true
+      defer: false
+
+    optimization:
+      partytown_compatible: false  # Benötigt DOM-Zugriff
+      server_side_available: false
+
+  # Cookiebot / Cookie Consent
+  cookiebot:
+    name: "Cookiebot Consent Manager"
+    category: essential
+    consent_required: false  # Consent-Tool selbst braucht kein Consent
+
+    patterns:
+      - "consent.cookiebot.com/uc.js"
+
+    budgets:
+      max_size: 50  # KB
+      max_load_time: 1000  # ms - Schnell laden!
+      max_blocking_time: 50  # ms
+
+    loading:
+      strategy: immediate  # Sofort laden
+      async: true
+      defer: false
+
+    optimization:
+      partytown_compatible: false  # Muss im Main Thread laufen
+      server_side_available: false
+
+  # Stripe Payment
+  stripe_js:
+    name: "Stripe.js Payment"
+    category: essential
+    consent_required: false  # Payment ist essenziell
+
+    patterns:
+      - "js.stripe.com/v3"
+
+    budgets:
+      max_size: 150  # KB
+      max_load_time: 2000  # ms
+      max_blocking_time: 100  # ms
+
+    loading:
+      strategy: immediate  # Auf Checkout-Seite sofort
+      async: true
+      defer: false
+
+    optimization:
+      partytown_compatible: false  # Benötigt DOM
+      server_side_available: false
+
+  # PayPal
+  paypal_sdk:
+    name: "PayPal SDK"
+    category: essential
+    consent_required: false
+
+    patterns:
+      - "paypal.com/sdk/js"
+
+    budgets:
+      max_size: 200  # KB
+      max_load_time: 2500  # ms
+      max_blocking_time: 150  # ms
+
+    loading:
+      strategy: immediate  # Auf Checkout sofort
+      async: true
+      defer: false
+
+    optimization:
+      partytown_compatible: false
+      server_side_available: false
+
+  # Trustpilot
+  trustpilot:
+    name: "Trustpilot Reviews"
+    category: marketing
+    consent_required: false  # Reviews sind OK ohne Consent
+
+    patterns:
+      - "widget.trustpilot.com/bootstrap"
+
+    budgets:
+      max_size: 75  # KB
+      max_load_time: 3000  # ms
+      max_blocking_time: 100  # ms
+
+    loading:
+      strategy: lazy
+      delay: 4000  # Niedrige Priorität
+      async: true
+      defer: true  # Defer OK
+
+    optimization:
+      partytown_compatible: true
+      server_side_available: false
+
+  # Zendesk Chat
+  zendesk_chat:
+    name: "Zendesk Chat Widget"
+    category: support
+    consent_required: false  # Support ist OK
+
+    patterns:
+      - "static.zdassets.com/ekr/snippet.js"
+
+    budgets:
+      max_size: 100  # KB
+      max_load_time: 3000  # ms
+      max_blocking_time: 150  # ms
+
+    loading:
+      strategy: interaction  # Nur wenn User aktiv
+      async: true
+      defer: false
+
+    optimization:
+      partytown_compatible: false  # Benötigt UI
+      server_side_available: false
+
+  # Sentry Error Tracking
+  sentry:
+    name: "Sentry Error Tracking"
+    category: performance
+    consent_required: false  # Error-Tracking ist technisch notwendig
+
+    patterns:
+      - "browser.sentry-cdn.com"
+      - "sentry.io/api"
+
+    budgets:
+      max_size: 50  # KB
+      max_load_time: 1500  # ms
+      max_blocking_time: 50  # ms
+
+    loading:
+      strategy: immediate  # Sofort für Error-Capturing
+      async: true
+      defer: false
+
+    optimization:
+      partytown_compatible: false  # Muss Errors catchen
+      server_side_available: false
+
+# Route-spezifische Budgets
+route_budgets:
+  # Homepage - Strengere Budgets
+  frontend.home.page:
+    max_total_size: 300  # KB
+    max_script_count: 10
+    max_blocking_time: 200  # ms
+
+    allowed:
+      - google_tag_manager
+      - cookiebot
+      - sentry
+
+  # Produktseite
+  frontend.detail.page:
+    max_total_size: 400  # KB
+    max_script_count: 15
+    max_blocking_time: 250  # ms
+
+    allowed:
+      - google_tag_manager
+      - google_analytics
+      - cookiebot
+      - trustpilot
+      - zendesk_chat
+      - sentry
+
+  # Checkout - Kritisch!
+  frontend.checkout.confirm.page:
+    max_total_size: 600  # KB (Payment SDKs sind groß)
+    max_script_count: 15
+    max_blocking_time: 300  # ms
+
+    allowed:
+      - google_tag_manager
+      - facebook_pixel  # Conversion-Tracking
+      - stripe_js
+      - paypal_sdk
+      - cookiebot
+      - sentry
+
+  # Danke-Seite - Conversion-Tracking
+  frontend.checkout.finish.page:
+    max_total_size: 400  # KB
+    max_script_count: 12
+    max_blocking_time: 200  # ms
+
+    allowed:
+      - google_tag_manager
+      - google_analytics
+      - facebook_pixel
+      - cookiebot
+      - sentry
+
+# Blocked Scripts (Blacklist)
+blocked_scripts:
+  # Alte/unsichere Scripts
+  - pattern: "google-analytics.com/ga.js"  # Universal Analytics (deprecated)
+    reason: "Deprecated - Use GA4"
+
+  - pattern: "googletagmanager.com/gtm.js?id=GTM-OLD"
+    reason: "Old GTM container - Use new one"
+
+  # Performance-Killer
+  - pattern: "*.doubleclick.net/*"
+    reason: "High performance impact - Use alternatives"
+
+  # Sicherheit
+  - pattern: "*/eval-*.js"
+    reason: "Security risk"
+
+# Monitoring & Alerts
+monitoring:
+  # Alert wenn Budget überschritten
+  alert_on_budget_exceeded: true
+
+  # Alert-Kanäle
+  alert_channels:
+    - email
+    - slack
+
+  # Performance-Regression Detection
+  regression_threshold: 15  # % - Alert bei >15% Performance-Verschlechterung
+
+  # Automatische Actions
+  auto_actions:
+    pause_on_critical_impact: true  # Script pausieren bei kritischem Impact
+    fallback_to_noscript: true      # Fallback wenn Script fehlschlägt

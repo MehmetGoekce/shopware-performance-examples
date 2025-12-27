@@ -1,0 +1,75 @@
+{#
+  Optimized Script Loader Template
+
+  Performance-optimiertes Script-Loading mit:
+  - Async/Defer Support
+  - Lazy Loading
+  - Consent-Awareness
+  - Resource Hints
+
+  Usage:
+    {% include '@ThirdPartyScripts/script-loader.html.twig' with {
+        scripts: scriptArray,
+        strategy: 'lazy',
+        delay: 3000
+    } %}
+
+  @author Mehmet Gökçe
+  @since 1.0.0
+#}
+
+{% set strategy = strategy|default('immediate') %}
+{% set delay = delay|default(0) %}
+{% set consentRequired = consentRequired|default(false) %}
+{% set consentCategory = consentCategory|default('analytics') %}
+
+{# Resource Hints für bessere Performance #}
+{% block resource_hints %}
+    {% if scripts is defined and scripts is iterable %}
+        {% for script in scripts %}
+            {% if script.preconnect|default(false) %}
+                <link rel="preconnect" href="{{ script.domain }}" crossorigin>
+            {% endif %}
+            {% if script.dns_prefetch|default(false) %}
+                <link rel="dns-prefetch" href="{{ script.domain }}">
+            {% endif %}
+        {% endfor %}
+    {% endif %}
+{% endblock %}
+
+{# Script Loading basierend auf Strategie #}
+{% block script_loading %}
+    {% if strategy == 'immediate' %}
+        {# Sofortiges Laden #}
+        {% include '@ThirdPartyScripts/strategies/immediate.html.twig' %}
+
+    {% elseif strategy == 'lazy' %}
+        {# Verzögertes Laden #}
+        {% include '@ThirdPartyScripts/strategies/lazy.html.twig' with {
+            delay: delay
+        } %}
+
+    {% elseif strategy == 'interaction' %}
+        {# Laden bei User-Interaktion #}
+        {% include '@ThirdPartyScripts/strategies/interaction.html.twig' %}
+
+    {% elseif strategy == 'consent' %}
+        {# Laden nur mit Consent #}
+        {% include '@ThirdPartyScripts/strategies/consent-based.html.twig' with {
+            category: consentCategory
+        } %}
+
+    {% elseif strategy == 'partytown' %}
+        {# Laden in Web Worker #}
+        {% include '@ThirdPartyScripts/strategies/partytown.html.twig' %}
+    {% endif %}
+{% endblock %}
+
+{# Fallback für Noscript #}
+{% block noscript_fallback %}
+    <noscript>
+        {% if noscriptContent is defined %}
+            {{ noscriptContent|raw }}
+        {% endif %}
+    </noscript>
+{% endblock %}

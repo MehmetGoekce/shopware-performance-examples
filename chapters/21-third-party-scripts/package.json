@@ -1,0 +1,34 @@
+{
+  "name": "shopware-third-party-scripts",
+  "version": "1.0.0",
+  "description": "Third-Party Scripts & Tag Management Performance Optimization for Shopware 6",
+  "scripts": {
+    "audit": "node scripts/audit-third-party.js",
+    "audit:json": "node scripts/audit-third-party.js --json",
+    "gtm:check": "node scripts/gtm-performance-check.js",
+    "gtm:detailed": "node scripts/gtm-performance-check.js --detailed",
+    "measure": "node scripts/measure-script-impact.js",
+    "partytown:install": "./scripts/partytown-setup.sh",
+    "partytown:uninstall": "./scripts/partytown-setup.sh --uninstall",
+    "test": "echo 'Run performance tests' && exit 0"
+  },
+  "keywords": [
+    "shopware",
+    "performance",
+    "third-party-scripts",
+    "google-tag-manager",
+    "consent-management",
+    "partytown",
+    "web-workers"
+  ],
+  "author": "Mehmet Gökçe",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "puppeteer": "^21.6.0"
+  },
+  "devDependencies": {},
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}

@@ -1,0 +1,39 @@
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules/
+vendor/
+
+# Build
+/public/~partytown/
+/var/cache/
+/var/log/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Reports
+/reports/
+/audit-reports/
+*.json
+!package.json
+!composer.json
+
+# Temporary files
+/tmp/
+*.tmp

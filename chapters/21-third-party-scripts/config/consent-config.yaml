@@ -1,0 +1,370 @@
+# Consent Management Configuration
+#
+# Performance-optimierte Consent-Manager Konfiguration mit
+# Script-Loading Strategien pro Consent-Kategorie.
+#
+# @author Mehmet Gökçe
+# @since 1.0.0
+
+# Consent-Kategorien
+categories:
+  essential:
+    name: "Essenziell"
+    description: "Technisch notwendige Cookies und Scripts für Shop-Funktionalität"
+    required: true  # Kann nicht abgewählt werden
+    default_enabled: true
+    icon: "🔒"
+
+    scripts:
+      - session_cookie
+      - csrf_token
+      - shopping_cart
+      - customer_authentication
+
+  functional:
+    name: "Funktional"
+    description: "Verbessert Benutzererfahrung und Shop-Funktionen"
+    required: false
+    default_enabled: true
+    icon: "⚙️"
+
+    scripts:
+      - language_preference
+      - currency_preference
+      - layout_preferences
+      - recently_viewed
+
+  analytics:
+    name: "Analyse & Performance"
+    description: "Hilft uns die Website-Performance und Nutzung zu verstehen"
+    required: false
+    default_enabled: false
+    icon: "📊"
+
+    scripts:
+      - google_analytics
+      - hotjar
+      - sentry
+      - performance_monitoring
+
+  marketing:
+    name: "Marketing"
+    description: "Ermöglicht personalisierte Inhalte und Angebote"
+    required: false
+    default_enabled: false
+    icon: "🎯"
+
+    scripts:
+      - facebook_pixel
+      - google_remarketing
+      - email_tracking
+      - affiliate_tracking
+
+  advertising:
+    name: "Werbung"
+    description: "Zeigt relevante Werbung auf anderen Websites"
+    required: false
+    default_enabled: false
+    icon: "📢"
+
+    scripts:
+      - display_ads
+      - retargeting_pixels
+
+# Script-Definitionen mit Consent-Mapping
+scripts:
+  # Essential
+  session_cookie:
+    category: essential
+    name: "Session-Verwaltung"
+    provider: "Shopware"
+    purpose: "Erhält Warenkorb und Login-Status"
+    data_collected: "Session-ID"
+    retention: "Browser-Session"
+    loading:
+      strategy: immediate
+      blocking: true  # Muss vor allem anderen laden
+
+  # Analytics
+  google_analytics:
+    category: analytics
+    name: "Google Analytics 4"
+    provider: "Google LLC"
+    purpose: "Web-Analytics und Performance-Monitoring"
+    data_collected: "Seitenaufrufe, Ereignisse, demographische Daten"
+    retention: "26 Monate"
+    privacy_policy: "https://policies.google.com/privacy"
+
+    loading:
+      strategy: lazy
+      delay: 3000  # 3 Sekunden nach Consent
+      async: true
+      defer: false
+
+    scripts:
+      - url: "https://www.googletagmanager.com/gtag/js"
+        params:
+          id: "{{GA_MEASUREMENT_ID}}"
+
+    initialization: |
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', '{{GA_MEASUREMENT_ID}}', {
+        'anonymize_ip': true,
+        'cookie_flags': 'SameSite=None;Secure'
+      });
+
+  hotjar:
+    category: analytics
+    name: "Hotjar"
+    provider: "Hotjar Ltd."
+    purpose: "Nutzerverhalten-Analyse, Heatmaps"
+    data_collected: "Mausbewegungen, Klicks, Scrolling"
+    retention: "365 Tage"
+    privacy_policy: "https://www.hotjar.com/legal/policies/privacy"
+
+    loading:
+      strategy: lazy
+      delay: 5000  # Niedrige Priorität
+      async: true
+      defer: false
+
+    scripts:
+      - url: "https://static.hotjar.com/c/hotjar-{{HOTJAR_ID}}.js"
+
+    initialization: |
+      (function(h,o,t,j,a,r){
+        h.hj=h.hj||function(){(h.hj.q=h.hj.q||[]).push(arguments)};
+        h._hjSettings={hjid:{{HOTJAR_ID}},hjsv:6};
+      })(window,document,'https://static.hotjar.com','.js?sv=');
+
+  # Marketing
+  facebook_pixel:
+    category: marketing
+    name: "Facebook Pixel"
+    provider: "Meta Platforms, Inc."
+    purpose: "Conversion-Tracking, Remarketing"
+    data_collected: "Seitenaufrufe, Events, Geräteinformationen"
+    retention: "180 Tage"
+    privacy_policy: "https://www.facebook.com/privacy/policy"
+
+    loading:
+      strategy: interaction  # Nur bei User-Interaktion
+      async: true
+      defer: false
+
+    scripts:
+      - url: "https://connect.facebook.net/en_US/fbevents.js"
+
+    initialization: |
+      !function(f,b,e,v,n,t,s)
+      {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+      n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+      if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+      n.queue=[];}(window, document,'script');
+      fbq('init', '{{PIXEL_ID}}');
+      fbq('track', 'PageView');
+
+  google_tag_manager:
+    category: analytics
+    name: "Google Tag Manager"
+    provider: "Google LLC"
+    purpose: "Tag-Management System"
+    data_collected: "Abhängig von konfigurierten Tags"
+    retention: "Variabel"
+    privacy_policy: "https://policies.google.com/privacy"
+
+    loading:
+      strategy: lazy
+      delay: 2000
+      async: true
+      defer: false
+
+    scripts:
+      - url: "https://www.googletagmanager.com/gtm.js"
+        params:
+          id: "{{GTM_CONTAINER_ID}}"
+
+    initialization: |
+      (function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+      new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+      j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+      'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+      })(window,document,'script','dataLayer','{{GTM_CONTAINER_ID}}');
+
+# Consent-Banner Konfiguration
+banner:
+  # Position
+  position: bottom  # top, bottom, center
+
+  # Style
+  style: minimal  # minimal, detailed, custom
+
+  # Farben
+  colors:
+    primary: "#007bff"
+    background: "#ffffff"
+    text: "#333333"
+    border: "#e0e0e0"
+
+  # Texte (DE)
+  text:
+    de:
+      title: "Cookie-Einstellungen"
+      description: |
+        Wir nutzen Cookies und ähnliche Technologien, um Ihnen ein optimales
+        Einkaufserlebnis zu bieten. Einige sind technisch notwendig, andere
+        helfen uns die Website zu verbessern oder zeigen Ihnen personalisierte Inhalte.
+
+      accept_all: "Alle akzeptieren"
+      accept_selected: "Auswahl speichern"
+      reject_all: "Nur essenzielle"
+      customize: "Anpassen"
+
+      privacy_policy_link: "/datenschutz"
+      privacy_policy_text: "Datenschutzerklärung"
+
+    en:
+      title: "Cookie Settings"
+      description: |
+        We use cookies and similar technologies to provide you with an optimal
+        shopping experience. Some are technically necessary, others help us
+        improve the website or show you personalized content.
+
+      accept_all: "Accept all"
+      accept_selected: "Save selection"
+      reject_all: "Only essential"
+      customize: "Customize"
+
+      privacy_policy_link: "/privacy-policy"
+      privacy_policy_text: "Privacy Policy"
+
+  # Behavior
+  behavior:
+    show_on_first_visit: true
+    show_again_after_days: 365
+    require_action: true  # User muss aktiv wählen
+    remember_choice: true
+    close_on_accept: true
+
+  # Performance
+  performance:
+    lazy_load: false  # Banner muss sofort laden
+    inline_critical_css: true  # Critical CSS inline
+    defer_images: false
+    preload_scripts: false
+
+# Script-Loading Strategien pro Consent-Status
+loading_strategies:
+  # Keine Consent-Änderung - Default verhalten
+  no_consent:
+    strategy: block  # block, warn, allow
+    fallback: noscript  # noscript, placeholder, none
+
+  # Consent erteilt
+  consent_granted:
+    strategy: lazy  # immediate, lazy, interaction
+    delay: 1000  # ms
+    batch_loading: true  # Scripts in Batches laden
+    batch_size: 3  # Max 3 Scripts gleichzeitig
+    batch_delay: 500  # ms zwischen Batches
+
+  # Consent widerrufen
+  consent_revoked:
+    strategy: immediate  # Sofort alle Scripts entfernen
+    clear_cookies: true
+    clear_local_storage: true
+    reload_page: false  # Optional: Seite neu laden
+
+# Cookie-Einstellungen
+cookies:
+  # Cookie-Namen
+  consent_cookie_name: "sw_consent_preferences"
+
+  # Cookie-Lebensdauer
+  cookie_lifetime: 365  # Tage
+
+  # Cookie-Attribute
+  cookie_attributes:
+    path: "/"
+    secure: true
+    same_site: "Lax"
+    http_only: false  # JavaScript muss lesen können
+
+  # Domain
+  cookie_domain: null  # null = auto-detect
+
+# GDPR/DSGVO Compliance
+compliance:
+  # Region-basierte Defaults
+  regions:
+    EU:
+      default_analytics: false
+      default_marketing: false
+      default_advertising: false
+      require_explicit_consent: true
+
+    US:
+      default_analytics: true
+      default_marketing: true
+      default_advertising: false
+      require_explicit_consent: false
+
+    rest_of_world:
+      default_analytics: true
+      default_marketing: false
+      default_advertising: false
+      require_explicit_consent: false
+
+  # GeoIP Detection
+  geoip_enabled: true
+  geoip_fallback_region: "EU"  # Sicherer Default
+
+  # Consent-Mode für Google
+  google_consent_mode:
+    enabled: true
+    default_settings:
+      ad_storage: denied
+      analytics_storage: denied
+      ad_user_data: denied
+      ad_personalization: denied
+
+# Performance-Optimierungen
+performance:
+  # Script-Priorisierung
+  prioritize_essential: true
+  defer_non_essential: true
+
+  # Resource Hints
+  dns_prefetch:
+    - "//www.googletagmanager.com"
+    - "//www.google-analytics.com"
+    - "//connect.facebook.net"
+
+  preconnect:
+    - "https://www.googletagmanager.com"
+
+  # Lazy Loading
+  lazy_load_threshold: 2000  # ms nach Consent
+
+  # Web Workers (Partytown)
+  use_web_workers: true
+  web_worker_scripts:
+    - google_analytics
+    - facebook_pixel
+    - hotjar
+
+# Monitoring
+monitoring:
+  # Consent-Rate tracken
+  track_consent_rates: true
+
+  # Performance-Impact messen
+  measure_impact: true
+
+  # Errors loggen
+  log_errors: true
+
+  # Debug-Modus
+  debug: false

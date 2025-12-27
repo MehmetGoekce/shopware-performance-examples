@@ -1,0 +1,427 @@
+# Google Tag Manager - Optimierte Trigger-Konfiguration
+#
+# Performance-optimierte Trigger für GTM mit Debouncing, Throttling
+# und Event-Delegation.
+#
+# @author Mehmet Gökçe
+# @since 1.0.0
+
+# Globale Trigger-Einstellungen
+global_settings:
+  # Debounce-Zeit für häufige Events (ms)
+  default_debounce: 250
+
+  # Throttle-Zeit für Performance-kritische Events (ms)
+  default_throttle: 500
+
+  # Passive Event Listeners (Performance)
+  use_passive_listeners: true
+
+  # Event-Delegation statt direkter Listener
+  use_event_delegation: true
+
+# Page View Triggers
+pageview_triggers:
+  # Standard Page View
+  page_view:
+    type: pageview
+    fire_on: window.load  # Nach window.load
+    conditions:
+      - type: url_matches
+        pattern: ".*"
+
+    # Performance-Optimierung
+    optimization:
+      defer: false  # Sofort
+      wait_for_tags: false
+      max_wait_time: 0
+
+  # Virtual Page View (SPA)
+  virtual_pageview:
+    type: history_change
+    fire_on: history  # History API
+    conditions:
+      - type: url_matches
+        pattern: ".*"
+
+    optimization:
+      debounce: 300  # ms - Verhindert mehrfache Events
+      defer: true
+
+# Scroll Triggers
+scroll_triggers:
+  # Scroll Depth 25%
+  scroll_25:
+    type: scroll_depth
+    depth: 25  # Prozent
+    fire_on: vertical
+
+    optimization:
+      throttle: 500  # ms - Nicht öfter als alle 500ms
+      passive: true  # Passive Event Listener
+      fire_once: true  # Nur einmal pro Seite
+
+  # Scroll Depth 50%
+  scroll_50:
+    type: scroll_depth
+    depth: 50
+    fire_on: vertical
+
+    optimization:
+      throttle: 500
+      passive: true
+      fire_once: true
+
+  # Scroll Depth 75%
+  scroll_75:
+    type: scroll_depth
+    depth: 75
+    fire_on: vertical
+
+    optimization:
+      throttle: 500
+      passive: true
+      fire_once: true
+
+  # Scroll to Bottom
+  scroll_100:
+    type: scroll_depth
+    depth: 90  # 90% = praktisch Bottom
+    fire_on: vertical
+
+    optimization:
+      throttle: 500
+      passive: true
+      fire_once: true
+
+# Click Triggers
+click_triggers:
+  # Add to Cart Click
+  add_to_cart:
+    type: click
+    selector: ".btn-buy, [data-add-to-cart]"
+
+    conditions:
+      - type: element_matches
+        pattern: "button, a"
+
+    optimization:
+      debounce: 300  # Verhindert Doppel-Klicks
+      event_delegation: true  # Delegation am Container
+      capture_phase: false
+
+    # Data Layer Event
+    data_layer:
+      event: add_to_cart
+      ecommerce:
+        items: "{{Product Data}}"  # GTM Variable
+
+  # External Link Click
+  external_link:
+    type: click
+    selector: "a[href^='http']:not([href*='{{Page Hostname}}'])"
+
+    conditions:
+      - type: element_matches
+        pattern: "a"
+
+    optimization:
+      debounce: 200
+      event_delegation: true
+
+    data_layer:
+      event: outbound_click
+      link_url: "{{Click URL}}"
+
+  # Download Click
+  download_click:
+    type: click
+    selector: "a[href$='.pdf'], a[href$='.zip'], a[href$='.doc']"
+
+    optimization:
+      debounce: 200
+      event_delegation: true
+
+    data_layer:
+      event: file_download
+      file_name: "{{Click URL}}"
+
+  # CTA Button Clicks
+  cta_click:
+    type: click
+    selector: ".cta-button, [data-cta]"
+
+    optimization:
+      debounce: 300
+      event_delegation: true
+
+    data_layer:
+      event: cta_click
+      cta_text: "{{Click Text}}"
+      cta_location: "{{Page Path}}"
+
+# Form Triggers
+form_triggers:
+  # Form Submit
+  form_submit:
+    type: form_submit
+    selector: "form"
+
+    conditions:
+      - type: form_id_matches
+        pattern: ".*"
+
+    optimization:
+      debounce: 500  # Verhindert mehrfache Submits
+      wait_for_validation: true
+
+    data_layer:
+      event: form_submit
+      form_id: "{{Form ID}}"
+
+  # Form Validation Error
+  form_error:
+    type: custom_event
+    event_name: form_validation_error
+
+    optimization:
+      debounce: 300
+
+    data_layer:
+      event: form_error
+      error_field: "{{Error Field}}"
+
+  # Newsletter Signup
+  newsletter_signup:
+    type: form_submit
+    selector: "#newsletter-form, [data-newsletter-form]"
+
+    optimization:
+      debounce: 500
+
+    data_layer:
+      event: newsletter_signup
+      signup_location: "{{Page Path}}"
+
+# E-Commerce Triggers
+ecommerce_triggers:
+  # Product Impression (Product Listing)
+  product_impression:
+    type: element_visibility
+    selector: ".product-box"
+
+    conditions:
+      - type: element_visibility_percentage
+        percentage: 50  # 50% sichtbar
+
+    optimization:
+      throttle: 1000  # Max 1x pro Sekunde
+      passive: true
+      intersection_observer: true  # Moderne API
+
+    data_layer:
+      event: view_item_list
+      ecommerce:
+        items: "{{Product List}}"
+
+  # Product Click
+  product_click:
+    type: click
+    selector: ".product-box a, [data-product-link]"
+
+    optimization:
+      debounce: 300
+      event_delegation: true
+
+    data_layer:
+      event: select_item
+      ecommerce:
+        items: "{{Clicked Product}}"
+
+  # Begin Checkout
+  begin_checkout:
+    type: pageview
+    conditions:
+      - type: url_path
+        equals: "/checkout/confirm"
+
+    optimization:
+      defer: false  # Wichtig - sofort
+
+    data_layer:
+      event: begin_checkout
+      ecommerce:
+        value: "{{Cart Value}}"
+        items: "{{Cart Items}}"
+
+  # Purchase
+  purchase:
+    type: pageview
+    conditions:
+      - type: url_path
+        equals: "/checkout/finish"
+
+    optimization:
+      defer: false  # Kritisch - sofort
+      fire_once: true
+
+    data_layer:
+      event: purchase
+      ecommerce:
+        transaction_id: "{{Order ID}}"
+        value: "{{Order Total}}"
+        currency: "{{Currency}}"
+        items: "{{Order Items}}"
+
+# Video Triggers
+video_triggers:
+  # YouTube Video Start
+  youtube_video_start:
+    type: youtube_video
+    event: start
+
+    optimization:
+      debounce: 500
+
+    data_layer:
+      event: video_start
+      video_title: "{{Video Title}}"
+      video_provider: youtube
+
+  # YouTube Video Progress
+  youtube_video_progress:
+    type: youtube_video
+    event: progress
+    percentage: [25, 50, 75]  # Bei 25%, 50%, 75%
+
+    optimization:
+      throttle: 1000
+      fire_once_per_percentage: true
+
+    data_layer:
+      event: video_progress
+      video_percent: "{{Video Percent}}"
+
+# Timer Triggers
+timer_triggers:
+  # Time on Page (30 seconds)
+  time_on_page_30s:
+    type: timer
+    interval: 30000  # ms
+
+    conditions:
+      - type: page_path
+        pattern: ".*"
+
+    optimization:
+      fire_once: true  # Nur einmal
+
+    data_layer:
+      event: time_on_page
+      time_seconds: 30
+
+  # Time on Page (60 seconds)
+  time_on_page_60s:
+    type: timer
+    interval: 60000
+
+    optimization:
+      fire_once: true
+
+    data_layer:
+      event: time_on_page
+      time_seconds: 60
+
+# Custom Event Triggers
+custom_triggers:
+  # Search
+  site_search:
+    type: custom_event
+    event_name: site_search
+
+    optimization:
+      debounce: 500
+
+    data_layer:
+      event: search
+      search_term: "{{Search Query}}"
+
+  # Filter Applied
+  filter_applied:
+    type: custom_event
+    event_name: filter_applied
+
+    optimization:
+      debounce: 300
+
+    data_layer:
+      event: filter_applied
+      filter_type: "{{Filter Type}}"
+      filter_value: "{{Filter Value}}"
+
+  # Error Occurred
+  error_occurred:
+    type: custom_event
+    event_name: error
+
+    optimization:
+      debounce: 1000  # Verhindert Error-Spam
+
+    data_layer:
+      event: error
+      error_message: "{{Error Message}}"
+      error_page: "{{Page Path}}"
+
+# Performance-kritische Trigger-Gruppen
+trigger_groups:
+  # Critical Path - Sofort laden
+  critical:
+    - page_view
+    - begin_checkout
+    - purchase
+
+  # Important - Nach 1s
+  important:
+    - add_to_cart
+    - form_submit
+    - product_click
+
+  # Low Priority - Nach User-Interaktion
+  low_priority:
+    - scroll_25
+    - scroll_50
+    - scroll_75
+    - youtube_video_start
+    - time_on_page_30s
+
+# Advanced Optimizations
+advanced_optimizations:
+  # Lazy Load Tags basierend auf Trigger-Gruppe
+  lazy_load_by_group:
+    enabled: true
+    delay_low_priority: 3000  # ms
+
+  # Request Animation Frame für visuelle Updates
+  use_request_animation_frame: true
+
+  # Batch multiple DataLayer pushes
+  batch_data_layer_pushes:
+    enabled: true
+    batch_window: 100  # ms
+
+  # Intersection Observer statt Scroll-Events
+  use_intersection_observer: true
+
+  # Passive Event Listeners
+  force_passive_listeners:
+    - scroll
+    - touchstart
+    - touchmove
+    - wheel
+
+# Debugging (Production = false)
+debugging:
+  enabled: false
+  log_trigger_fires: false
+  log_data_layer_pushes: false
+  console_preview: false
