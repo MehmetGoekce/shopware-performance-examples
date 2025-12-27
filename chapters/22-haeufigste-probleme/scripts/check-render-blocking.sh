@@ -109,9 +109,10 @@ echo ""
 echo -e "${BLUE}3. Critical CSS${NC}"
 echo -n "   Inline <style> im <head>... "
 
-INLINE_STYLE=$(echo "$HEAD" | grep -c "<style" || echo "0")
+INLINE_STYLE=$(echo "$HEAD" | grep -c "<style" 2>/dev/null || echo "0")
+INLINE_STYLE=$(echo "$INLINE_STYLE" | tr -d '[:space:]' | head -c 10)
 
-if [ "$INLINE_STYLE" -gt 0 ]; then
+if [ -n "$INLINE_STYLE" ] && [ "$INLINE_STYLE" -gt 0 ] 2>/dev/null; then
     STYLE_SIZE=$(echo "$HEAD" | sed -n '/<style/,/<\/style>/p' | wc -c)
     STYLE_KB=$((STYLE_SIZE / 1024))
     echo -e "${GREEN}Ja (${STYLE_KB}KB inline)${NC}"
@@ -125,8 +126,8 @@ fi
 echo ""
 echo -e "${BLUE}4. Resource Hints${NC}"
 
-PRELOAD_COUNT=$(echo "$HEAD" | grep -c 'rel="preload"' || echo "0")
-PREFETCH_COUNT=$(echo "$HEAD" | grep -c 'rel="prefetch"' || echo "0")
+PRELOAD_COUNT=$(echo "$HEAD" | grep -c 'rel="preload"' 2>/dev/null | tr -d '[:space:]' || echo "0")
+PREFETCH_COUNT=$(echo "$HEAD" | grep -c 'rel="prefetch"' 2>/dev/null | tr -d '[:space:]' || echo "0")
 
 echo "   Preload: $PRELOAD_COUNT"
 echo "   Prefetch: $PREFETCH_COUNT"
