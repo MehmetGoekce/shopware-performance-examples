@@ -1,0 +1,106 @@
+# Fallstudie 1 & 4: Queue-Konfiguration
+# Kapitel 23: Reale Fallstudien aus 26 Jahren
+#
+# Asynchrone Verarbeitung für:
+# - Cache-Warming (Fallstudie 1)
+# - Bestellverarbeitung unter Last (Fallstudie 4)
+
+framework:
+    messenger:
+        # Transport-Konfiguration
+        transports:
+            # Hohe Priorität: Checkout, Bestellungen
+            high_priority:
+                dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
+                options:
+                    queue_name: high_priority
+                retry_strategy:
+                    max_retries: 3
+                    delay: 1000  # 1 Sekunde
+                    multiplier: 2
+
+            # Normale Priorität: E-Mails, Indexierung
+            default:
+                dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
+                options:
+                    queue_name: default
+                retry_strategy:
+                    max_retries: 5
+                    delay: 5000  # 5 Sekunden
+                    multiplier: 3
+
+            # Niedrige Priorität: Reports, Cleanup
+            low_priority:
+                dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
+                options:
+                    queue_name: low_priority
+                retry_strategy:
+                    max_retries: 10
+                    delay: 60000  # 1 Minute
+
+            # Dead Letter Queue
+            failed:
+                dsn: 'doctrine://default?queue_name=failed'
+
+        # Routing
+        routing:
+            # Checkout-Messages mit höchster Priorität
+            'Shopware\Core\Checkout\Cart\Event\*': high_priority
+            'Shopware\Core\Checkout\Order\Event\*': high_priority
+
+            # Standard-Messages
+            'Shopware\Core\Content\*': default
+            'Shopware\Core\Framework\MessageQueue\*': default
+
+            # Low-Priority
+            'App\Message\CacheWarmingMessage': low_priority
+            'App\Message\ReportGenerationMessage': low_priority
+
+        # Failure-Transport
+        failure_transport: failed
+
+# Shopware Queue-Einstellungen
+shopware:
+    messenger:
+        consume:
+            # Parallel Worker pro Transport
+            high_priority:
+                workers: 4
+                memory_limit: 512M
+                time_limit: 60
+
+            default:
+                workers: 2
+                memory_limit: 256M
+                time_limit: 120
+
+            low_priority:
+                workers: 1
+                memory_limit: 128M
+                time_limit: 300
+
+# Supervisor-Konfiguration (supervisor.conf)
+# Für Production-Deployment:
+#
+# [program:messenger-high]
+# command=php /var/www/shopware/bin/console messenger:consume high_priority --time-limit=3600 --memory-limit=512M
+# numprocs=4
+# autostart=true
+# autorestart=true
+#
+# [program:messenger-default]
+# command=php /var/www/shopware/bin/console messenger:consume default --time-limit=3600 --memory-limit=256M
+# numprocs=2
+# autostart=true
+# autorestart=true
+#
+# [program:messenger-low]
+# command=php /var/www/shopware/bin/console messenger:consume low_priority --time-limit=3600 --memory-limit=128M
+# numprocs=1
+# autostart=true
+# autorestart=true
+
+# Black Friday Modus (Fallstudie 4)
+# Bei extremer Last: Nicht-kritische Worker pausieren
+# supervisorctl stop messenger-low
+# supervisorctl update messenger-high numprocs=8

@@ -1,0 +1,63 @@
+# Fallstudie 5: Multi-Tenant Redis-Konfiguration
+# Kapitel 23: Reale Fallstudien aus 26 Jahren
+#
+# Separate Redis-Datenbanken pro Mandant für Isolation.
+# Alternativ: Prefix-basierte Trennung (siehe TenantAwareCache.php)
+
+# Framework Cache-Konfiguration
+framework:
+    cache:
+        # Standard-Cache mit Tenant-Prefix
+        prefix_seed: "tenant_%env(TENANT_ID)%"
+
+        pools:
+            # App-Cache (Doctrine, Twig, etc.)
+            cache.app:
+                adapter: cache.adapter.redis
+                provider: 'redis://localhost:6379/0'
+                default_lifetime: 3600
+
+            # HTTP-Cache
+            cache.http:
+                adapter: cache.adapter.redis
+                provider: 'redis://localhost:6379/1'
+                default_lifetime: 86400
+
+            # Session-Cache
+            cache.session:
+                adapter: cache.adapter.redis
+                provider: 'redis://localhost:6379/2'
+
+# Shopware-spezifische Konfiguration
+shopware:
+    cache:
+        # Tenant-spezifischer Cache-Prefix
+        prefix: "sw_%env(TENANT_ID)%_"
+
+        # Redis-Cluster für High-Availability
+        redis_cluster:
+            enabled: false  # Bei Bedarf aktivieren
+            hosts:
+                - 'redis-node-1:6379'
+                - 'redis-node-2:6379'
+                - 'redis-node-3:6379'
+
+    # HTTP-Cache pro Mandant
+    http_cache:
+        reverse_proxy:
+            enabled: true
+            ban_headers:
+                - 'x-cache-tags'
+                - 'x-tenant-id'  # Tenant-Header für Invalidierung
+
+# Session-Handler
+session:
+    handler_id: 'redis://localhost:6379/2'
+    cookie_secure: true
+    cookie_samesite: 'lax'
+    gc_maxlifetime: 86400  # 24 Stunden
+
+# Beispiel für Tenant-Umgebungsvariablen
+# .env.local:
+# TENANT_ID=acme-de
+# TENANT_DOMAIN=acme.example.com

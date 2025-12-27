@@ -1,0 +1,84 @@
+# Fallstudie 3: Elasticsearch-Tuning für B2B
+# Kapitel 23: Reale Fallstudien aus 26 Jahren
+#
+# Optimierte ES-Konfiguration für B2B-Shop mit 450.000 Produkten.
+# Ergebnis: Suche von 12 Sekunden auf 180ms
+
+# Shopware Elasticsearch-Konfiguration
+shopware:
+    es:
+        enabled: true
+        indexing_enabled: true
+        index_prefix: 'sw'
+
+        # Hosts (Cluster für Production)
+        hosts:
+            - 'elasticsearch:9200'
+            # - 'elasticsearch-2:9200'
+            # - 'elasticsearch-3:9200'
+
+        # Index-Einstellungen
+        index_settings:
+            # Mehr Shards für große Kataloge
+            number_of_shards: 3
+            number_of_replicas: 1
+
+            # Refresh-Interval (höher = weniger I/O)
+            refresh_interval: '5s'
+
+            # Analyzer für deutsche Produktsuche
+            analysis:
+                analyzer:
+                    german_product:
+                        type: custom
+                        tokenizer: standard
+                        filter:
+                            - lowercase
+                            - german_normalization
+                            - german_stemmer
+
+                filter:
+                    german_stemmer:
+                        type: stemmer
+                        language: light_german
+
+        # Produkt-Index Optimierung
+        product:
+            # Nur relevante Felder indizieren
+            mapping:
+                properties:
+                    productNumber:
+                        type: keyword
+                    name:
+                        type: text
+                        analyzer: german_product
+                    description:
+                        type: text
+                        analyzer: german_product
+                    customFields.technical_specs:
+                        type: text
+                    manufacturer.name:
+                        type: keyword
+                    categories.name:
+                        type: keyword
+
+            # Batch-Größe für Indexierung
+            batch_size: 500
+
+# Elasticsearch Server-Settings (elasticsearch.yml)
+# Diese Werte im ES-Container/Server setzen:
+#
+# indices.memory.index_buffer_size: 30%
+# indices.queries.cache.size: 20%
+# thread_pool.search.size: 13
+# thread_pool.search.queue_size: 1000
+
+# Query-Optimierung (in Custom ProductSearchBuilder)
+# - bool-Query statt simple_query_string
+# - function_score für Relevanz-Boost
+# - Highlighting nur wenn benötigt
+
+# Caching-Strategie
+# - Redis-Cache vor ES für häufige Suchen
+# - Query-Result-Cache in ES aktivieren
+# - Autocomplete mit separatem Index

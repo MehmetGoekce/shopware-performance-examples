@@ -1,0 +1,73 @@
+# Fallstudie 4: Rate Limiting für Black Friday
+# Kapitel 23: Reale Fallstudien aus 26 Jahren
+#
+# Schützt kritische Endpoints vor Überlastung.
+# Ermöglicht "Graceful Degradation" statt Totalausfall.
+
+framework:
+    rate_limiter:
+        # Checkout-Schutz
+        # Verhindert Bot-Angriffe und übermäßige Last
+        checkout_limiter:
+            policy: 'sliding_window'
+            limit: 5               # Max 5 Checkouts
+            interval: '1 minute'   # Pro Minute
+            lock_factory: 'lock.default.factory'
+
+        # Login-Schutz (Brute-Force-Prevention)
+        login_limiter:
+            policy: 'fixed_window'
+            limit: 10              # Max 10 Versuche
+            interval: '15 minutes' # Pro 15 Minuten
+
+        # API-Rate-Limiting
+        api_limiter:
+            policy: 'token_bucket'
+            limit: 100             # Bucket-Größe
+            rate:
+                interval: '1 second'
+                amount: 10         # 10 Requests/Sekunde
+
+        # Warenkorb-Hinzufügen
+        cart_limiter:
+            policy: 'sliding_window'
+            limit: 30              # Max 30 Aktionen
+            interval: '1 minute'
+
+        # Suche (Elasticsearch-Schutz)
+        search_limiter:
+            policy: 'sliding_window'
+            limit: 60              # Max 60 Suchen
+            interval: '1 minute'
+
+        # Newsletter-Anmeldung (Spam-Schutz)
+        newsletter_limiter:
+            policy: 'fixed_window'
+            limit: 3               # Max 3 Anmeldungen
+            interval: '1 hour'
+
+# Shopware-spezifische Limits
+shopware:
+    api:
+        rate_limiter:
+            # Store-API Limits
+            store_api:
+                enabled: true
+                limit: 100
+                cache_pool: 'cache.rate_limiter'
+                policy: 'time_backoff'  # Exponentielles Backoff
+
+            # Admin-API Limits
+            admin_api:
+                enabled: true
+                limit: 60
+                policy: 'time_backoff'
+
+# Response-Headers für Client-Feedback
+# X-RateLimit-Limit: 100
+# X-RateLimit-Remaining: 95
+# X-RateLimit-Reset: 1640000000
+
+# Graceful Degradation Konfiguration
+# Bei Überschreitung: HTTP 429 mit Retry-After Header
+# Kritische Funktionen bleiben verfügbar, weniger wichtige werden gedrosselt
