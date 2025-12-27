@@ -1,0 +1,82 @@
+# Redis Session Handler für Shopware 6
+# Kapitel 22, Problem 8: Session-Lock Blocking
+#
+# Datei: config/packages/framework.yaml
+
+framework:
+    session:
+        # Redis als Session-Handler
+        handler_id: '%env(REDIS_SESSION_URL)%'
+
+        # Session-Name
+        name: 'SHOPWARE_SESSION'
+
+        # Cookie-Einstellungen
+        cookie_secure: auto
+        cookie_httponly: true
+        cookie_samesite: lax
+
+        # Garbage Collection
+        gc_probability: 1
+        gc_divisor: 100
+        gc_maxlifetime: 86400
+
+# ============================================
+# .env Konfiguration
+# ============================================
+#
+# REDIS_SESSION_URL=redis://localhost:6379/0
+#
+# Mit Passwort:
+# REDIS_SESSION_URL=redis://:password@localhost:6379/0
+#
+# Mit Sentinel (High Availability):
+# REDIS_SESSION_URL=redis://sentinel1:26379,sentinel2:26379?redis_sentinel=mymaster
+
+# ============================================
+# Alternative: Filesystem mit Read-Only
+# ============================================
+#
+# Wenn Redis nicht verfügbar:
+# handler_id: session.handler.native_file
+#
+# Und in PHP:
+# session_set_save_handler(new ReadOnlySessionHandler());
+
+# ============================================
+# Redis-Server Konfiguration
+# ============================================
+#
+# /etc/redis/redis.conf:
+#
+# # Memory
+# maxmemory 256mb
+# maxmemory-policy allkeys-lru
+#
+# # Persistence (optional für Sessions)
+# save ""
+# appendonly no
+#
+# # Performance
+# tcp-keepalive 300
+# timeout 0
+
+# ============================================
+# Vorteile von Redis für Sessions
+# ============================================
+#
+# 1. Kein Session-Lock-Blocking
+#    - Mehrere Requests können parallel laufen
+#    - Eliminiert Wartezeiten bei Ajax-Calls
+#
+# 2. Shared Sessions
+#    - Load Balancer: Session auf allen Servern verfügbar
+#    - Keine Sticky Sessions nötig
+#
+# 3. Schneller als Filesystem
+#    - In-Memory Storage
+#    - Keine Disk-I/O
+#
+# 4. Automatische Bereinigung
+#    - TTL-basierte Expiration
+#    - Keine manuellen Cleanup-Jobs

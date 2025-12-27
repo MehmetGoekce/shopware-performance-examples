@@ -1,0 +1,42 @@
+# Shopware HTTP-Cache Konfiguration
+# Kapitel 22, Problem 2: HTTP-Cache nicht aktiv
+#
+# Datei: config/packages/shopware.yaml
+
+shopware:
+    http_cache:
+        # HTTP-Cache aktivieren
+        enabled: true
+
+        # Standard-TTL in Sekunden (2 Stunden)
+        default_ttl: 7200
+
+        # Invalidierung
+        invalidation:
+            # Verzögerung in Sekunden (0 = sofort)
+            delay: 0
+            # Max. URLs pro Invalidierung
+            count: 250
+
+        # Diese URL-Parameter ignorieren (für Cache-Key)
+        ignored_url_parameters:
+            - 'gclid'
+            - 'utm_source'
+            - 'utm_medium'
+            - 'utm_campaign'
+            - 'utm_content'
+            - 'utm_term'
+            - 'fbclid'
+            - 'ref'
+
+        # Stale-while-revalidate (optional)
+        stale_while_revalidate: 3600
+        stale_if_error: 86400
+
+    # Cache-Pools
+    cache:
+        # Redis als Cache-Backend (empfohlen)
+        # app: cache.adapter.redis
+
+        # Alternativ: Filesystem
+        app: cache.adapter.filesystem
