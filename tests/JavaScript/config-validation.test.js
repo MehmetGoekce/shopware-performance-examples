@@ -95,14 +95,15 @@ describe('Lighthouse Config Validation', () => {
     it('should have budgets defined', () => {
         if (!config) return;
 
-        expect(Array.isArray(config)).toBe(true);
-        expect(config.length).toBeGreaterThan(0);
+        expect(config).toHaveProperty('budgets');
+        expect(Array.isArray(config.budgets)).toBe(true);
+        expect(config.budgets.length).toBeGreaterThan(0);
     });
 
     it('should have valid budget structure', () => {
-        if (!config || !Array.isArray(config)) return;
+        if (!config || !config.budgets) return;
 
-        config.forEach((budget) => {
+        config.budgets.forEach((budget) => {
             expect(budget).toHaveProperty('resourceSizes');
             expect(Array.isArray(budget.resourceSizes)).toBe(true);
         });
