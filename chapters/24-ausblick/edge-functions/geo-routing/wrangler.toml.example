@@ -1,0 +1,16 @@
+# Kapitel 24: Geo-Routing Worker Konfiguration
+# Ausblick – Neue Technologien und Trends
+
+name = "shopware-geo-routing"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+
+# Route für alle Requests
+routes = [
+    { pattern = "shop.example.com/*", zone_name = "example.com" }
+]
+
+# Umgebungsvariablen
+[vars]
+DEFAULT_CURRENCY = "EUR"
+DEFAULT_LANGUAGE = "de"

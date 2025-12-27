@@ -1,0 +1,32 @@
+# Kapitel 24: Cloudflare Worker Konfiguration
+# Ausblick – Neue Technologien und Trends
+#
+# Kopieren als wrangler.toml und anpassen
+
+name = "shopware-ab-testing"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+
+# Route-Konfiguration
+# Ersetzen Sie "shop.example.com" mit Ihrer Domain
+routes = [
+    { pattern = "shop.example.com/*", zone_name = "example.com" }
+]
+
+# Alternativ: Workers.dev Subdomain für Tests
+# workers_dev = true
+
+# Umgebungsvariablen (optional)
+[vars]
+ENVIRONMENT = "production"
+
+# Entwicklungs-Umgebung
+[env.staging]
+name = "shopware-ab-testing-staging"
+routes = [
+    { pattern = "staging.shop.example.com/*", zone_name = "example.com" }
+]
+vars = { ENVIRONMENT = "staging" }
+
+# Lokale Entwicklung
+# wrangler dev --local
