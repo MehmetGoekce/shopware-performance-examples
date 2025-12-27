@@ -1,0 +1,15 @@
+includes:
+    - vendor/phpstan/phpstan-strict-rules/rules.neon
+
+parameters:
+    level: 6
+    paths:
+        - chapters
+    excludePaths:
+        - chapters/*/scripts/*.php
+    checkMissingIterableValueType: false
+    reportUnmatchedIgnoredErrors: false
+    ignoreErrors:
+        - '#Call to an undefined method Shopware\\Core\\Framework\\DataAbstractionLayer\\EntityRepository::#'
+        - '#Class Shopware\\#'
+        - '#Interface Symfony\\#'

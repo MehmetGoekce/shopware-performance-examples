@@ -35,3 +35,14 @@ docker-compose.override.yml
 # Temporary files
 *.tmp
 *.temp
+
+# Test artifacts
+coverage/
+.phpunit.cache/
+.phpunit.result.cache
+playwright-report/
+test-results/
+
+# Package locks (use composer.lock and package-lock.json)
+composer.lock
+package-lock.json

@@ -1,0 +1,26 @@
+{
+  "name": "shopware-performance-examples",
+  "version": "1.0.0",
+  "description": "Companion code for 'Shop-Performance in 30 Tagen'",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "lint": "eslint 'chapters/**/*.js'",
+    "lint:fix": "eslint 'chapters/**/*.js' --fix",
+    "shellcheck": "find chapters -name '*.sh' -exec shellcheck {} +",
+    "bats": "bats tests/Shell/"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.45.0",
+    "@vitest/coverage-v8": "^2.0.0",
+    "ajv": "^8.17.0",
+    "eslint": "^9.9.0",
+    "vitest": "^2.0.0"
+  },
+  "author": "Mehmet Goekce <info@memotech.ch>",
+  "license": "MIT"
+}

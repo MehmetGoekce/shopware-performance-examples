@@ -1,0 +1,14 @@
+# ShellCheck configuration for Shopware Performance Examples
+
+# Enable all checks by default
+enable=all
+
+# Exclude some overly strict checks
+disable=SC2034  # Unused variables (many are for documentation)
+disable=SC1091  # Source file not found (we source from various paths)
+
+# Use bash as default shell
+shell=bash
+
+# External sources
+external-sources=true
