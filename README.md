@@ -43,12 +43,17 @@ shopware-performance-examples/
 │   ├── cache-warmup.sh           # Cache vorwärmen
 │   └── analyze-queries.sh        # DB-Query-Analyse
 ├── chapters/                     # Code nach Kapiteln organisiert
-│   ├── 03-quick-wins/
+│   ├── 03-core-web-vitals/
+│   ├── 04-image-optimization/
+│   ├── 05-css-javascript/
 │   ├── 06-http-cache/
+│   ├── 07-shopware-cache/
 │   ├── 08-database/
 │   ├── 09-php-performance/
-│   ├── 10-redis/
-│   └── 11-cdn/
+│   ├── 10-redis-sentinel/
+│   ├── 11-cdn-integration/
+│   ├── ...
+│   └── 24-ausblick/
 ├── docker-compose.yml            # Entwicklungsumgebung
 ├── docker-compose.redis.yml      # Redis Sentinel Setup
 └── Makefile                      # Convenience-Commands
@@ -56,14 +61,18 @@ shopware-performance-examples/
 
 ## Kapitel-Übersicht
 
-| Kapitel | Thema | Branch/Tag |
-|---------|-------|------------|
-| 3 | Quick Wins (Bilder, CSS, JS) | `chapter-03` |
-| 6 | HTTP-Cache | `chapter-06` |
-| 8 | Datenbank-Optimierung | `chapter-08` |
-| 9 | PHP-Performance | `chapter-09` |
-| 10 | Redis High Availability | `chapter-10` |
-| 11 | CDN-Integration | `chapter-11` |
+| Kapitel | Thema | Verzeichnis |
+|---------|-------|-------------|
+| 3 | Core Web Vitals | `03-core-web-vitals/` |
+| 4 | Bildoptimierung | `04-image-optimization/` |
+| 5 | CSS & JavaScript | `05-css-javascript/` |
+| 6 | HTTP-Cache | `06-http-cache/` |
+| 7 | Shopware Cache | `07-shopware-cache/` |
+| 8 | Datenbank-Optimierung | `08-database/` |
+| 9 | PHP-Performance | `09-php-performance/` |
+| 10 | Redis Sentinel | `10-redis-sentinel/` |
+| 11 | CDN-Integration | `11-cdn-integration/` |
+| 12-24 | Weitere Kapitel | siehe `chapters/` |
 
 ## Verwendung
 
