@@ -86,7 +86,7 @@ See `.github/workflows/test.yml` for configuration.
 - [x] ShellCheck alle 69 Scripts - 0 Warnings (40 Warnings gefixt)
 - [x] PHPStan Level 6 standalone - 0 Errors (922 → 0)
 - [x] PHPStan mit Shopware 6.6 - 0 Errors (54 API-Issues dokumentiert)
-- [ ] ESLint Konfiguration + Fixes
+- [x] ESLint Konfiguration - 0 Errors (24 JS-Dateien, nur Warnings fuer unused vars)
 - [ ] Twig Linting einrichten
 
 #### PHPStan Konfigurationen
