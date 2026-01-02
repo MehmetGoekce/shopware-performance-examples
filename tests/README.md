@@ -82,12 +82,12 @@ See `.github/workflows/test.yml` for configuration.
 - [x] GitHub Actions CI Workflow
 - [x] Basis-Tests erstellt
 
-### Phase 2: Static Analysis (In Progress)
+### Phase 2: Static Analysis (Done)
 - [x] ShellCheck alle 69 Scripts - 0 Warnings (40 Warnings gefixt)
 - [x] PHPStan Level 6 standalone - 0 Errors (922 → 0)
 - [x] PHPStan mit Shopware 6.6 - 0 Errors (54 API-Issues dokumentiert)
 - [x] ESLint Konfiguration - 0 Errors (24 JS-Dateien, nur Warnings fuer unused vars)
-- [ ] Twig Linting einrichten
+- [x] Twig Linting - 0 Errors (13 Dateien, 2 Shopware-spezifische ausgeschlossen)
 
 #### PHPStan Konfigurationen
 
