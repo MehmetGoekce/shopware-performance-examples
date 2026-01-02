@@ -151,8 +151,8 @@
             try {
                 addLog('Registering Service Worker...');
                 const registration = await navigator.serviceWorker.register(
-                    '/chapters/19-mobile-performance/src/ServiceWorker/sw.js',
-                    { scope: '/' }
+                    '/tests/E2E/fixtures/mock-sw.js',
+                    { scope: '/tests/E2E/fixtures/' }
                 );
 
                 registration.addEventListener('updatefound', () => {

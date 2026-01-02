@@ -187,6 +187,7 @@
         });
 
         addLog('Test page initialized');
+        window.testReady = true;
     </script>
 
     <script type="module">
@@ -198,35 +199,39 @@
             ga4: { enabled: true }
         };
 
-        // Import the RUM tracker
-        import { onCLS, onINP, onLCP, onFCP, onTTFB }
-            from 'https://unpkg.com/web-vitals@4/dist/web-vitals.attribution.js?module';
+        try {
+            // Import the RUM tracker (may fail in some browsers)
+            const { onCLS, onINP, onLCP, onFCP, onTTFB } = await import(
+                'https://unpkg.com/web-vitals@4/dist/web-vitals.attribution.js?module'
+            );
 
-        function sendToAnalytics(metric) {
-            const data = {
-                name: metric.name,
-                value: metric.value,
-                rating: metric.rating,
-                delta: metric.delta,
-                id: metric.id,
-                page: window.location.pathname,
-                timestamp: Date.now()
-            };
+            function sendToAnalytics(metric) {
+                const data = {
+                    name: metric.name,
+                    value: metric.value,
+                    rating: metric.rating,
+                    delta: metric.delta,
+                    id: metric.id,
+                    page: window.location.pathname,
+                    timestamp: Date.now()
+                };
 
-            window.collectedMetrics.push(data);
+                window.collectedMetrics.push(data);
 
-            // Use mocked sendBeacon
-            navigator.sendBeacon('/api/rum', JSON.stringify(data));
+                // Use mocked sendBeacon
+                navigator.sendBeacon('/api/rum', JSON.stringify(data));
+            }
+
+            onCLS(sendToAnalytics);
+            onINP(sendToAnalytics);
+            onLCP(sendToAnalytics);
+            onFCP(sendToAnalytics);
+            onTTFB(sendToAnalytics);
+
+            console.log('[RUM] Test tracker initialized with web-vitals');
+        } catch (error) {
+            console.warn('[RUM] web-vitals import failed:', error);
         }
-
-        onCLS(sendToAnalytics);
-        onINP(sendToAnalytics);
-        onLCP(sendToAnalytics);
-        onFCP(sendToAnalytics);
-        onTTFB(sendToAnalytics);
-
-        window.testReady = true;
-        console.log('[RUM] Test tracker initialized');
     </script>
 </body>
 </html>

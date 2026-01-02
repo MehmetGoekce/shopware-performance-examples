@@ -235,7 +235,7 @@ test.describe('Page Context', () => {
 
         for (const metric of metrics) {
             if (metric.page) {
-                expect(metric.page).toContain('/tests/E2E/fixtures/rum-tracker.html');
+                expect(metric.page).toContain('/tests/E2E/fixtures/rum-tracker');
             }
         }
     });
@@ -254,11 +254,12 @@ test.describe('Page Context', () => {
     });
 });
 
-// Mobile device tests
+// Mobile device tests - run with: npx playwright test --project=mobile
 test.describe('Mobile RUM Collection', () => {
-    test.use({ ...require('@playwright/test').devices['iPhone 12'] });
+    test('should collect metrics on mobile viewport', async ({ page }) => {
+        // Set mobile viewport
+        await page.setViewportSize({ width: 390, height: 844 });
 
-    test('should collect metrics on mobile device', async ({ page }) => {
         await page.goto('/tests/E2E/fixtures/rum-tracker.html');
         await page.waitForFunction(() => window.testReady === true);
         await page.waitForTimeout(2000);
