@@ -29,7 +29,7 @@ echo -e "Shopware Root: ${SHOPWARE_ROOT}"
 echo ""
 
 # Prüfen ob Shopware-Verzeichnis existiert
-if [ ! -f "${SHOPWARE_ROOT}/bin/console" ]; then
+if [[ ! -f "${SHOPWARE_ROOT}/bin/console" ]]; then
     echo -e "${RED}Fehler: Kein Shopware-Verzeichnis gefunden.${NC}"
     echo "Verwendung: ./audit.sh /pfad/zu/shopware"
     exit 1
@@ -49,9 +49,9 @@ echo -e "${GREEN}${SHOPWARE_VERSION}${NC}"
 # PHP Version
 echo -n "PHP Version: "
 PHP_VERSION=$(php -v | head -n 1 | grep -oP '\d+\.\d+\.\d+')
-PHP_MAJOR=$(echo $PHP_VERSION | cut -d. -f1)
-PHP_MINOR=$(echo $PHP_VERSION | cut -d. -f2)
-if [ "$PHP_MAJOR" -ge 8 ] && [ "$PHP_MINOR" -ge 2 ]; then
+PHP_MAJOR=$(echo "${PHP_VERSION}" | cut -d. -f1)
+PHP_MINOR=$(echo "${PHP_VERSION}" | cut -d. -f2)
+if [[ "${PHP_MAJOR}" -ge 8 ]] && [[ "${PHP_MINOR}" -ge 2 ]]; then
     echo -e "${GREEN}${PHP_VERSION} ✓${NC}"
 else
     echo -e "${YELLOW}${PHP_VERSION} (8.2+ empfohlen)${NC}"
@@ -74,9 +74,9 @@ echo -e "${BLUE}└────────────────────�
 # Aktive Plugins zählen
 ACTIVE_PLUGINS=$(bin/console plugin:list --active 2>/dev/null | tail -n +4 | wc -l)
 echo -n "Aktive Plugins: "
-if [ "$ACTIVE_PLUGINS" -le 20 ]; then
+if [[ "${ACTIVE_PLUGINS}" -le 20 ]]; then
     echo -e "${GREEN}${ACTIVE_PLUGINS} ✓${NC}"
-elif [ "$ACTIVE_PLUGINS" -le 30 ]; then
+elif [[ "${ACTIVE_PLUGINS}" -le 30 ]]; then
     echo -e "${YELLOW}${ACTIVE_PLUGINS} (grenzwertig)${NC}"
 else
     echo -e "${RED}${ACTIVE_PLUGINS} (zu viele!)${NC}"
@@ -86,7 +86,7 @@ fi
 echo ""
 echo "Installierte Plugins:"
 bin/console plugin:list --active 2>/dev/null | tail -n +4 | head -20
-if [ "$ACTIVE_PLUGINS" -gt 20 ]; then
+if [[ "${ACTIVE_PLUGINS}" -gt 20 ]]; then
     echo "... und $((ACTIVE_PLUGINS - 20)) weitere"
 fi
 
@@ -98,7 +98,7 @@ echo -e "${BLUE}└────────────────────�
 # HTTP-Cache Status
 echo "HTTP-Cache Konfiguration:"
 HTTP_CACHE_ENABLED=$(bin/console debug:config shopware http_cache 2>/dev/null | grep -E "enabled:" | head -1 || echo "")
-if echo "$HTTP_CACHE_ENABLED" | grep -q "true"; then
+if echo "${HTTP_CACHE_ENABLED}" | grep -q "true"; then
     echo -e "${GREEN}✓ HTTP-Cache ist aktiviert${NC}"
 else
     echo -e "${RED}✗ HTTP-Cache ist DEAKTIVIERT!${NC}"
@@ -116,7 +116,7 @@ echo -e "${BLUE}└────────────────────�
 # OPcache Status
 OPCACHE_ENABLED=$(php -i 2>/dev/null | grep "opcache.enable =>" | head -1 | awk '{print $3}')
 echo -n "OPcache: "
-if [ "$OPCACHE_ENABLED" = "On" ] || [ "$OPCACHE_ENABLED" = "1" ]; then
+if [[ "${OPCACHE_ENABLED}" = "On" ]] || [[ "${OPCACHE_ENABLED}" = "1" ]]; then
     echo -e "${GREEN}aktiviert ✓${NC}"
 
     # OPcache Memory
@@ -125,7 +125,7 @@ if [ "$OPCACHE_ENABLED" = "On" ] || [ "$OPCACHE_ENABLED" = "1" ]; then
 
     # JIT Status (PHP 8+)
     JIT_ENABLED=$(php -i 2>/dev/null | grep "opcache.jit =>" | awk '{print $3}')
-    if [ -n "$JIT_ENABLED" ] && [ "$JIT_ENABLED" != "off" ] && [ "$JIT_ENABLED" != "0" ]; then
+    if [[ -n "${JIT_ENABLED}" ]] && [[ "${JIT_ENABLED}" != "off" ]] && [[ "${JIT_ENABLED}" != "0" ]]; then
         echo -e "JIT: ${GREEN}aktiviert ✓${NC}"
     else
         echo -e "JIT: ${YELLOW}deaktiviert (empfohlen für PHP 8.2+)${NC}"
@@ -144,7 +144,7 @@ echo -e "${BLUE}└────────────────────�
 echo -n "Redis: "
 if command -v redis-cli &> /dev/null; then
     REDIS_PING=$(redis-cli ping 2>/dev/null || echo "FAIL")
-    if [ "$REDIS_PING" = "PONG" ]; then
+    if [[ "${REDIS_PING}" = "PONG" ]]; then
         echo -e "${GREEN}läuft ✓${NC}"
 
         # Redis Memory
@@ -166,11 +166,11 @@ echo -e "${BLUE}└────────────────────�
 # Elasticsearch Status
 echo -n "Elasticsearch: "
 ES_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "localhost:9200/_cluster/health" 2>/dev/null || echo "000")
-if [ "$ES_STATUS" = "200" ]; then
+if [[ "${ES_STATUS}" = "200" ]]; then
     ES_HEALTH=$(curl -s "localhost:9200/_cluster/health" 2>/dev/null | grep -oP '"status":"[^"]+' | cut -d'"' -f4)
-    if [ "$ES_HEALTH" = "green" ]; then
+    if [[ "${ES_HEALTH}" = "green" ]]; then
         echo -e "${GREEN}läuft (${ES_HEALTH}) ✓${NC}"
-    elif [ "$ES_HEALTH" = "yellow" ]; then
+    elif [[ "${ES_HEALTH}" = "yellow" ]]; then
         echo -e "${YELLOW}läuft (${ES_HEALTH})${NC}"
     else
         echo -e "${RED}läuft (${ES_HEALTH})${NC}"
@@ -188,7 +188,7 @@ echo -e "${BLUE}└────────────────────�
 # CLI Worker Status
 echo -n "CLI Worker: "
 WORKER_RUNNING=$(ps aux 2>/dev/null | grep -c "messenger:consume" || echo "0")
-if [ "$WORKER_RUNNING" -gt 1 ]; then
+if [[ "${WORKER_RUNNING}" -gt 1 ]]; then
     echo -e "${GREEN}$((WORKER_RUNNING - 1)) Prozess(e) laufen ✓${NC}"
 else
     echo -e "${YELLOW}nicht aktiv${NC}"
@@ -208,7 +208,7 @@ echo -e "${BLUE}└────────────────────�
 # Bildgrößen
 echo "Große Bilder (> 1MB) im Media-Ordner:"
 LARGE_IMAGES=$(find public/media -type f \( -name "*.jpg" -o -name "*.jpeg" -o -name "*.png" \) -size +1M 2>/dev/null | wc -l)
-if [ "$LARGE_IMAGES" -eq 0 ]; then
+if [[ "${LARGE_IMAGES}" -eq 0 ]]; then
     echo -e "${GREEN}✓ Keine Bilder > 1MB gefunden${NC}"
 else
     echo -e "${RED}${LARGE_IMAGES} Bilder > 1MB gefunden!${NC}"

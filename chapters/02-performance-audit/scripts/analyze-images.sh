@@ -27,7 +27,7 @@ echo "Pfad: ${MEDIA_PATH}"
 echo "Schwellwert: ${THRESHOLD_KB}KB"
 echo ""
 
-if [ ! -d "${MEDIA_PATH}" ]; then
+if [[ ! -d "${MEDIA_PATH}" ]]; then
     echo -e "${RED}Fehler: Verzeichnis nicht gefunden: ${MEDIA_PATH}${NC}"
     exit 1
 fi
@@ -58,7 +58,7 @@ echo ""
 
 # WebP-Status
 echo -n "WebP-Bilder: "
-if [ "$WEBP_IMAGES" -gt 0 ]; then
+if [[ "${WEBP_IMAGES}" -gt 0 ]]; then
     WEBP_PERCENT=$((WEBP_IMAGES * 100 / TOTAL_IMAGES))
     echo -e "${GREEN}${WEBP_IMAGES} (${WEBP_PERCENT}%) ✓${NC}"
 else
@@ -67,7 +67,7 @@ fi
 
 echo ""
 echo -n "Bilder > ${THRESHOLD_KB}KB: "
-if [ "$LARGE_IMAGES" -eq 0 ]; then
+if [[ "${LARGE_IMAGES}" -eq 0 ]]; then
     echo -e "${GREEN}0 ✓${NC}"
 else
     LARGE_PERCENT=$((LARGE_IMAGES * 100 / TOTAL_IMAGES))
@@ -91,7 +91,7 @@ echo "GIF:  ${GIF_COUNT}"
 echo "WebP: ${WEBP_IMAGES}"
 
 # Große Bilder auflisten
-if [ "$LARGE_IMAGES" -gt 0 ]; then
+if [[ "${LARGE_IMAGES}" -gt 0 ]]; then
     echo ""
     echo -e "${BLUE}┌──────────────────────────────────────────────────────────────┐${NC}"
     echo -e "${BLUE}│ GRÖßTE BILDER (TOP 20)                                       │${NC}"
@@ -106,20 +106,20 @@ echo -e "${BLUE}║       EMPFEHLUNGEN                                         �
 echo -e "${BLUE}╚════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
-if [ "$LARGE_IMAGES" -gt 0 ]; then
+if [[ "${LARGE_IMAGES}" -gt 0 ]]; then
     echo -e "${YELLOW}! ${LARGE_IMAGES} Bilder sind größer als ${THRESHOLD_KB}KB${NC}"
     echo "  → Diese Bilder komprimieren oder in WebP konvertieren"
     echo ""
 fi
 
-if [ "$WEBP_IMAGES" -eq 0 ]; then
+if [[ "${WEBP_IMAGES}" -eq 0 ]]; then
     echo -e "${YELLOW}! Keine WebP-Bilder gefunden${NC}"
     echo "  → WebP-Konvertierung spart 25-34% Dateigröße"
     echo "  → Shopware 6 unterstützt automatische WebP-Generierung"
     echo ""
 fi
 
-if [ "$PNG_COUNT" -gt "$((TOTAL_IMAGES / 4))" ]; then
+if [[ "${PNG_COUNT}" -gt "$((TOTAL_IMAGES / 4))" ]]; then
     echo -e "${YELLOW}! Hoher PNG-Anteil (${PNG_COUNT} Bilder)${NC}"
     echo "  → PNG nur für Grafiken mit Transparenz verwenden"
     echo "  → Fotos als JPEG oder WebP speichern"

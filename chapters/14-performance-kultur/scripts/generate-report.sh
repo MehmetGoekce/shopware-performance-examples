@@ -31,19 +31,19 @@ echo "================================================"
 echo "  Performance Report Generator"
 echo "================================================"
 echo ""
-echo "Report-Typ: $REPORT_TYPE"
+echo "Report-Typ: ${REPORT_TYPE}"
 echo "Datum: $(date)"
 echo ""
 
 # Output-Verzeichnis
-mkdir -p "$OUTPUT_DIR"
+mkdir -p "${OUTPUT_DIR}"
 
 # Konfiguration (anpassen!)
 RUM_API_URL="${RUM_API_URL:-http://localhost:8080/api/rum}"
 LIGHTHOUSE_API_URL="${LIGHTHOUSE_API_URL:-http://localhost:9001/api}"
 
 # Zeitraum
-case "$REPORT_TYPE" in
+case "${REPORT_TYPE}" in
     weekly)
         DAYS=7
         PERIOD="Letzte 7 Tage"
@@ -53,7 +53,7 @@ case "$REPORT_TYPE" in
         PERIOD="Letzte 30 Tage"
         ;;
     *)
-        echo "Unbekannter Report-Typ: $REPORT_TYPE"
+        echo "Unbekannter Report-Typ: ${REPORT_TYPE}"
         echo "Verwendung: $0 [weekly|monthly]"
         exit 1
         ;;
@@ -63,10 +63,10 @@ esac
 REPORT_FILE="${OUTPUT_DIR}/performance-report-${REPORT_TYPE}-${TIMESTAMP}.md"
 
 # Header
-cat > "$REPORT_FILE" << EOF
+cat > "${REPORT_FILE}" << EOF
 # Performance Report
 
-**Zeitraum**: $PERIOD
+**Zeitraum**: ${PERIOD}
 **Erstellt**: $(date '+%Y-%m-%d %H:%M')
 **Typ**: ${REPORT_TYPE^}
 
@@ -92,58 +92,58 @@ get_status() {
     local metric=$1
     local value=$2
 
-    case $metric in
+    case ${metric} in
         LCP)
-            if [ "$value" -le 2500 ]; then echo "good"
-            elif [ "$value" -le 4000 ]; then echo "needs-improvement"
+            if [[ "${value}" -le 2500 ]]; then echo "good"
+            elif [[ "${value}" -le 4000 ]]; then echo "needs-improvement"
             else echo "poor"
             fi
             ;;
         INP)
-            if [ "$value" -le 200 ]; then echo "good"
-            elif [ "$value" -le 500 ]; then echo "needs-improvement"
+            if [[ "${value}" -le 200 ]]; then echo "good"
+            elif [[ "${value}" -le 500 ]]; then echo "needs-improvement"
             else echo "poor"
             fi
             ;;
     esac
 }
 
-LCP_STATUS=$(get_status LCP $LCP_P75)
-INP_STATUS=$(get_status INP $INP_P75)
+LCP_STATUS=$(get_status LCP ${LCP_P75})
+INP_STATUS=$(get_status INP ${INP_P75})
 
 # Trend berechnen
 get_trend() {
     local current=$1
     local previous=$2
 
-    if [ "$current" -lt "$previous" ]; then
+    if [[ "${current}" -lt "${previous}" ]]; then
         echo "↓ verbessert"
-    elif [ "$current" -gt "$previous" ]; then
+    elif [[ "${current}" -gt "${previous}" ]]; then
         echo "↑ verschlechtert"
     else
         echo "→ stabil"
     fi
 }
 
-LCP_TREND=$(get_trend $LCP_P75 $LCP_PREV)
-INP_TREND=$(get_trend $INP_P75 $INP_PREV)
+LCP_TREND=$(get_trend ${LCP_P75} ${LCP_PREV})
+INP_TREND=$(get_trend ${INP_P75} ${INP_PREV})
 
 # Core Web Vitals Tabelle
-cat >> "$REPORT_FILE" << EOF
+cat >> "${REPORT_FILE}" << EOF
 ## Core Web Vitals (p75)
 
 | Metrik | Aktuell | Vorperiode | Trend | Status |
 |--------|---------|------------|-------|--------|
-| LCP | ${LCP_P75}ms | ${LCP_PREV}ms | $LCP_TREND | $LCP_STATUS |
-| INP | ${INP_P75}ms | ${INP_PREV}ms | $INP_TREND | $INP_STATUS |
-| CLS | $CLS_P75 | $CLS_PREV | → stabil | good |
+| LCP | ${LCP_P75}ms | ${LCP_PREV}ms | ${LCP_TREND} | ${LCP_STATUS} |
+| INP | ${INP_P75}ms | ${INP_PREV}ms | ${INP_TREND} | ${INP_STATUS} |
+| CLS | ${CLS_P75} | ${CLS_PREV} | → stabil | good |
 
 EOF
 
 # Error Budget Status
 echo "Berechne Error Budget..."
 
-cat >> "$REPORT_FILE" << EOF
+cat >> "${REPORT_FILE}" << EOF
 ## Error Budget Status
 
 | Metrik | Verbraucht | Verbleibend | Policy |
@@ -155,7 +155,7 @@ cat >> "$REPORT_FILE" << EOF
 EOF
 
 # Top Issues
-cat >> "$REPORT_FILE" << EOF
+cat >> "${REPORT_FILE}" << EOF
 ## Top Performance Issues
 
 1. **Checkout LCP erhöht** (2.8s → Ziel: 2.5s)
@@ -173,7 +173,7 @@ cat >> "$REPORT_FILE" << EOF
 EOF
 
 # Erfolge
-cat >> "$REPORT_FILE" << EOF
+cat >> "${REPORT_FILE}" << EOF
 ## Erfolge diese Periode
 
 - **LCP um 10% verbessert** auf Startseite
@@ -183,7 +183,7 @@ cat >> "$REPORT_FILE" << EOF
 EOF
 
 # Nächste Schritte
-cat >> "$REPORT_FILE" << EOF
+cat >> "${REPORT_FILE}" << EOF
 ## Nächste Schritte
 
 1. Checkout-Optimierung abschließen
@@ -197,18 +197,18 @@ cat >> "$REPORT_FILE" << EOF
 EOF
 
 echo ""
-echo -e "${GREEN}Report erstellt: $REPORT_FILE${NC}"
+echo -e "${GREEN}Report erstellt: ${REPORT_FILE}${NC}"
 echo ""
 
 # Optional: Report per Slack/Email senden
-if [ -n "$SLACK_WEBHOOK" ]; then
+if [[ -n "${SLACK_WEBHOOK}" ]]; then
     echo "Sende Report an Slack..."
 
-    SUMMARY="Performance Report ($REPORT_TYPE): LCP ${LCP_P75}ms (${LCP_STATUS}), INP ${INP_P75}ms (${INP_STATUS})"
+    SUMMARY="Performance Report (${REPORT_TYPE}): LCP ${LCP_P75}ms (${LCP_STATUS}), INP ${INP_P75}ms (${INP_STATUS})"
 
-    curl -s -X POST "$SLACK_WEBHOOK" \
+    curl -s -X POST "${SLACK_WEBHOOK}" \
         -H 'Content-type: application/json' \
-        -d "{\"text\": \"$SUMMARY\n\nVollständiger Report: [Link zum Report]\"}" > /dev/null
+        -d "{\"text\": \"${SUMMARY}\n\nVollständiger Report: [Link zum Report]\"}" > /dev/null
 
     echo "Slack-Nachricht gesendet."
 fi

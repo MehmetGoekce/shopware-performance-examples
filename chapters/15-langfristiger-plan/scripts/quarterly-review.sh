@@ -51,33 +51,33 @@ echo "================================================"
 echo "  Quarterly Performance Review"
 echo "================================================"
 echo ""
-echo "Quartal: $QUARTER $YEAR"
+echo "Quartal: ${QUARTER} ${YEAR}"
 echo "Datum: $(date)"
 echo ""
 
 # Output-Verzeichnis erstellen
-mkdir -p "$OUTPUT_DIR"
+mkdir -p "${OUTPUT_DIR}"
 
 # Quartalsdaten berechnen
 get_quarter_dates() {
     local q=$1
     local year=$2
 
-    case $q in
+    case ${q} in
         Q1) START="${year}-01-01"; END="${year}-03-31" ;;
         Q2) START="${year}-04-01"; END="${year}-06-30" ;;
         Q3) START="${year}-07-01"; END="${year}-09-30" ;;
         Q4) START="${year}-10-01"; END="${year}-12-31" ;;
     esac
 
-    echo "$START|$END"
+    echo "${START}|${END}"
 }
 
-DATES=$(get_quarter_dates "$QUARTER" "$YEAR")
-START_DATE=$(echo "$DATES" | cut -d'|' -f1)
-END_DATE=$(echo "$DATES" | cut -d'|' -f2)
+DATES=$(get_quarter_dates "${QUARTER}" "${YEAR}")
+START_DATE=$(echo "${DATES}" | cut -d'|' -f1)
+END_DATE=$(echo "${DATES}" | cut -d'|' -f2)
 
-echo "Zeitraum: $START_DATE bis $END_DATE"
+echo "Zeitraum: ${START_DATE} bis ${END_DATE}"
 echo ""
 
 # Report-Datei
@@ -85,11 +85,11 @@ OUTPUT_FILE="${OUTPUT_FILE:-quarterly-review-${QUARTER}-${YEAR}.md}"
 REPORT_FILE="${OUTPUT_DIR}/${OUTPUT_FILE}"
 
 # Header schreiben
-cat > "$REPORT_FILE" << EOF
+cat > "${REPORT_FILE}" << EOF
 # Quarterly Performance Review
 
-**Quartal**: $QUARTER $YEAR
-**Zeitraum**: $START_DATE bis $END_DATE
+**Quartal**: ${QUARTER} ${YEAR}
+**Zeitraum**: ${START_DATE} bis ${END_DATE}
 **Erstellt**: $(date '+%Y-%m-%d %H:%M')
 
 ---
@@ -117,39 +117,39 @@ CLS_END=0.06
 calc_improvement() {
     local start=$1
     local end=$2
-    echo "scale=1; (($start - $end) / $start) * 100" | bc
+    echo "scale=1; ((${start} - ${end}) / ${start}) * 100" | bc
 }
 
-LCP_IMPROVEMENT=$(calc_improvement $LCP_START $LCP_END)
-INP_IMPROVEMENT=$(calc_improvement $INP_START $INP_END)
+LCP_IMPROVEMENT=$(calc_improvement ${LCP_START} ${LCP_END})
+INP_IMPROVEMENT=$(calc_improvement ${INP_START} ${INP_END})
 
-cat >> "$REPORT_FILE" << EOF
+cat >> "${REPORT_FILE}" << EOF
 ### Core Web Vitals Performance
 
 | Metrik | Quartalsstart | Quartalsende | Verbesserung |
 |--------|---------------|--------------|--------------|
 | LCP (p75) | ${LCP_START}ms | ${LCP_END}ms | **${LCP_IMPROVEMENT}%** ↓ |
 | INP (p75) | ${INP_START}ms | ${INP_END}ms | **${INP_IMPROVEMENT}%** ↓ |
-| CLS (p75) | $CLS_START | $CLS_END | **50%** ↓ |
+| CLS (p75) | ${CLS_START} | ${CLS_END} | **50%** ↓ |
 
 **Bewertung**:
 EOF
 
 # Bewertung
-if [ "${LCP_END}" -le 2500 ] && [ "${INP_END}" -le 200 ]; then
-    echo "Alle Core Web Vitals im 'Good' Bereich." >> "$REPORT_FILE"
+if [[ "${LCP_END}" -le 2500 ]] && [[ "${INP_END}" -le 200 ]]; then
+    echo "Alle Core Web Vitals im 'Good' Bereich." >> "${REPORT_FILE}"
 else
-    echo "Verbesserungen nötig bei einzelnen Metriken." >> "$REPORT_FILE"
+    echo "Verbesserungen nötig bei einzelnen Metriken." >> "${REPORT_FILE}"
 fi
 
-echo "" >> "$REPORT_FILE"
+echo "" >> "${REPORT_FILE}"
 
 # ============================================================
 # OKR Status
 # ============================================================
 echo "- OKR Status..."
 
-cat >> "$REPORT_FILE" << EOF
+cat >> "${REPORT_FILE}" << EOF
 
 ---
 
@@ -190,7 +190,7 @@ EOF
 # ============================================================
 echo "- Incidents..."
 
-cat >> "$REPORT_FILE" << EOF
+cat >> "${REPORT_FILE}" << EOF
 
 ---
 
@@ -221,7 +221,7 @@ EOF
 # ============================================================
 echo "- Tech Debt..."
 
-cat >> "$REPORT_FILE" << EOF
+cat >> "${REPORT_FILE}" << EOF
 
 ---
 
@@ -249,7 +249,7 @@ EOF
 # ============================================================
 echo "- Budget..."
 
-cat >> "$REPORT_FILE" << EOF
+cat >> "${REPORT_FILE}" << EOF
 
 ---
 
@@ -271,7 +271,7 @@ EOF
 # ============================================================
 echo "- Achievements & Challenges..."
 
-cat >> "$REPORT_FILE" << EOF
+cat >> "${REPORT_FILE}" << EOF
 
 ---
 
@@ -324,18 +324,18 @@ EOF
 echo "- Next Quarter Planning..."
 
 # Nächstes Quartal bestimmen
-case $QUARTER in
+case ${QUARTER} in
     Q1) NEXT_Q="Q2" ;;
     Q2) NEXT_Q="Q3" ;;
     Q3) NEXT_Q="Q4" ;;
     Q4) NEXT_Q="Q1"; YEAR=$((YEAR + 1)) ;;
 esac
 
-cat >> "$REPORT_FILE" << EOF
+cat >> "${REPORT_FILE}" << EOF
 
 ---
 
-## Planung $NEXT_Q $YEAR
+## Planung ${NEXT_Q} ${YEAR}
 
 ### Fokus-Themen
 
@@ -368,7 +368,7 @@ EOF
 
 echo ""
 echo "================================================"
-echo -e "${GREEN}Report erstellt: $REPORT_FILE${NC}"
+echo -e "${GREEN}Report erstellt: ${REPORT_FILE}${NC}"
 echo "================================================"
 echo ""
 

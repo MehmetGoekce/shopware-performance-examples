@@ -75,8 +75,8 @@ install_partytown() {
     check_command "npm"
     check_command "node"
 
-    if [ ! -d "$SHOPWARE_ROOT" ]; then
-        print_error "Shopware root directory not found: $SHOPWARE_ROOT"
+    if [[ ! -d "${SHOPWARE_ROOT}" ]]; then
+        print_error "Shopware root directory not found: ${SHOPWARE_ROOT}"
         exit 1
     fi
 
@@ -85,9 +85,9 @@ install_partytown() {
 
     # Install Partytown
     print_step "Installing Partytown via npm..."
-    cd "$SHOPWARE_ROOT"
+    cd "${SHOPWARE_ROOT}"
 
-    if [ ! -f "package.json" ]; then
+    if [[ ! -f "package.json" ]]; then
         print_warning "Creating package.json..."
         npm init -y
     fi
@@ -100,7 +100,7 @@ install_partytown() {
     print_step "Copying Partytown library files..."
     mkdir -p "${PUBLIC_PATH}/~partytown"
 
-    if [ -d "node_modules/@builder.io/partytown/lib" ]; then
+    if [[ -d "node_modules/@builder.io/partytown/lib" ]]; then
         cp -r node_modules/@builder.io/partytown/lib/* "${PUBLIC_PATH}/~partytown/"
         print_success "Partytown files copied to public/~partytown/"
     else
@@ -215,7 +215,7 @@ EOF
 
 create_integration_snippets() {
     SNIPPETS_DIR="${SHOPWARE_ROOT}/templates/storefront/partytown"
-    mkdir -p "$SNIPPETS_DIR"
+    mkdir -p "${SNIPPETS_DIR}"
 
     # Init snippet
     cat > "${SNIPPETS_DIR}/init.html.twig" << 'EOF'
@@ -321,7 +321,7 @@ EOF
 
     # Create examples directory
     EXAMPLES_DIR="${SHOPWARE_ROOT}/partytown-examples"
-    mkdir -p "$EXAMPLES_DIR"
+    mkdir -p "${EXAMPLES_DIR}"
 
     cat > "${EXAMPLES_DIR}/README.md" << 'EOF'
 # Partytown Integration Examples
@@ -437,7 +437,7 @@ uninstall_partytown() {
     echo ""
 
     print_step "Removing npm package..."
-    cd "$SHOPWARE_ROOT"
+    cd "${SHOPWARE_ROOT}"
     npm uninstall @builder.io/partytown
     print_success "Package removed"
     echo ""
@@ -455,9 +455,9 @@ uninstall_partytown() {
 ###############################################################################
 
 main() {
-    if [ "$1" = "--uninstall" ]; then
+    if [[ "$1" = "--uninstall" ]]; then
         uninstall_partytown
-    elif [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
+    elif [[ "$1" = "--help" ]] || [[ "$1" = "-h" ]]; then
         echo "Usage: $0 [--uninstall|--help]"
         echo ""
         echo "Install Partytown for Shopware 6 to run third-party scripts in Web Workers."

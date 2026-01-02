@@ -48,7 +48,7 @@ echo "================================================"
 echo "  PR Performance Review Statistics"
 echo "================================================"
 echo ""
-echo "Zeitraum: Letzte $DAYS Tage"
+echo "Zeitraum: Letzte ${DAYS} Tage"
 echo "Datum: $(date)"
 echo ""
 
@@ -67,9 +67,9 @@ if ! gh auth status &> /dev/null; then
 fi
 
 # Datum berechnen
-SINCE_DATE=$(date -d "-$DAYS days" +%Y-%m-%d 2>/dev/null || date -v-${DAYS}d +%Y-%m-%d)
+SINCE_DATE=$(date -d "-${DAYS} days" +%Y-%m-%d 2>/dev/null || date -v-"${DAYS}"d +%Y-%m-%d)
 
-echo "Lade PRs seit $SINCE_DATE..."
+echo "Lade PRs seit ${SINCE_DATE}..."
 echo ""
 
 # PRs abrufen
@@ -77,20 +77,20 @@ PRS=$(gh pr list \
     --state merged \
     --limit 500 \
     --json number,title,labels,createdAt,mergedAt,comments,reviewDecision \
-    --search "created:>$SINCE_DATE")
+    --search "created:>${SINCE_DATE}")
 
-TOTAL_PRS=$(echo "$PRS" | jq 'length')
+TOTAL_PRS=$(echo "${PRS}" | jq 'length')
 
-if [ "$TOTAL_PRS" -eq 0 ]; then
+if [[ "${TOTAL_PRS}" -eq 0 ]]; then
     echo "Keine PRs im Zeitraum gefunden."
     exit 0
 fi
 
-echo -e "Gefundene PRs: ${BLUE}$TOTAL_PRS${NC}"
+echo -e "Gefundene PRs: ${BLUE}${TOTAL_PRS}${NC}"
 echo ""
 
 # Performance-Label PRs
-PERF_LABELED=$(echo "$PRS" | jq '[.[] | select(.labels[].name | contains("performance"))] | length')
+PERF_LABELED=$(echo "${PRS}" | jq '[.[] | select(.labels[].name | contains("performance"))] | length')
 
 # PRs mit Performance-Kommentaren (vereinfacht)
 # In Realität: Kommentar-Inhalt prüfen
@@ -103,40 +103,40 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 
 # Total
-echo -e "Gesamt PRs:              ${BLUE}$TOTAL_PRS${NC}"
+echo -e "Gesamt PRs:              ${BLUE}${TOTAL_PRS}${NC}"
 
 # Mit Performance-Label
 PERF_RATE=$((PERF_LABELED * 100 / TOTAL_PRS))
-if [ "$PERF_RATE" -ge 80 ]; then
-    COLOR=$GREEN
-elif [ "$PERF_RATE" -ge 50 ]; then
-    COLOR=$YELLOW
+if [[ "${PERF_RATE}" -ge 80 ]]; then
+    COLOR=${GREEN}
+elif [[ "${PERF_RATE}" -ge 50 ]]; then
+    COLOR=${YELLOW}
 else
-    COLOR=$RED
+    COLOR=${RED}
 fi
-echo -e "Mit Performance-Label:   ${COLOR}$PERF_LABELED ($PERF_RATE%)${NC}"
+echo -e "Mit Performance-Label:   ${COLOR}${PERF_LABELED} (${PERF_RATE}%)${NC}"
 
 # Review-Status
-APPROVED=$(echo "$PRS" | jq '[.[] | select(.reviewDecision == "APPROVED")] | length')
-CHANGES_REQUESTED=$(echo "$PRS" | jq '[.[] | select(.reviewDecision == "CHANGES_REQUESTED")] | length')
+APPROVED=$(echo "${PRS}" | jq '[.[] | select(.reviewDecision == "APPROVED")] | length')
+CHANGES_REQUESTED=$(echo "${PRS}" | jq '[.[] | select(.reviewDecision == "CHANGES_REQUESTED")] | length')
 
 echo ""
 echo "Review-Status:"
-echo -e "  Approved:              $APPROVED"
-echo -e "  Changes Requested:     $CHANGES_REQUESTED"
+echo -e "  Approved:              ${APPROVED}"
+echo -e "  Changes Requested:     ${CHANGES_REQUESTED}"
 
 # Labels Breakdown
 echo ""
 echo "Labels (Performance-relevant):"
 
 # Performance Labels zählen
-PERF_CRITICAL=$(echo "$PRS" | jq '[.[] | select(.labels[].name == "performance-critical")] | length')
-PERF_REVIEW=$(echo "$PRS" | jq '[.[] | select(.labels[].name == "performance-reviewed")] | length')
-PERF_IMPROVEMENT=$(echo "$PRS" | jq '[.[] | select(.labels[].name == "performance-improvement")] | length')
+PERF_CRITICAL=$(echo "${PRS}" | jq '[.[] | select(.labels[].name == "performance-critical")] | length')
+PERF_REVIEW=$(echo "${PRS}" | jq '[.[] | select(.labels[].name == "performance-reviewed")] | length')
+PERF_IMPROVEMENT=$(echo "${PRS}" | jq '[.[] | select(.labels[].name == "performance-improvement")] | length')
 
-echo "  performance-critical:  $PERF_CRITICAL"
-echo "  performance-reviewed:  $PERF_REVIEW"
-echo "  performance-improvement: $PERF_IMPROVEMENT"
+echo "  performance-critical:  ${PERF_CRITICAL}"
+echo "  performance-reviewed:  ${PERF_REVIEW}"
+echo "  performance-improvement: ${PERF_IMPROVEMENT}"
 
 # Empfehlung
 echo ""
@@ -145,13 +145,13 @@ echo "  Empfehlung"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-if [ "$PERF_RATE" -lt 50 ]; then
+if [[ "${PERF_RATE}" -lt 50 ]]; then
     echo -e "${RED}Review-Rate zu niedrig!${NC}"
     echo "Empfehlung:"
     echo "  - Performance-Checklist in PR-Template"
     echo "  - Automatisches Label bei Frontend-Changes"
     echo "  - Champion-Reminder in #performance"
-elif [ "$PERF_RATE" -lt 80 ]; then
+elif [[ "${PERF_RATE}" -lt 80 ]]; then
     echo -e "${YELLOW}Review-Rate verbesserungswürdig.${NC}"
     echo "Empfehlung:"
     echo "  - Weiter an Konsistenz arbeiten"
@@ -162,14 +162,14 @@ else
 fi
 
 # Verbose: Einzelne PRs auflisten
-if [ "$VERBOSE" = true ]; then
+if [[ "${VERBOSE}" = true ]]; then
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "  PRs ohne Performance-Review"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
 
-    echo "$PRS" | jq -r '.[] | select(.labels | map(.name) | contains(["performance"]) | not) | "PR #\(.number): \(.title)"' | head -20
+    echo "${PRS}" | jq -r '.[] | select(.labels | map(.name) | contains(["performance"]) | not) | "PR #\(.number): \(.title)"' | head -20
 
     echo ""
     echo "(Zeige max. 20)"

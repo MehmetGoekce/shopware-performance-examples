@@ -35,7 +35,7 @@ usage() {
     exit 1
 }
 
-if [ -z "$SHOP_URL" ]; then
+if [[ -z "${SHOP_URL}" ]]; then
     usage
 fi
 
@@ -44,9 +44,9 @@ SHOP_URL="${SHOP_URL%/}"
 
 echo "=== CDN Cache Warming ==="
 echo ""
-echo "Shop:        $SHOP_URL"
-echo "Modus:       $MODE"
-echo "Parallelität: $CONCURRENCY"
+echo "Shop:        ${SHOP_URL}"
+echo "Modus:       ${MODE}"
+echo "Parallelität: ${CONCURRENCY}"
 echo ""
 
 # ============================================================================
@@ -65,16 +65,16 @@ warm_critical() {
 
     for url in "${CRITICAL_URLS[@]}"; do
         full_url="${SHOP_URL}${url}"
-        echo -n "  $url ... "
+        echo -n "  ${url} ... "
 
         status=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "User-Agent: $USER_AGENT" \
-            "$full_url")
+            -H "User-Agent: ${USER_AGENT}" \
+            "${full_url}")
 
-        if [ "$status" == "200" ]; then
+        if [[ "${status}" == "200" ]]; then
             echo -e "${GREEN}OK${NC}"
         else
-            echo -e "${YELLOW}$status${NC}"
+            echo -e "${YELLOW}${status}${NC}"
         fi
     done
 }
@@ -89,7 +89,7 @@ warm_sitemap() {
 
     SITEMAP_URL="${SHOP_URL}/sitemap.xml"
 
-    echo "Lade Sitemap: $SITEMAP_URL"
+    echo "Lade Sitemap: ${SITEMAP_URL}"
 
     # Prüfen ob xmllint verfügbar
     if ! command -v xmllint &> /dev/null; then
@@ -99,25 +99,25 @@ warm_sitemap() {
     fi
 
     # Sitemap herunterladen und URLs extrahieren
-    URLS=$(curl -s "$SITEMAP_URL" | \
+    URLS=$(curl -s "${SITEMAP_URL}" | \
         xmllint --xpath "//*[local-name()='loc']/text()" - 2>/dev/null || echo "")
 
-    if [ -z "$URLS" ]; then
+    if [[ -z "${URLS}" ]]; then
         echo -e "${YELLOW}Keine URLs in Sitemap gefunden${NC}"
         return
     fi
 
-    URL_COUNT=$(echo "$URLS" | wc -l)
-    echo "Gefundene URLs: $URL_COUNT"
+    URL_COUNT=$(echo "${URLS}" | wc -l)
+    echo "Gefundene URLs: ${URL_COUNT}"
     echo ""
 
     # Parallel ausführen
-    echo "$URLS" | xargs -P $CONCURRENCY -I {} sh -c "
-        status=\$(curl -s -o /dev/null -w '%{http_code}' -H 'User-Agent: $USER_AGENT' '{}')
-        if [ \"\$status\" == \"200\" ]; then
+    echo "${URLS}" | xargs -P ${CONCURRENCY} -I {} sh -c "
+        status=\$(curl -s -o /dev/null -w '%{http_code}' -H 'User-Agent: ${USER_AGENT}' '{}')
+        if [[ \"\${status}\" == \"200\" ]]; then
             echo \"  {} ... OK\"
         else
-            echo \"  {} ... \$status\"
+            echo \"  {} ... \${status}\"
         fi
     "
 }
@@ -131,36 +131,36 @@ warm_assets() {
     echo "=== Wärme statische Assets ==="
 
     # Homepage laden und Asset-URLs extrahieren
-    ASSETS=$(curl -s "$SHOP_URL" | \
+    ASSETS=$(curl -s "${SHOP_URL}" | \
         grep -oE '(href|src)="[^"]+\.(css|js|woff2?)"' | \
         sed -E 's/(href|src)="([^"]+)"/\2/' | \
         sort -u)
 
-    if [ -z "$ASSETS" ]; then
+    if [[ -z "${ASSETS}" ]]; then
         echo "Keine Assets gefunden"
         return
     fi
 
-    ASSET_COUNT=$(echo "$ASSETS" | wc -l)
-    echo "Gefundene Assets: $ASSET_COUNT"
+    ASSET_COUNT=$(echo "${ASSETS}" | wc -l)
+    echo "Gefundene Assets: ${ASSET_COUNT}"
 
-    echo "$ASSETS" | while read -r asset; do
+    echo "${ASSETS}" | while read -r asset; do
         # Relative URLs zu absoluten machen
-        if [[ "$asset" == /* ]]; then
+        if [[ "${asset}" == /* ]]; then
             asset="${SHOP_URL}${asset}"
-        elif [[ "$asset" != http* ]]; then
+        elif [[ "${asset}" != http* ]]; then
             asset="${SHOP_URL}/${asset}"
         fi
 
-        echo -n "  $(basename "$asset") ... "
+        echo -n "  $(basename "${asset}") ... "
         status=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "User-Agent: $USER_AGENT" \
-            "$asset")
+            -H "User-Agent: ${USER_AGENT}" \
+            "${asset}")
 
-        if [ "$status" == "200" ]; then
+        if [[ "${status}" == "200" ]]; then
             echo -e "${GREEN}OK${NC}"
         else
-            echo -e "${YELLOW}$status${NC}"
+            echo -e "${YELLOW}${status}${NC}"
         fi
     done
 }
@@ -175,29 +175,29 @@ check_cache_headers() {
 
     TEST_URL="${SHOP_URL}/bundles/storefront/assets/icon/default/info.svg"
 
-    echo "Test-URL: $TEST_URL"
+    echo "Test-URL: ${TEST_URL}"
     echo ""
 
-    headers=$(curl -sI "$TEST_URL")
+    headers=$(curl -sI "${TEST_URL}")
 
     # Cache-Control
-    cache_control=$(echo "$headers" | grep -i "cache-control" | head -1)
-    if [ -n "$cache_control" ]; then
-        echo -e "${GREEN}Cache-Control:${NC} $cache_control"
+    cache_control=$(echo "${headers}" | grep -i "cache-control" | head -1)
+    if [[ -n "${cache_control}" ]]; then
+        echo -e "${GREEN}Cache-Control:${NC} ${cache_control}"
     else
         echo -e "${RED}Cache-Control: FEHLT${NC}"
     fi
 
     # CDN-Status (Cloudflare)
-    cf_status=$(echo "$headers" | grep -i "cf-cache-status" | head -1)
-    if [ -n "$cf_status" ]; then
-        echo -e "${GREEN}CF-Cache-Status:${NC} $cf_status"
+    cf_status=$(echo "${headers}" | grep -i "cf-cache-status" | head -1)
+    if [[ -n "${cf_status}" ]]; then
+        echo -e "${GREEN}CF-Cache-Status:${NC} ${cf_status}"
     fi
 
     # CDN-Status (Bunny)
-    bunny_status=$(echo "$headers" | grep -i "cdn-cache" | head -1)
-    if [ -n "$bunny_status" ]; then
-        echo -e "${GREEN}CDN-Cache:${NC} $bunny_status"
+    bunny_status=$(echo "${headers}" | grep -i "cdn-cache" | head -1)
+    if [[ -n "${bunny_status}" ]]; then
+        echo -e "${GREEN}CDN-Cache:${NC} ${bunny_status}"
     fi
 }
 
@@ -207,7 +207,7 @@ check_cache_headers() {
 
 START_TIME=$(date +%s)
 
-case $MODE in
+case ${MODE} in
     --critical-only)
         warm_critical
         warm_assets
@@ -233,4 +233,4 @@ echo "Dauer: ${DURATION}s"
 echo ""
 echo "Nächste Schritte:"
 echo "  1. CDN-Dashboard auf Hit-Rate prüfen"
-echo "  2. curl -I $SHOP_URL | grep -i cache"
+echo "  2. curl -I ${SHOP_URL} | grep -i cache"

@@ -49,7 +49,7 @@ echo "================================================"
 echo "  Performance Budget Check"
 echo "================================================"
 echo ""
-echo -e "URL: ${BLUE}$URL${NC}"
+echo -e "URL: ${BLUE}${URL}${NC}"
 echo "Zeit: $(date)"
 echo ""
 
@@ -62,13 +62,13 @@ fi
 
 # Temporäres Verzeichnis
 TMP_DIR=$(mktemp -d)
-trap 'rm -rf "$TMP_DIR"' EXIT
+trap 'rm -rf "${TMP_DIR}"' EXIT
 
 echo "Führe Lighthouse-Test aus..."
 echo ""
 
 # Lighthouse ausführen (nur Performance)
-lighthouse "$URL" \
+lighthouse "${URL}" \
     --output=json \
     --output-path="${TMP_DIR}/report.json" \
     --only-categories=performance \
@@ -76,7 +76,7 @@ lighthouse "$URL" \
     --quiet
 
 # Ergebnisse parsen
-if [ ! -f "${TMP_DIR}/report.json" ]; then
+if [[ ! -f "${TMP_DIR}/report.json" ]]; then
     echo -e "${RED}FEHLER: Kein Report generiert${NC}"
     exit 2
 fi
@@ -86,7 +86,7 @@ PERF_SCORE=$(jq -r '.categories.performance.score * 100 | floor' "${TMP_DIR}/rep
 LCP=$(jq -r '.audits["largest-contentful-paint"].numericValue | floor' "${TMP_DIR}/report.json")
 TBT=$(jq -r '.audits["total-blocking-time"].numericValue | floor' "${TMP_DIR}/report.json")
 CLS_RAW=$(jq -r '.audits["cumulative-layout-shift"].numericValue' "${TMP_DIR}/report.json")
-CLS=$(echo "$CLS_RAW * 1000" | bc | cut -d. -f1)
+CLS=$(echo "${CLS_RAW} * 1000" | bc | cut -d. -f1)
 FCP=$(jq -r '.audits["first-contentful-paint"].numericValue | floor' "${TMP_DIR}/report.json")
 JS_SIZE=$(jq -r '.audits["total-byte-weight"].details.items[] | select(.url | contains(".js")) | .totalBytes' "${TMP_DIR}/report.json" | awk '{s+=$1} END {print s}')
 TOTAL_SIZE=$(jq -r '.audits["total-byte-weight"].numericValue | floor' "${TMP_DIR}/report.json")
@@ -111,67 +111,67 @@ check_budget() {
     local status=""
     local color=""
 
-    if [ "$invert" == "true" ]; then
+    if [[ "${invert}" == "true" ]]; then
         # Für Scores: höher = besser
-        if [ "$value" -ge "$hard_limit" ]; then
+        if [[ "${value}" -ge "${hard_limit}" ]]; then
             status="PASS"
-            color="$GREEN"
-        elif [ "$value" -ge "$warn_limit" ]; then
+            color="${GREEN}"
+        elif [[ "${value}" -ge "${warn_limit}" ]]; then
             status="WARN"
-            color="$YELLOW"
-            [ $EXIT_CODE -lt 1 ] && EXIT_CODE=1
+            color="${YELLOW}"
+            [ ${EXIT_CODE} -lt 1 ] && EXIT_CODE=1
         else
             status="FAIL"
-            color="$RED"
+            color="${RED}"
             EXIT_CODE=2
         fi
     else
         # Für Metriken: niedriger = besser
-        if [ "$value" -le "$warn_limit" ]; then
+        if [[ "${value}" -le "${warn_limit}" ]]; then
             status="PASS"
-            color="$GREEN"
-        elif [ "$value" -le "$hard_limit" ]; then
+            color="${GREEN}"
+        elif [[ "${value}" -le "${hard_limit}" ]]; then
             status="WARN"
-            color="$YELLOW"
-            [ $EXIT_CODE -lt 1 ] && EXIT_CODE=1
+            color="${YELLOW}"
+            [ ${EXIT_CODE} -lt 1 ] && EXIT_CODE=1
         else
             status="FAIL"
-            color="$RED"
+            color="${RED}"
             EXIT_CODE=2
         fi
     fi
 
-    printf "%-20s %8s${unit}  (limit: %s${unit})  ${color}[%s]${NC}\n" "$name" "$value" "$hard_limit" "$status"
+    printf "%-20s %8s${unit}  (limit: %s${unit})  ${color}[%s]${NC}\n" "${name}" "${value}" "${hard_limit}" "${status}"
 }
 
 # Budgets prüfen
 echo "Core Web Vitals:"
-check_budget "LCP" "$LCP" "$WARN_LCP" "$BUDGET_LCP" "ms"
-check_budget "CLS (×1000)" "$CLS" "$WARN_CLS" "$BUDGET_CLS" ""
-check_budget "TBT" "$TBT" "$WARN_TBT" "$BUDGET_TBT" "ms"
-check_budget "FCP" "$FCP" "1620" "$BUDGET_FCP" "ms"
+check_budget "LCP" "${LCP}" "${WARN_LCP}" "${BUDGET_LCP}" "ms"
+check_budget "CLS (×1000)" "${CLS}" "${WARN_CLS}" "${BUDGET_CLS}" ""
+check_budget "TBT" "${TBT}" "${WARN_TBT}" "${BUDGET_TBT}" "ms"
+check_budget "FCP" "${FCP}" "1620" "${BUDGET_FCP}" "ms"
 echo ""
 
 echo "Scores:"
-check_budget "Performance" "$PERF_SCORE" "80" "$BUDGET_PERF_SCORE" "" "true"
+check_budget "Performance" "${PERF_SCORE}" "80" "${BUDGET_PERF_SCORE}" "" "true"
 echo ""
 
 echo "Resource Sizes:"
 JS_KB=$((JS_SIZE / 1024))
 TOTAL_KB=$((TOTAL_SIZE / 1024))
-check_budget "JavaScript" "$JS_KB" "270" "300" "KB"
-check_budget "Total Size" "$TOTAL_KB" "1800" "2048" "KB"
+check_budget "JavaScript" "${JS_KB}" "270" "300" "KB"
+check_budget "Total Size" "${TOTAL_KB}" "1800" "2048" "KB"
 echo ""
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # Zusammenfassung
 echo ""
-if [ $EXIT_CODE -eq 0 ]; then
+if [[ ${EXIT_CODE} -eq 0 ]]; then
     echo -e "${GREEN}PASS: Alle Performance-Budgets eingehalten${NC}"
-elif [ $EXIT_CODE -eq 1 ]; then
+elif [[ ${EXIT_CODE} -eq 1 ]]; then
     echo -e "${YELLOW}WARN: Budget-Warnung(en) - Optimierung empfohlen${NC}"
-    if [ "$STRICT" == "--strict" ]; then
+    if [[ "${STRICT}" == "--strict" ]]; then
         echo -e "${RED}(--strict: Warnung als Fehler gewertet)${NC}"
         EXIT_CODE=2
     fi
@@ -180,4 +180,4 @@ else
 fi
 
 echo ""
-exit $EXIT_CODE
+exit ${EXIT_CODE}

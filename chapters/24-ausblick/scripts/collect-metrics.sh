@@ -14,15 +14,15 @@ DURATION="${4:-604800}"  # Default: 7 Tage
 
 echo "=== Performance-Metrik-Sammlung ==="
 echo ""
-echo "URL: $URL"
-echo "Output: $OUTPUT"
+echo "URL: ${URL}"
+echo "Output: ${OUTPUT}"
 echo "Intervall: ${INTERVAL}s"
 echo "Dauer: ${DURATION}s"
 echo ""
 
 # Initialisiere JSON-Array wenn Datei nicht existiert
-if [ ! -f "$OUTPUT" ]; then
-    echo "[]" > "$OUTPUT"
+if [[ ! -f "${OUTPUT}" ]]; then
+    echo "[]" > "${OUTPUT}"
 fi
 
 START_TIME=$(date +%s)
@@ -33,18 +33,18 @@ collect_metrics() {
 
     # PageSpeed API abfragen (kein API-Key nötig für Basis-Daten)
     local response
-    response=$(curl -s "https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=$URL&strategy=mobile" 2>/dev/null)
+    response=$(curl -s "https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${URL}&strategy=mobile" 2>/dev/null)
 
-    if [ -z "$response" ]; then
-        echo "[$timestamp] Fehler: Keine API-Antwort"
+    if [[ -z "${response}" ]]; then
+        echo "[${timestamp}] Fehler: Keine API-Antwort"
         return 1
     fi
 
     # Metriken extrahieren mit jq
     if command -v jq &> /dev/null; then
         local metrics
-        metrics=$(echo "$response" | jq -c '{
-            timestamp: "'"$timestamp"'",
+        metrics=$(echo "${response}" | jq -c '{
+            timestamp: "'"${timestamp}"'",
             TTFB: .lighthouseResult.audits["server-response-time"].numericValue,
             FCP: .lighthouseResult.audits["first-contentful-paint"].numericValue,
             LCP: .lighthouseResult.audits["largest-contentful-paint"].numericValue,
@@ -54,17 +54,17 @@ collect_metrics() {
             score: .lighthouseResult.categories.performance.score
         }' 2>/dev/null)
 
-        if [ -n "$metrics" ] && [ "$metrics" != "null" ]; then
+        if [[ -n "${metrics}" ]] && [[ "${metrics}" != "null" ]]; then
             # An JSON-Array anhängen
             local temp
             temp=$(mktemp)
-            jq ". += [$metrics]" "$OUTPUT" > "$temp" && mv "$temp" "$OUTPUT"
-            echo "[$timestamp] Metriken gespeichert"
+            jq ". += [${metrics}]" "${OUTPUT}" > "${temp}" && mv "${temp}" "${OUTPUT}"
+            echo "[${timestamp}] Metriken gespeichert"
             return 0
         fi
     fi
 
-    echo "[$timestamp] Fehler: Konnte Metriken nicht parsen"
+    echo "[${timestamp}] Fehler: Konnte Metriken nicht parsen"
     return 1
 }
 
@@ -75,7 +75,7 @@ while true; do
     CURRENT_TIME=$(date +%s)
     ELAPSED=$((CURRENT_TIME - START_TIME))
 
-    if [ $ELAPSED -ge $DURATION ]; then
+    if [[ ${ELAPSED} -ge ${DURATION} ]]; then
         echo ""
         echo "Sammlung abgeschlossen nach ${DURATION}s"
         break
@@ -84,17 +84,17 @@ while true; do
     collect_metrics
 
     echo "Nächste Messung in ${INTERVAL}s..."
-    sleep $INTERVAL
+    sleep "${INTERVAL}"
 done
 
 # Zusammenfassung
 if command -v jq &> /dev/null; then
-    COUNT=$(jq '. | length' "$OUTPUT")
+    COUNT=$(jq '. | length' "${OUTPUT}")
     echo ""
     echo "=== Zusammenfassung ==="
-    echo "Gesammelte Datenpunkte: $COUNT"
-    echo "Gespeichert in: $OUTPUT"
+    echo "Gesammelte Datenpunkte: ${COUNT}"
+    echo "Gespeichert in: ${OUTPUT}"
     echo ""
     echo "Nächster Schritt:"
-    echo "  python detect-anomalies.py --input $OUTPUT"
+    echo "  python detect-anomalies.py --input ${OUTPUT}"
 fi

@@ -33,7 +33,7 @@ CDN_HEADERS=(
 )
 
 echo "=== CDN Konfiguration Check ==="
-echo "URL: $SHOP_URL"
+echo "URL: ${SHOP_URL}"
 echo ""
 
 ISSUES=0
@@ -42,62 +42,62 @@ CDN_DETECTED=""
 # Check 1: CDN-Header prüfen
 echo -e "${BLUE}1. CDN-Header Analyse${NC}"
 
-HEADERS=$(curl -sI "$SHOP_URL" 2>/dev/null)
+HEADERS=$(curl -sI "${SHOP_URL}" 2>/dev/null)
 
 for header in "${CDN_HEADERS[@]}"; do
-    if echo "$HEADERS" | grep -qi "$header"; then
-        HEADER_VALUE=$(echo "$HEADERS" | grep -i "$header" | head -1)
-        echo -e "   ${GREEN}✓${NC} $HEADER_VALUE"
+    if echo "${HEADERS}" | grep -qi "${header}"; then
+        HEADER_VALUE=$(echo "${HEADERS}" | grep -i "${header}" | head -1)
+        echo -e "   ${GREEN}✓${NC} ${HEADER_VALUE}"
 
         # CDN identifizieren
-        if echo "$header" | grep -qi "cf-ray"; then
+        if echo "${header}" | grep -qi "cf-ray"; then
             CDN_DETECTED="Cloudflare"
-        elif echo "$header" | grep -qi "x-amz-cf"; then
+        elif echo "${header}" | grep -qi "x-amz-cf"; then
             CDN_DETECTED="CloudFront"
-        elif echo "$header" | grep -qi "x-served-by"; then
+        elif echo "${header}" | grep -qi "x-served-by"; then
             CDN_DETECTED="Fastly"
-        elif echo "$header" | grep -qi "bunny"; then
+        elif echo "${header}" | grep -qi "bunny"; then
             CDN_DETECTED="BunnyCDN"
         fi
     fi
 done
 
-if [ -z "$CDN_DETECTED" ]; then
+if [[ -z "${CDN_DETECTED}" ]]; then
     echo -e "   ${YELLOW}Kein CDN erkannt${NC}"
     ISSUES=$((ISSUES + 1))
 else
     echo ""
-    echo -e "   CDN erkannt: ${GREEN}$CDN_DETECTED${NC}"
+    echo -e "   CDN erkannt: ${GREEN}${CDN_DETECTED}${NC}"
 fi
 
 # Check 2: Asset-URLs prüfen
 echo ""
 echo -e "${BLUE}2. Asset-URL Analyse${NC}"
 
-HTML=$(curl -sL "$SHOP_URL" 2>/dev/null)
-ORIGIN_DOMAIN=$(echo "$SHOP_URL" | sed 's|https\?://||g' | cut -d'/' -f1)
+HTML=$(curl -sL "${SHOP_URL}" 2>/dev/null)
+ORIGIN_DOMAIN=$(echo "${SHOP_URL}" | sed 's|https\?://||g' | cut -d'/' -f1)
 
 # CSS-URLs
-CSS_URLS=$(echo "$HTML" | grep -oE 'href="[^"]*\.css[^"]*"' | sed 's/href="//g' | sed 's/"//g' | head -5)
+CSS_URLS=$(echo "${HTML}" | grep -oE 'href="[^"]*\.css[^"]*"' | sed 's/href="//g' | sed 's/"//g' | head -5)
 # JS-URLs
-JS_URLS=$(echo "$HTML" | grep -oE 'src="[^"]*\.js[^"]*"' | sed 's/src="//g' | sed 's/"//g' | head -5)
+JS_URLS=$(echo "${HTML}" | grep -oE 'src="[^"]*\.js[^"]*"' | sed 's/src="//g' | sed 's/"//g' | head -5)
 # Bild-URLs
-IMG_URLS=$(echo "$HTML" | grep -oE 'src="[^"]*\.(jpg|png|webp)[^"]*"' | sed 's/src="//g' | sed 's/"//g' | head -5)
+IMG_URLS=$(echo "${HTML}" | grep -oE 'src="[^"]*\.(jpg|png|webp)[^"]*"' | sed 's/src="//g' | sed 's/"//g' | head -5)
 
-ALL_ASSETS="$CSS_URLS $JS_URLS $IMG_URLS"
+ALL_ASSETS="${CSS_URLS} ${JS_URLS} ${IMG_URLS}"
 
 ORIGIN_ASSETS=0
 CDN_ASSETS=0
 
-for url in $ALL_ASSETS; do
-    if [ -n "$url" ]; then
-        if [[ "$url" == http* ]]; then
-            ASSET_DOMAIN=$(echo "$url" | sed 's|https\?://||g' | cut -d'/' -f1)
+for url in ${ALL_ASSETS}; do
+    if [[ -n "${url}" ]]; then
+        if [[ "${url}" == http* ]]; then
+            ASSET_DOMAIN=$(echo "${url}" | sed 's|https\?://||g' | cut -d'/' -f1)
         else
-            ASSET_DOMAIN="$ORIGIN_DOMAIN"
+            ASSET_DOMAIN="${ORIGIN_DOMAIN}"
         fi
 
-        if [ "$ASSET_DOMAIN" = "$ORIGIN_DOMAIN" ]; then
+        if [[ "${ASSET_DOMAIN}" = "${ORIGIN_DOMAIN}" ]]; then
             ORIGIN_ASSETS=$((ORIGIN_ASSETS + 1))
         else
             CDN_ASSETS=$((CDN_ASSETS + 1))
@@ -105,10 +105,10 @@ for url in $ALL_ASSETS; do
     fi
 done
 
-echo "   Assets vom Origin: $ORIGIN_ASSETS"
-echo "   Assets von CDN: $CDN_ASSETS"
+echo "   Assets vom Origin: ${ORIGIN_ASSETS}"
+echo "   Assets von CDN: ${CDN_ASSETS}"
 
-if [ "$CDN_ASSETS" -eq 0 ] && [ "$ORIGIN_ASSETS" -gt 0 ]; then
+if [[ "${CDN_ASSETS}" -eq 0 ]] && [[ "${ORIGIN_ASSETS}" -gt 0 ]]; then
     echo -e "   ${YELLOW}Alle Assets kommen vom Origin${NC}"
     ISSUES=$((ISSUES + 1))
 fi
@@ -117,11 +117,11 @@ fi
 echo ""
 echo -e "${BLUE}3. Shopware CDN-Konfiguration${NC}"
 
-if [ -f "$SHOP_PATH/config/packages/shopware.yaml" ]; then
-    if grep -q "cdn:" "$SHOP_PATH/config/packages/shopware.yaml"; then
-        CDN_URL=$(grep -A2 "cdn:" "$SHOP_PATH/config/packages/shopware.yaml" | grep "url:" | awk '{print $2}' | tr -d '"' | tr -d "'")
-        if [ -n "$CDN_URL" ]; then
-            echo -e "   ${GREEN}CDN URL konfiguriert: $CDN_URL${NC}"
+if [[ -f "${SHOP_PATH}/config/packages/shopware.yaml" ]]; then
+    if grep -q "cdn:" "${SHOP_PATH}/config/packages/shopware.yaml"; then
+        CDN_URL=$(grep -A2 "cdn:" "${SHOP_PATH}/config/packages/shopware.yaml" | grep "url:" | awk '{print $2}' | tr -d '"' | tr -d "'")
+        if [[ -n "${CDN_URL}" ]]; then
+            echo -e "   ${GREEN}CDN URL konfiguriert: ${CDN_URL}${NC}"
         else
             echo -e "   ${YELLOW}CDN-Block vorhanden aber keine URL${NC}"
         fi
@@ -137,22 +137,22 @@ echo ""
 echo -e "${BLUE}4. Response-Zeit Test${NC}"
 
 # Origin TTFB
-ORIGIN_TIME=$(curl -sI -o /dev/null -w "%{time_starttransfer}" "$SHOP_URL" 2>/dev/null)
+ORIGIN_TIME=$(curl -sI -o /dev/null -w "%{time_starttransfer}" "${SHOP_URL}" 2>/dev/null)
 echo "   Origin TTFB: ${ORIGIN_TIME}s"
 
 # Wenn CDN erkannt, auch CDN-Zeit messen
-if [ -n "$CDN_DETECTED" ]; then
+if [[ -n "${CDN_DETECTED}" ]]; then
     # Cache-Hit prüfen
-    CACHE_STATUS=$(echo "$HEADERS" | grep -iE "x-cache|cf-cache-status" | head -1)
-    echo "   Cache Status: $CACHE_STATUS"
+    CACHE_STATUS=$(echo "${HEADERS}" | grep -iE "x-cache|cf-cache-status" | head -1)
+    echo "   Cache Status: ${CACHE_STATUS}"
 fi
 
 # Zusammenfassung
 echo ""
 echo "=== Zusammenfassung ==="
 
-if [ "$ISSUES" -eq 0 ] && [ -n "$CDN_DETECTED" ]; then
-    echo -e "${GREEN}CDN korrekt konfiguriert ($CDN_DETECTED).${NC}"
+if [[ "${ISSUES}" -eq 0 ]] && [[ -n "${CDN_DETECTED}" ]]; then
+    echo -e "${GREEN}CDN korrekt konfiguriert (${CDN_DETECTED}).${NC}"
     exit 0
 else
     echo -e "${YELLOW}CDN-Optimierung empfohlen.${NC}"

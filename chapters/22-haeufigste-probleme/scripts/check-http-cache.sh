@@ -8,22 +8,22 @@ SHOP_URL="${1:-https://localhost}"
 
 echo "=== Problem 2: HTTP-Cache Status ==="
 echo ""
-echo "Prüfe: $SHOP_URL"
+echo "Prüfe: ${SHOP_URL}"
 echo ""
 
 # Cache-Header abrufen
 echo "1. Cache-Header prüfen..."
-HEADERS=$(curl -sI "$SHOP_URL" 2>/dev/null)
+HEADERS=$(curl -sI "${SHOP_URL}" 2>/dev/null)
 
 # Check Cache-Control
-CACHE_CONTROL=$(echo "$HEADERS" | grep -i "cache-control" | head -1)
-if [ -n "$CACHE_CONTROL" ]; then
+CACHE_CONTROL=$(echo "${HEADERS}" | grep -i "cache-control" | head -1)
+if [[ -n "${CACHE_CONTROL}" ]]; then
     echo "   Cache-Control: ${CACHE_CONTROL#*: }"
 
-    if echo "$CACHE_CONTROL" | grep -qi "no-cache\|no-store\|private"; then
+    if echo "${CACHE_CONTROL}" | grep -qi "no-cache\|no-store\|private"; then
         echo "   ⚠ Cache ist deaktiviert oder private!"
         CACHE_OK=false
-    elif echo "$CACHE_CONTROL" | grep -qi "public\|max-age"; then
+    elif echo "${CACHE_CONTROL}" | grep -qi "public\|max-age"; then
         echo "   ✓ Cache ist aktiviert"
         CACHE_OK=true
     else
@@ -38,10 +38,10 @@ fi
 # Check X-Shopware-Cache
 echo ""
 echo "2. Shopware Cache-Header..."
-SW_CACHE=$(echo "$HEADERS" | grep -i "x-sw-cache\|x-shopware" | head -3)
-if [ -n "$SW_CACHE" ]; then
-    echo "$SW_CACHE" | while read -r line; do
-        echo "   $line"
+SW_CACHE=$(echo "${HEADERS}" | grep -i "x-sw-cache\|x-shopware" | head -3)
+if [[ -n "${SW_CACHE}" ]]; then
+    echo "${SW_CACHE}" | while read -r line; do
+        echo "   ${line}"
     done
 else
     echo "   Keine Shopware Cache-Header gefunden"
@@ -50,9 +50,9 @@ fi
 # Check Age Header (für CDN/Reverse Proxy)
 echo ""
 echo "3. Age Header (Cache-Alter)..."
-AGE=$(echo "$HEADERS" | grep -i "^age:" | head -1)
-if [ -n "$AGE" ]; then
-    echo "   $AGE"
+AGE=$(echo "${HEADERS}" | grep -i "^age:" | head -1)
+if [[ -n "${AGE}" ]]; then
+    echo "   ${AGE}"
     echo "   ✓ Seite wird aus Cache geliefert"
 else
     echo "   Kein Age Header - möglicherweise kein Cache-Hit"
@@ -63,7 +63,7 @@ echo ""
 echo "=== Empfehlung ==="
 echo ""
 
-if [ "$CACHE_OK" = false ]; then
+if [[ "${CACHE_OK}" = false ]]; then
     echo "HTTP-Cache aktivieren in config/packages/shopware.yaml:"
     echo ""
     cat << 'EOF'

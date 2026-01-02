@@ -46,7 +46,7 @@ PHP_RAM=$((AVAILABLE_RAM - BUFFER))
 MAX_CHILDREN=$((PHP_RAM / AVG_WORKER_MB))
 
 # Mindestens 8 Worker
-if [ $MAX_CHILDREN -lt 8 ]; then
+if [[ ${MAX_CHILDREN} -lt 8 ]]; then
     MAX_CHILDREN=8
 fi
 

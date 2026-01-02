@@ -11,7 +11,7 @@
 #
 # Voraussetzung für Nginx:
 #   Log-Format muss X-Cache Header enthalten:
-#   log_format cache '$remote_addr - $upstream_cache_status ...';
+#   log_format cache '${remote_addr} - ${upstream_cache_status} ...';
 #
 # @see https://github.com/MehmetGoekce/shopware-performance-examples
 
@@ -42,53 +42,53 @@ analyze_nginx_log() {
     echo -e "${BLUE}📊 Analysiere Nginx Log: ${logfile}${NC}"
     echo ""
 
-    if [ ! -f "$logfile" ]; then
+    if [[ ! -f "${logfile}" ]]; then
         echo -e "${RED}❌ Datei nicht gefunden: ${logfile}${NC}"
         exit 1
     fi
 
     # Verschiedene Log-Formate versuchen
     # Format 1: X-Cache Header am Ende
-    hits=$(grep -c "HIT" "$logfile" 2>/dev/null || echo "0")
-    misses=$(grep -c "MISS" "$logfile" 2>/dev/null || echo "0")
-    bypasses=$(grep -c "BYPASS" "$logfile" 2>/dev/null || echo "0")
-    expired=$(grep -c "EXPIRED" "$logfile" 2>/dev/null || echo "0")
+    hits=$(grep -c "HIT" "${logfile}" 2>/dev/null || echo "0")
+    misses=$(grep -c "MISS" "${logfile}" 2>/dev/null || echo "0")
+    bypasses=$(grep -c "BYPASS" "${logfile}" 2>/dev/null || echo "0")
+    expired=$(grep -c "EXPIRED" "${logfile}" 2>/dev/null || echo "0")
 
     total=$((hits + misses + bypasses + expired))
 
-    if [ "$total" -eq 0 ]; then
+    if [[ "${total}" -eq 0 ]]; then
         echo -e "${YELLOW}⚠ Keine Cache-Status gefunden im Log.${NC}"
         echo ""
         echo "Stelle sicher, dass dein Nginx Log-Format den Cache-Status enthält:"
         echo ""
-        echo '  log_format cache '"'"'$remote_addr - $remote_user [$time_local] "$request" '
-        echo '                   $status $body_bytes_sent "$http_referer" '
-        echo '                   "$http_user_agent" $upstream_cache_status'"'"';'
+        echo '  log_format cache '"'"'${remote_addr} - ${remote_user} [${time_local}] "${request}" '
+        echo '                   ${status} ${body_bytes_sent} "${http_referer}" '
+        echo '                   "${http_user_agent}" ${upstream_cache_status}'"'"';'
         echo ""
         echo '  access_log /var/log/nginx/access.log cache;'
         return 1
     fi
 
     # Berechnung
-    hit_rate=$(echo "scale=2; $hits * 100 / $total" | bc)
+    hit_rate=$(echo "scale=2; ${hits} * 100 / ${total}" | bc)
 
     echo "Cache Status Verteilung:"
     echo "───────────────────────────────────────"
-    printf "  HIT:     %8d\n" "$hits"
-    printf "  MISS:    %8d\n" "$misses"
-    printf "  BYPASS:  %8d\n" "$bypasses"
-    printf "  EXPIRED: %8d\n" "$expired"
+    printf "  HIT:     %8d\n" "${hits}"
+    printf "  MISS:    %8d\n" "${misses}"
+    printf "  BYPASS:  %8d\n" "${bypasses}"
+    printf "  EXPIRED: %8d\n" "${expired}"
     echo "───────────────────────────────────────"
-    printf "  TOTAL:   %8d\n" "$total"
+    printf "  TOTAL:   %8d\n" "${total}"
     echo ""
 
     # Hit-Rate mit Bewertung
     echo -n "Cache Hit-Rate: "
-    if (( $(echo "$hit_rate >= 95" | bc -l) )); then
+    if (( $(echo "${hit_rate} >= 95" | bc -l) )); then
         echo -e "${GREEN}${hit_rate}% ✅ Exzellent${NC}"
-    elif (( $(echo "$hit_rate >= 80" | bc -l) )); then
+    elif (( $(echo "${hit_rate} >= 80" | bc -l) )); then
         echo -e "${GREEN}${hit_rate}% ✅ Gut${NC}"
-    elif (( $(echo "$hit_rate >= 60" | bc -l) )); then
+    elif (( $(echo "${hit_rate} >= 60" | bc -l) )); then
         echo -e "${YELLOW}${hit_rate}% ⚠ Verbesserungswürdig${NC}"
     else
         echo -e "${RED}${hit_rate}% ❌ Schlecht${NC}"
@@ -108,9 +108,9 @@ analyze_varnishstat() {
     # Varnish Statistiken abrufen
     stats=$(varnishstat -1 2>/dev/null)
 
-    hits=$(echo "$stats" | grep "MAIN.cache_hit " | awk '{print $2}')
-    misses=$(echo "$stats" | grep "MAIN.cache_miss " | awk '{print $2}')
-    hitpass=$(echo "$stats" | grep "MAIN.cache_hitpass " | awk '{print $2}')
+    hits=$(echo "${stats}" | grep "MAIN.cache_hit " | awk '{print $2}')
+    misses=$(echo "${stats}" | grep "MAIN.cache_miss " | awk '{print $2}')
+    hitpass=$(echo "${stats}" | grep "MAIN.cache_hitpass " | awk '{print $2}')
 
     hits=${hits:-0}
     misses=${misses:-0}
@@ -118,28 +118,28 @@ analyze_varnishstat() {
 
     total=$((hits + misses))
 
-    if [ "$total" -eq 0 ]; then
+    if [[ "${total}" -eq 0 ]]; then
         echo -e "${YELLOW}⚠ Keine Requests seit Varnish-Start${NC}"
         return 1
     fi
 
-    hit_rate=$(echo "scale=2; $hits * 100 / $total" | bc)
+    hit_rate=$(echo "scale=2; ${hits} * 100 / ${total}" | bc)
 
     echo "Varnish Cache Statistiken:"
     echo "───────────────────────────────────────"
-    printf "  cache_hit:     %12d\n" "$hits"
-    printf "  cache_miss:    %12d\n" "$misses"
-    printf "  cache_hitpass: %12d\n" "$hitpass"
+    printf "  cache_hit:     %12d\n" "${hits}"
+    printf "  cache_miss:    %12d\n" "${misses}"
+    printf "  cache_hitpass: %12d\n" "${hitpass}"
     echo "───────────────────────────────────────"
-    printf "  Total:         %12d\n" "$total"
+    printf "  Total:         %12d\n" "${total}"
     echo ""
 
     echo -n "Cache Hit-Rate: "
-    if (( $(echo "$hit_rate >= 95" | bc -l) )); then
+    if (( $(echo "${hit_rate} >= 95" | bc -l) )); then
         echo -e "${GREEN}${hit_rate}% ✅ Exzellent${NC}"
-    elif (( $(echo "$hit_rate >= 80" | bc -l) )); then
+    elif (( $(echo "${hit_rate} >= 80" | bc -l) )); then
         echo -e "${GREEN}${hit_rate}% ✅ Gut${NC}"
-    elif (( $(echo "$hit_rate >= 60" | bc -l) )); then
+    elif (( $(echo "${hit_rate} >= 60" | bc -l) )); then
         echo -e "${YELLOW}${hit_rate}% ⚠ Verbesserungswürdig${NC}"
     else
         echo -e "${RED}${hit_rate}% ❌ Schlecht${NC}"
@@ -150,14 +150,14 @@ analyze_varnishstat() {
     echo "Weitere Metriken:"
     echo "───────────────────────────────────────"
 
-    n_object=$(echo "$stats" | grep "MAIN.n_object " | awk '{print $2}')
+    n_object=$(echo "${stats}" | grep "MAIN.n_object " | awk '{print $2}')
     printf "  Objekte im Cache: %d\n" "${n_object:-0}"
 
-    backend_conn=$(echo "$stats" | grep "MAIN.backend_conn " | awk '{print $2}')
+    backend_conn=$(echo "${stats}" | grep "MAIN.backend_conn " | awk '{print $2}')
     printf "  Backend Verbindungen: %d\n" "${backend_conn:-0}"
 
-    backend_fail=$(echo "$stats" | grep "MAIN.backend_fail " | awk '{print $2}')
-    if [ "${backend_fail:-0}" -gt 0 ]; then
+    backend_fail=$(echo "${stats}" | grep "MAIN.backend_fail " | awk '{print $2}')
+    if [[ "${backend_fail:-0}" -gt 0 ]]; then
         echo -e "  ${RED}Backend Fehler: ${backend_fail}${NC}"
     fi
 }
@@ -200,7 +200,7 @@ show_usage() {
 # Main
 # ============================================================
 
-if [ $# -lt 1 ]; then
+if [[ $# -lt 1 ]]; then
     show_usage
     exit 1
 fi

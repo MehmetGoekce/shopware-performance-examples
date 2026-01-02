@@ -30,8 +30,8 @@ echo -e "${BLUE}  Shopware 6 Performance Diagnostics${NC}"
 echo -e "${BLUE}  Kapitel 22: Die 20 häufigsten Probleme${NC}"
 echo -e "${BLUE}================================================${NC}"
 echo ""
-echo "Shop URL: $SHOP_URL"
-echo "Shop Path: $SHOP_PATH"
+echo "Shop URL: ${SHOP_URL}"
+echo "Shop Path: ${SHOP_PATH}"
 echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
 echo ""
 
@@ -41,19 +41,19 @@ run_check() {
     local script="$2"
     local number="$3"
 
-    echo -e "${BLUE}[$number/20]${NC} Prüfe: $name..."
+    echo -e "${BLUE}[${number}/20]${NC} Prüfe: ${name}..."
 
-    if [ -f "$SCRIPT_DIR/$script" ]; then
-        if bash "$SCRIPT_DIR/$script" "$SHOP_URL" "$SHOP_PATH" 2>/dev/null; then
+    if [[ -f "${SCRIPT_DIR}/${script}" ]]; then
+        if bash "${SCRIPT_DIR}/${script}" "${SHOP_URL}" "${SHOP_PATH}" 2>/dev/null; then
             echo -e "  ${GREEN}✓ OK${NC}"
-            PASSED+=("$name")
+            PASSED+=("${name}")
         else
             echo -e "  ${RED}✗ Problem gefunden${NC}"
-            FAILED+=("$name")
+            FAILED+=("${name}")
         fi
     else
         echo -e "  ${YELLOW}⚠ Script nicht gefunden${NC}"
-        WARNINGS+=("$name (Script fehlt)")
+        WARNINGS+=("${name} (Script fehlt)")
     fi
 }
 
@@ -108,25 +108,25 @@ echo ""
 
 echo -e "${GREEN}Bestanden: ${#PASSED[@]}${NC}"
 for item in "${PASSED[@]}"; do
-    echo "  ✓ $item"
+    echo "  ✓ ${item}"
 done
 
 echo ""
 echo -e "${RED}Probleme: ${#FAILED[@]}${NC}"
 for item in "${FAILED[@]}"; do
-    echo "  ✗ $item"
+    echo "  ✗ ${item}"
 done
 
 echo ""
 echo -e "${YELLOW}Warnungen: ${#WARNINGS[@]}${NC}"
 for item in "${WARNINGS[@]}"; do
-    echo "  ⚠ $item"
+    echo "  ⚠ ${item}"
 done
 
 # Score berechnen
 TOTAL=$((${#PASSED[@]} + ${#FAILED[@]}))
-if [ $TOTAL -gt 0 ]; then
-    SCORE=$((${#PASSED[@]} * 100 / $TOTAL))
+if [[ ${TOTAL} -gt 0 ]]; then
+    SCORE=$((${#PASSED[@]} * 100 / ${TOTAL}))
 else
     SCORE=0
 fi
@@ -134,9 +134,9 @@ fi
 echo ""
 echo -e "${BLUE}Performance Score: ${SCORE}%${NC}"
 
-if [ $SCORE -ge 80 ]; then
+if [[ ${SCORE} -ge 80 ]]; then
     echo -e "${GREEN}Excellent! Ihr Shop ist gut optimiert.${NC}"
-elif [ $SCORE -ge 60 ]; then
+elif [[ ${SCORE} -ge 60 ]]; then
     echo -e "${YELLOW}Gut, aber es gibt Verbesserungspotential.${NC}"
 else
     echo -e "${RED}Kritisch! Mehrere Performance-Probleme gefunden.${NC}"
@@ -148,9 +148,9 @@ echo "Professionelles Audit: memotech.ch/performance-audit"
 echo ""
 
 # Exit-Code basierend auf Ergebnis
-if [ ${#FAILED[@]} -gt 5 ]; then
+if [[ ${#FAILED[@]} -gt 5 ]]; then
     exit 2  # Kritisch
-elif [ ${#FAILED[@]} -gt 0 ]; then
+elif [[ ${#FAILED[@]} -gt 0 ]]; then
     exit 1  # Warnungen
 else
     exit 0  # Alles OK

@@ -44,13 +44,13 @@ warmup_url() {
     status=$(curl -s -o /dev/null -w "%{http_code}" \
         -H "Accept-Encoding: gzip" \
         -H "User-Agent: CacheWarmup/1.0" \
-        "$url" 2>/dev/null)
+        "${url}" 2>/dev/null)
 
     local end
     end=$(date +%s%N)
     local duration=$(( (end - start) / 1000000 ))
 
-    if [ "$status" == "200" ]; then
+    if [[ "${status}" == "200" ]]; then
         echo -e "${GREEN}✓${NC} ${url} (${duration}ms)"
     else
         echo -e "${YELLOW}⚠${NC} ${url} (HTTP ${status})"
@@ -65,20 +65,20 @@ warmup_from_sitemap() {
     echo -e "${BLUE}📋 Lade Sitemap: ${sitemap_url}${NC}"
 
     # Sitemap laden und URLs extrahieren
-    urls=$(curl -s "$sitemap_url" 2>/dev/null | grep -oP '(?<=<loc>)[^<]+' | head -100)
+    urls=$(curl -s "${sitemap_url}" 2>/dev/null | grep -oP '(?<=<loc>)[^<]+' | head -100)
 
-    if [ -z "$urls" ]; then
+    if [[ -z "${urls}" ]]; then
         echo -e "${YELLOW}⚠ Keine URLs in Sitemap gefunden, verwende Standard-URLs${NC}"
-        warmup_standard "$base_url"
+        warmup_standard "${base_url}"
         return
     fi
 
-    url_count=$(echo "$urls" | wc -l)
+    url_count=$(echo "${urls}" | wc -l)
     echo -e "Gefunden: ${url_count} URLs"
     echo ""
 
     # URLs parallel aufwärmen
-    echo "$urls" | xargs -P "$PARALLEL" -I {} bash -c 'warmup_url "$@"' _ {}
+    echo "${urls}" | xargs -P "${PARALLEL}" -I {} bash -c 'warmup_url "$@"' _ {}
 }
 
 warmup_standard() {
@@ -97,7 +97,7 @@ warmup_standard() {
 
     for url in "${urls[@]}"; do
         warmup_url "${base_url}${url}"
-        sleep "$DELAY"
+        sleep "${DELAY}"
     done
 
     # Versuche häufige Kategorie-Pfade
@@ -114,7 +114,7 @@ warmup_standard() {
 
     for path in "${category_paths[@]}"; do
         status=$(curl -s -o /dev/null -w "%{http_code}" "${base_url}${path}" 2>/dev/null)
-        if [ "$status" == "200" ]; then
+        if [[ "${status}" == "200" ]]; then
             warmup_url "${base_url}${path}"
         fi
     done
@@ -149,7 +149,7 @@ show_usage() {
 # Argument Parsing
 # ============================================================
 
-if [ $# -lt 1 ]; then
+if [[ $# -lt 1 ]]; then
     show_usage
     exit 1
 fi
@@ -196,16 +196,16 @@ echo "Sitemap:  ${USE_SITEMAP}"
 echo ""
 
 # Shopware CLI Warmup wenn verfügbar
-if [ -f "bin/console" ]; then
+if [[ -f "bin/console" ]]; then
     echo -e "${BLUE}🚀 Starte Shopware HTTP-Cache Warmup...${NC}"
     bin/console http:cache:warm:up --no-debug 2>/dev/null || true
     echo ""
 fi
 
-if [ "$USE_SITEMAP" = true ]; then
-    warmup_from_sitemap "$BASE_URL"
+if [[ "${USE_SITEMAP}" = true ]]; then
+    warmup_from_sitemap "${BASE_URL}"
 else
-    warmup_standard "$BASE_URL"
+    warmup_standard "${BASE_URL}"
 fi
 
 print_summary

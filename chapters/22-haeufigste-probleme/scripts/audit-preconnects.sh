@@ -40,35 +40,35 @@ KNOWN_THIRD_PARTY=(
 )
 
 echo "=== Preconnect Audit ==="
-echo "URL: $SHOP_URL"
+echo "URL: ${SHOP_URL}"
 echo ""
 
 ISSUES=0
 
 # HTML und Headers holen
-HTML=$(curl -sL "$SHOP_URL" 2>/dev/null)
-HEADERS=$(curl -sI "$SHOP_URL" 2>/dev/null)
+HTML=$(curl -sL "${SHOP_URL}" 2>/dev/null)
+HEADERS=$(curl -sI "${SHOP_URL}" 2>/dev/null)
 
 # Vorhandene Preconnects finden
 echo -e "${BLUE}1. Vorhandene Preconnects${NC}"
 
-PRECONNECTS=$(echo "$HTML" | grep -oE 'rel="preconnect"[^>]*href="[^"]*"' | grep -oE 'href="[^"]*"' | sed 's/href="//g' | sed 's/"//g')
-DNS_PREFETCH=$(echo "$HTML" | grep -oE 'rel="dns-prefetch"[^>]*href="[^"]*"' | grep -oE 'href="[^"]*"' | sed 's/href="//g' | sed 's/"//g')
+PRECONNECTS=$(echo "${HTML}" | grep -oE 'rel="preconnect"[^>]*href="[^"]*"' | grep -oE 'href="[^"]*"' | sed 's/href="//g' | sed 's/"//g')
+DNS_PREFETCH=$(echo "${HTML}" | grep -oE 'rel="dns-prefetch"[^>]*href="[^"]*"' | grep -oE 'href="[^"]*"' | sed 's/href="//g' | sed 's/"//g')
 
-if [ -n "$PRECONNECTS" ]; then
+if [[ -n "${PRECONNECTS}" ]]; then
     echo "   Preconnects gefunden:"
-    for pc in $PRECONNECTS; do
-        echo -e "   ${GREEN}✓${NC} $pc"
+    for pc in ${PRECONNECTS}; do
+        echo -e "   ${GREEN}✓${NC} ${pc}"
     done
 else
     echo -e "   ${YELLOW}Keine Preconnects gefunden${NC}"
 fi
 
-if [ -n "$DNS_PREFETCH" ]; then
+if [[ -n "${DNS_PREFETCH}" ]]; then
     echo ""
     echo "   DNS-Prefetch gefunden:"
-    for dp in $DNS_PREFETCH; do
-        echo -e "   ${GREEN}✓${NC} $dp"
+    for dp in ${DNS_PREFETCH}; do
+        echo -e "   ${GREEN}✓${NC} ${dp}"
     done
 fi
 
@@ -77,21 +77,21 @@ echo ""
 echo -e "${BLUE}2. Third-Party-Domains in Verwendung${NC}"
 
 # Externe URLs extrahieren
-EXTERNAL_DOMAINS=$(echo "$HTML" | grep -oE '(src|href)="https?://[^/"]*' | \
+EXTERNAL_DOMAINS=$(echo "${HTML}" | grep -oE '(src|href)="https?://[^/"]*' | \
     sed 's/src="//g' | sed 's/href="//g' | \
     sed 's|https\?://||g' | \
     sort -u | \
-    grep -v "$(echo "$SHOP_URL" | sed 's|https\?://||g' | cut -d'/' -f1)")
+    grep -v "$(echo "${SHOP_URL}" | sed 's|https\?://||g' | cut -d'/' -f1)")
 
 MISSING_PRECONNECTS=()
 
-for domain in $EXTERNAL_DOMAINS; do
+for domain in ${EXTERNAL_DOMAINS}; do
     # Prüfen ob Preconnect existiert
-    if echo "$PRECONNECTS $DNS_PREFETCH" | grep -q "$domain"; then
-        echo -e "   ${GREEN}✓${NC} $domain (preconnect vorhanden)"
+    if echo "${PRECONNECTS} ${DNS_PREFETCH}" | grep -q "${domain}"; then
+        echo -e "   ${GREEN}✓${NC} ${domain} (preconnect vorhanden)"
     else
-        echo -e "   ${YELLOW}⚠${NC} $domain (kein preconnect)"
-        MISSING_PRECONNECTS+=("$domain")
+        echo -e "   ${YELLOW}⚠${NC} ${domain} (kein preconnect)"
+        MISSING_PRECONNECTS+=("${domain}")
     fi
 done
 
@@ -101,16 +101,16 @@ echo -e "${BLUE}3. Empfohlene Preconnects${NC}"
 
 RECOMMENDATIONS=()
 for known in "${KNOWN_THIRD_PARTY[@]}"; do
-    if echo "$HTML" | grep -q "$known"; then
-        if ! echo "$PRECONNECTS $DNS_PREFETCH" | grep -q "$known"; then
-            RECOMMENDATIONS+=("$known")
-            echo -e "   ${RED}✗${NC} $known - wird verwendet aber kein preconnect"
+    if echo "${HTML}" | grep -q "${known}"; then
+        if ! echo "${PRECONNECTS} ${DNS_PREFETCH}" | grep -q "${known}"; then
+            RECOMMENDATIONS+=("${known}")
+            echo -e "   ${RED}✗${NC} ${known} - wird verwendet aber kein preconnect"
             ISSUES=$((ISSUES + 1))
         fi
     fi
 done
 
-if [ ${#RECOMMENDATIONS[@]} -eq 0 ]; then
+if [[ ${#RECOMMENDATIONS[@]} -eq 0 ]]; then
     echo -e "   ${GREEN}Alle bekannten Third-Party-Domains haben preconnect${NC}"
 fi
 
@@ -118,7 +118,7 @@ fi
 echo ""
 echo "=== Zusammenfassung ==="
 
-if [ "$ISSUES" -eq 0 ] && [ ${#MISSING_PRECONNECTS[@]} -eq 0 ]; then
+if [[ "${ISSUES}" -eq 0 ]] && [[ ${#MISSING_PRECONNECTS[@]} -eq 0 ]]; then
     echo -e "${GREEN}Preconnect-Konfiguration optimal.${NC}"
     exit 0
 else
@@ -128,12 +128,12 @@ else
     echo ""
 
     for domain in "${MISSING_PRECONNECTS[@]}"; do
-        echo "<link rel=\"preconnect\" href=\"https://$domain\" crossorigin>"
+        echo "<link rel=\"preconnect\" href=\"https://${domain}\" crossorigin>"
     done
 
     for rec in "${RECOMMENDATIONS[@]}"; do
-        if ! printf '%s\n' "${MISSING_PRECONNECTS[@]}" | grep -q "^$rec$"; then
-            echo "<link rel=\"preconnect\" href=\"https://$rec\" crossorigin>"
+        if ! printf '%s\n' "${MISSING_PRECONNECTS[@]}" | grep -q "^${rec}$"; then
+            echo "<link rel=\"preconnect\" href=\"https://${rec}\" crossorigin>"
         fi
     done
 

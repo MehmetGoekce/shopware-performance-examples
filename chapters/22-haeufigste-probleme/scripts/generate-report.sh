@@ -11,8 +11,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 echo "# Shopware 6 Performance-Diagnose-Report"
 echo ""
 echo "**Generiert:** $(date '+%Y-%m-%d %H:%M:%S')"
-echo "**Shop URL:** $SHOP_URL"
-echo "**Shop Path:** $SHOP_PATH"
+echo "**Shop URL:** ${SHOP_URL}"
+echo "**Shop Path:** ${SHOP_PATH}"
 echo ""
 echo "---"
 echo ""
@@ -23,14 +23,14 @@ run_check() {
     local script="$2"
     local number="$3"
 
-    echo "## Problem $number: $name"
+    echo "## Problem ${number}: ${name}"
     echo ""
 
-    if [ -f "$SCRIPT_DIR/$script" ]; then
-        OUTPUT=$(bash "$SCRIPT_DIR/$script" "$SHOP_URL" "$SHOP_PATH" 2>&1)
+    if [[ -f "${SCRIPT_DIR}/${script}" ]]; then
+        OUTPUT=$(bash "${SCRIPT_DIR}/${script}" "${SHOP_URL}" "${SHOP_PATH}" 2>&1)
         EXIT_CODE=$?
 
-        if [ $EXIT_CODE -eq 0 ]; then
+        if [[ ${EXIT_CODE} -eq 0 ]]; then
             echo "**Status:** ✅ OK"
         else
             echo "**Status:** ❌ Problem gefunden"
@@ -38,7 +38,7 @@ run_check() {
 
         echo ""
         echo "\`\`\`"
-        echo "$OUTPUT"
+        echo "${OUTPUT}"
         echo "\`\`\`"
     else
         echo "**Status:** ⚠️ Script nicht verfügbar"

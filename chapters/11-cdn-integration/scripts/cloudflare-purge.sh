@@ -51,7 +51,7 @@ usage() {
 }
 
 check_config() {
-    if [ -z "$API_TOKEN" ]; then
+    if [[ -z "${API_TOKEN}" ]]; then
         echo -e "${RED}FEHLER: CLOUDFLARE_API_TOKEN nicht gesetzt${NC}"
         echo ""
         echo "Token erstellen:"
@@ -61,7 +61,7 @@ check_config() {
         exit 1
     fi
 
-    if [ -z "$ZONE_ID" ]; then
+    if [[ -z "${ZONE_ID}" ]]; then
         echo -e "${RED}FEHLER: CLOUDFLARE_ZONE_ID nicht gesetzt${NC}"
         echo ""
         echo "Zone ID finden:"
@@ -79,13 +79,13 @@ api_call() {
     local endpoint="$2"
     local data="$3"
 
-    response=$(curl -s -X "$method" \
+    response=$(curl -s -X "${method}" \
         "${API_BASE}${endpoint}" \
-        -H "Authorization: Bearer $API_TOKEN" \
+        -H "Authorization: Bearer ${API_TOKEN}" \
         -H "Content-Type: application/json" \
-        ${data:+-d "$data"})
+        ${data:+-d "${data}"})
 
-    echo "$response"
+    echo "${response}"
 }
 
 # ============================================================================
@@ -98,25 +98,25 @@ test_connection() {
 
     check_config
 
-    echo "Zone ID: $ZONE_ID"
+    echo "Zone ID: ${ZONE_ID}"
     echo ""
 
     # Zone-Details abrufen
-    response=$(api_call "GET" "/zones/$ZONE_ID")
+    response=$(api_call "GET" "/zones/${ZONE_ID}")
 
-    success=$(echo "$response" | jq -r '.success')
-    if [ "$success" == "true" ]; then
-        zone_name=$(echo "$response" | jq -r '.result.name')
-        zone_status=$(echo "$response" | jq -r '.result.status')
+    success=$(echo "${response}" | jq -r '.success')
+    if [[ "${success}" == "true" ]]; then
+        zone_name=$(echo "${response}" | jq -r '.result.name')
+        zone_status=$(echo "${response}" | jq -r '.result.status')
 
         echo -e "${GREEN}Verbindung erfolgreich!${NC}"
         echo ""
-        echo "Zone:   $zone_name"
-        echo "Status: $zone_status"
+        echo "Zone:   ${zone_name}"
+        echo "Status: ${zone_status}"
     else
         echo -e "${RED}Verbindung fehlgeschlagen!${NC}"
         echo ""
-        echo "$response" | jq -r '.errors[]?.message // .errors'
+        echo "${response}" | jq -r '.errors[]?.message // .errors'
         exit 1
     fi
 }
@@ -135,19 +135,19 @@ purge_all() {
     read -p "Fortfahren? (y/N) " -n 1 -r
     echo
 
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    if [[ ! ${REPLY} =~ ^[Yy]$ ]]; then
         echo "Abgebrochen."
         exit 0
     fi
 
-    response=$(api_call "POST" "/zones/$ZONE_ID/purge_cache" '{"purge_everything":true}')
+    response=$(api_call "POST" "/zones/${ZONE_ID}/purge_cache" '{"purge_everything":true}')
 
-    success=$(echo "$response" | jq -r '.success')
-    if [ "$success" == "true" ]; then
+    success=$(echo "${response}" | jq -r '.success')
+    if [[ "${success}" == "true" ]]; then
         echo -e "${GREEN}Cache erfolgreich geleert!${NC}"
     else
         echo -e "${RED}Purge fehlgeschlagen!${NC}"
-        echo "$response" | jq -r '.errors[]?.message // .errors'
+        echo "${response}" | jq -r '.errors[]?.message // .errors'
         exit 1
     fi
 }
@@ -165,21 +165,21 @@ purge_urls() {
     check_config
 
     # URLs in JSON-Array konvertieren
-    IFS=',' read -ra URL_ARRAY <<< "$urls"
+    IFS=',' read -ra URL_ARRAY <<< "${urls}"
     json_urls=$(printf '%s\n' "${URL_ARRAY[@]}" | jq -R . | jq -s .)
 
     echo "URLs zu purgen:"
-    echo "$json_urls" | jq -r '.[]'
+    echo "${json_urls}" | jq -r '.[]'
     echo ""
 
-    response=$(api_call "POST" "/zones/$ZONE_ID/purge_cache" "{\"files\":$json_urls}")
+    response=$(api_call "POST" "/zones/${ZONE_ID}/purge_cache" "{\"files\":${json_urls}}")
 
-    success=$(echo "$response" | jq -r '.success')
-    if [ "$success" == "true" ]; then
+    success=$(echo "${response}" | jq -r '.success')
+    if [[ "${success}" == "true" ]]; then
         echo -e "${GREEN}URLs erfolgreich gepurged!${NC}"
     else
         echo -e "${RED}Purge fehlgeschlagen!${NC}"
-        echo "$response" | jq -r '.errors[]?.message // .errors'
+        echo "${response}" | jq -r '.errors[]?.message // .errors'
         exit 1
     fi
 }
@@ -197,23 +197,23 @@ purge_tags() {
     check_config
 
     # Tags in JSON-Array konvertieren
-    IFS=',' read -ra TAG_ARRAY <<< "$tags"
+    IFS=',' read -ra TAG_ARRAY <<< "${tags}"
     json_tags=$(printf '%s\n' "${TAG_ARRAY[@]}" | jq -R . | jq -s .)
 
     echo "Tags zu purgen:"
-    echo "$json_tags" | jq -r '.[]'
+    echo "${json_tags}" | jq -r '.[]'
     echo ""
 
-    response=$(api_call "POST" "/zones/$ZONE_ID/purge_cache" "{\"tags\":$json_tags}")
+    response=$(api_call "POST" "/zones/${ZONE_ID}/purge_cache" "{\"tags\":${json_tags}}")
 
-    success=$(echo "$response" | jq -r '.success')
-    if [ "$success" == "true" ]; then
+    success=$(echo "${response}" | jq -r '.success')
+    if [[ "${success}" == "true" ]]; then
         echo -e "${GREEN}Tags erfolgreich gepurged!${NC}"
     else
         echo -e "${RED}Purge fehlgeschlagen!${NC}"
         echo ""
         echo "Hinweis: Cache-Tags sind nur im Enterprise-Plan verfügbar."
-        echo "$response" | jq -r '.errors[]?.message // .errors'
+        echo "${response}" | jq -r '.errors[]?.message // .errors'
         exit 1
     fi
 }
@@ -231,23 +231,23 @@ purge_prefixes() {
     check_config
 
     # Prefixes in JSON-Array konvertieren
-    IFS=',' read -ra PREFIX_ARRAY <<< "$prefixes"
+    IFS=',' read -ra PREFIX_ARRAY <<< "${prefixes}"
     json_prefixes=$(printf '%s\n' "${PREFIX_ARRAY[@]}" | jq -R . | jq -s .)
 
     echo "Prefixes zu purgen:"
-    echo "$json_prefixes" | jq -r '.[]'
+    echo "${json_prefixes}" | jq -r '.[]'
     echo ""
 
-    response=$(api_call "POST" "/zones/$ZONE_ID/purge_cache" "{\"prefixes\":$json_prefixes}")
+    response=$(api_call "POST" "/zones/${ZONE_ID}/purge_cache" "{\"prefixes\":${json_prefixes}}")
 
-    success=$(echo "$response" | jq -r '.success')
-    if [ "$success" == "true" ]; then
+    success=$(echo "${response}" | jq -r '.success')
+    if [[ "${success}" == "true" ]]; then
         echo -e "${GREEN}Prefixes erfolgreich gepurged!${NC}"
     else
         echo -e "${RED}Purge fehlgeschlagen!${NC}"
         echo ""
         echo "Hinweis: Prefix-Purge ist nur im Enterprise-Plan verfügbar."
-        echo "$response" | jq -r '.errors[]?.message // .errors'
+        echo "${response}" | jq -r '.errors[]?.message // .errors'
         exit 1
     fi
 }
@@ -256,7 +256,7 @@ purge_prefixes() {
 # Hauptlogik
 # ============================================================================
 
-if [ $# -eq 0 ]; then
+if [[ $# -eq 0 ]]; then
     usage
 fi
 
@@ -265,21 +265,21 @@ case "$1" in
         purge_all
         ;;
     --urls)
-        if [ -z "$2" ]; then
+        if [[ -z "$2" ]]; then
             echo -e "${RED}FEHLER: URLs erforderlich${NC}"
             usage
         fi
         purge_urls "$2"
         ;;
     --tags)
-        if [ -z "$2" ]; then
+        if [[ -z "$2" ]]; then
             echo -e "${RED}FEHLER: Tags erforderlich${NC}"
             usage
         fi
         purge_tags "$2"
         ;;
     --prefixes)
-        if [ -z "$2" ]; then
+        if [[ -z "$2" ]]; then
             echo -e "${RED}FEHLER: Prefixes erforderlich${NC}"
             usage
         fi

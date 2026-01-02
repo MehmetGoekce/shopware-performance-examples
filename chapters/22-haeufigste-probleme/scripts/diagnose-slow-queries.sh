@@ -11,27 +11,27 @@ echo ""
 
 # Check 1: Slow Query Log Status
 echo "1. Slow Query Log Status prüfen..."
-if [ -f "$SHOP_PATH/.env" ]; then
-    DB_HOST=$(grep DATABASE_URL "$SHOP_PATH/.env" | sed -n 's/.*@\([^:]*\).*/\1/p')
+if [[ -f "${SHOP_PATH}/.env" ]]; then
+    DB_HOST=$(grep DATABASE_URL "${SHOP_PATH}/.env" | sed -n 's/.*@\([^:]*\).*/\1/p')
     echo "   Database Host: ${DB_HOST:-localhost}"
 fi
 
 # Check 2: Langsame Queries im Log suchen
 SLOW_LOG="/var/log/mysql/slow.log"
-if [ -f "$SLOW_LOG" ]; then
-    SLOW_COUNT=$(tail -1000 "$SLOW_LOG" 2>/dev/null | grep -c "Query_time" || echo "0")
-    echo "   Langsame Queries (letzte 1000 Zeilen): $SLOW_COUNT"
+if [[ -f "${SLOW_LOG}" ]]; then
+    SLOW_COUNT=$(tail -1000 "${SLOW_LOG}" 2>/dev/null | grep -c "Query_time" || echo "0")
+    echo "   Langsame Queries (letzte 1000 Zeilen): ${SLOW_COUNT}"
 
-    if [ "$SLOW_COUNT" -gt 50 ]; then
+    if [[ "${SLOW_COUNT}" -gt 50 ]]; then
         echo ""
         echo "   ⚠ Zu viele langsame Queries!"
         echo ""
         echo "   Top 5 langsamste Queries:"
-        tail -1000 "$SLOW_LOG" 2>/dev/null | grep -A1 "Query_time" | head -20
+        tail -1000 "${SLOW_LOG}" 2>/dev/null | grep -A1 "Query_time" | head -20
         exit 1
     fi
 else
-    echo "   ⚠ Slow Query Log nicht gefunden: $SLOW_LOG"
+    echo "   ⚠ Slow Query Log nicht gefunden: ${SLOW_LOG}"
 fi
 
 # Check 3: Fehlende Indizes prüfen (wenn mysql verfügbar)

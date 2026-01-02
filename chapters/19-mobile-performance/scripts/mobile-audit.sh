@@ -30,7 +30,7 @@ NC='\033[0m'
 
 # Parse arguments
 for arg in "$@"; do
-    case $arg in
+    case ${arg} in
         --output=*)
             OUTPUT_FORMAT="${arg#*=}"
             ;;
@@ -45,14 +45,14 @@ for arg in "$@"; do
         -*)
             ;;
         *)
-            if [ -z "$URL" ]; then
-                URL="$arg"
+            if [[ -z "${URL}" ]]; then
+                URL="${arg}"
             fi
             ;;
     esac
 done
 
-if [ -z "$URL" ]; then
+if [[ -z "${URL}" ]]; then
     echo "Error: URL required"
     echo "Usage: $0 <url>"
     exit 1
@@ -65,17 +65,17 @@ SCORE=100
 
 check_pass() {
     local name="$1"
-    echo -e "  ${GREEN}✓${NC} $name"
-    RESULTS["$name"]="pass"
+    echo -e "  ${GREEN}✓${NC} ${name}"
+    RESULTS["${name}"]="pass"
 }
 
 check_fail() {
     local name="$1"
     local message="$2"
     local deduction="${3:-5}"
-    echo -e "  ${RED}✗${NC} $name: $message"
-    RESULTS["$name"]="fail"
-    ISSUES+=("$name: $message")
+    echo -e "  ${RED}✗${NC} ${name}: ${message}"
+    RESULTS["${name}"]="fail"
+    ISSUES+=("${name}: ${message}")
     SCORE=$((SCORE - deduction))
 }
 
@@ -83,9 +83,9 @@ check_warn() {
     local name="$1"
     local message="$2"
     local deduction="${3:-2}"
-    echo -e "  ${YELLOW}!${NC} $name: $message"
-    RESULTS["$name"]="warn"
-    ISSUES+=("$name: $message")
+    echo -e "  ${YELLOW}!${NC} ${name}: ${message}"
+    RESULTS["${name}"]="warn"
+    ISSUES+=("${name}: ${message}")
     SCORE=$((SCORE - deduction))
 }
 
@@ -93,7 +93,7 @@ echo -e "${BLUE}============================================${NC}"
 echo -e "${BLUE}  Mobile Performance Audit${NC}"
 echo -e "${BLUE}============================================${NC}"
 echo ""
-echo "URL: $URL"
+echo "URL: ${URL}"
 echo "Date: $(date '+%Y-%m-%d %H:%M:%S')"
 echo ""
 
@@ -103,22 +103,22 @@ echo ""
 echo -e "${YELLOW}1. Viewport Configuration${NC}"
 echo "-------------------------------------------"
 
-RESPONSE=$(curl -s -A "$MOBILE_UA" -L "$URL")
+RESPONSE=$(curl -s -A "${MOBILE_UA}" -L "${URL}")
 
 # Check viewport meta tag
-if echo "$RESPONSE" | grep -q 'name="viewport"'; then
-    VIEWPORT=$(echo "$RESPONSE" | grep -oP 'content="[^"]*width=device-width[^"]*"' | head -1)
-    if [ -n "$VIEWPORT" ]; then
+if echo "${RESPONSE}" | grep -q 'name="viewport"'; then
+    VIEWPORT=$(echo "${RESPONSE}" | grep -oP 'content="[^"]*width=device-width[^"]*"' | head -1)
+    if [[ -n "${VIEWPORT}" ]]; then
         check_pass "Viewport meta tag"
 
         # Check for problematic settings
-        if echo "$VIEWPORT" | grep -q 'user-scalable=no'; then
+        if echo "${VIEWPORT}" | grep -q 'user-scalable=no'; then
             check_fail "Zoom disabled" "user-scalable=no prevents accessibility" 5
         else
             check_pass "Zoom enabled"
         fi
 
-        if echo "$VIEWPORT" | grep -q 'maximum-scale=1'; then
+        if echo "${VIEWPORT}" | grep -q 'maximum-scale=1'; then
             check_warn "Maximum scale restricted" "May affect accessibility" 2
         fi
     else
@@ -136,25 +136,25 @@ echo -e "${YELLOW}2. Mobile Responsiveness${NC}"
 echo "-------------------------------------------"
 
 # Check for media queries
-MEDIA_QUERIES=$(echo "$RESPONSE" | grep -c '@media' || echo "0")
-if [ "$MEDIA_QUERIES" -gt 0 ]; then
-    check_pass "CSS Media Queries found ($MEDIA_QUERIES)"
+MEDIA_QUERIES=$(echo "${RESPONSE}" | grep -c '@media' || echo "0")
+if [[ "${MEDIA_QUERIES}" -gt 0 ]]; then
+    check_pass "CSS Media Queries found (${MEDIA_QUERIES})"
 else
     check_warn "No inline media queries" "CSS may be in external files" 0
 fi
 
 # Check for responsive images
-SRCSET_COUNT=$(echo "$RESPONSE" | grep -c 'srcset=' || echo "0")
-if [ "$SRCSET_COUNT" -gt 0 ]; then
-    check_pass "Responsive images (srcset) found ($SRCSET_COUNT)"
+SRCSET_COUNT=$(echo "${RESPONSE}" | grep -c 'srcset=' || echo "0")
+if [[ "${SRCSET_COUNT}" -gt 0 ]]; then
+    check_pass "Responsive images (srcset) found (${SRCSET_COUNT})"
 else
     check_warn "No srcset found" "Images may not be optimized for mobile" 5
 fi
 
 # Check for picture elements
-PICTURE_COUNT=$(echo "$RESPONSE" | grep -c '<picture' || echo "0")
-if [ "$PICTURE_COUNT" -gt 0 ]; then
-    check_pass "Picture elements found ($PICTURE_COUNT)"
+PICTURE_COUNT=$(echo "${RESPONSE}" | grep -c '<picture' || echo "0")
+if [[ "${PICTURE_COUNT}" -gt 0 ]]; then
+    check_pass "Picture elements found (${PICTURE_COUNT})"
 fi
 echo ""
 
@@ -165,12 +165,12 @@ echo -e "${YELLOW}3. Touch Optimization${NC}"
 echo "-------------------------------------------"
 
 # Check for touch-action CSS
-if echo "$RESPONSE" | grep -q 'touch-action'; then
+if echo "${RESPONSE}" | grep -q 'touch-action'; then
     check_pass "touch-action CSS found"
 fi
 
 # Check for minimum button/link sizes (basic check)
-if echo "$RESPONSE" | grep -qE 'min-height:\s*(44|48)px'; then
+if echo "${RESPONSE}" | grep -qE 'min-height:\s*(44|48)px'; then
     check_pass "Touch-friendly sizes detected"
 else
     check_warn "Touch target sizes" "Verify 44px+ touch targets manually" 3
@@ -184,26 +184,26 @@ echo -e "${YELLOW}4. Performance Indicators${NC}"
 echo "-------------------------------------------"
 
 # Check for preload hints
-PRELOAD_COUNT=$(echo "$RESPONSE" | grep -c 'rel="preload"' || echo "0")
-if [ "$PRELOAD_COUNT" -gt 0 ]; then
-    check_pass "Preload hints found ($PRELOAD_COUNT)"
+PRELOAD_COUNT=$(echo "${RESPONSE}" | grep -c 'rel="preload"' || echo "0")
+if [[ "${PRELOAD_COUNT}" -gt 0 ]]; then
+    check_pass "Preload hints found (${PRELOAD_COUNT})"
 else
     check_warn "No preload hints" "Consider preloading critical assets" 3
 fi
 
 # Check for lazy loading
-LAZY_COUNT=$(echo "$RESPONSE" | grep -c 'loading="lazy"' || echo "0")
-if [ "$LAZY_COUNT" -gt 0 ]; then
-    check_pass "Lazy loading enabled ($LAZY_COUNT images)"
+LAZY_COUNT=$(echo "${RESPONSE}" | grep -c 'loading="lazy"' || echo "0")
+if [[ "${LAZY_COUNT}" -gt 0 ]]; then
+    check_pass "Lazy loading enabled (${LAZY_COUNT} images)"
 else
     check_fail "Lazy loading" "No loading='lazy' found" 5
 fi
 
 # Check for async/defer scripts
-ASYNC_SCRIPTS=$(echo "$RESPONSE" | grep -cE '<script[^>]*(async|defer)' || echo "0")
-TOTAL_SCRIPTS=$(echo "$RESPONSE" | grep -c '<script' || echo "0")
-if [ "$ASYNC_SCRIPTS" -gt 0 ]; then
-    check_pass "Async/defer scripts ($ASYNC_SCRIPTS of $TOTAL_SCRIPTS)"
+ASYNC_SCRIPTS=$(echo "${RESPONSE}" | grep -cE '<script[^>]*(async|defer)' || echo "0")
+TOTAL_SCRIPTS=$(echo "${RESPONSE}" | grep -c '<script' || echo "0")
+if [[ "${ASYNC_SCRIPTS}" -gt 0 ]]; then
+    check_pass "Async/defer scripts (${ASYNC_SCRIPTS} of ${TOTAL_SCRIPTS})"
 else
     check_warn "Render-blocking scripts" "Consider async/defer" 5
 fi
@@ -216,26 +216,26 @@ echo -e "${YELLOW}5. PWA Features${NC}"
 echo "-------------------------------------------"
 
 # Check for manifest
-if echo "$RESPONSE" | grep -q 'rel="manifest"'; then
+if echo "${RESPONSE}" | grep -q 'rel="manifest"'; then
     check_pass "Web App Manifest found"
 else
     check_warn "No Web App Manifest" "PWA features unavailable" 3
 fi
 
 # Check for service worker registration
-if echo "$RESPONSE" | grep -q 'serviceWorker'; then
+if echo "${RESPONSE}" | grep -q 'serviceWorker'; then
     check_pass "Service Worker reference found"
 else
     check_warn "No Service Worker" "Offline support unavailable" 3
 fi
 
 # Check for theme-color
-if echo "$RESPONSE" | grep -q 'name="theme-color"'; then
+if echo "${RESPONSE}" | grep -q 'name="theme-color"'; then
     check_pass "Theme color meta tag found"
 fi
 
 # Check for apple-mobile-web-app
-if echo "$RESPONSE" | grep -q 'apple-mobile-web-app'; then
+if echo "${RESPONSE}" | grep -q 'apple-mobile-web-app'; then
     check_pass "iOS web app meta tags found"
 fi
 echo ""
@@ -247,14 +247,14 @@ echo -e "${YELLOW}6. Mobile SEO${NC}"
 echo "-------------------------------------------"
 
 # Check for canonical
-if echo "$RESPONSE" | grep -q 'rel="canonical"'; then
+if echo "${RESPONSE}" | grep -q 'rel="canonical"'; then
     check_pass "Canonical URL found"
 else
     check_warn "No canonical URL" "May cause duplicate content issues" 2
 fi
 
 # Check for structured data
-if echo "$RESPONSE" | grep -q 'application/ld+json'; then
+if echo "${RESPONSE}" | grep -q 'application/ld+json'; then
     check_pass "Structured data (JSON-LD) found"
 else
     check_warn "No structured data" "Consider adding Schema.org markup" 2
@@ -267,24 +267,24 @@ echo ""
 echo -e "${YELLOW}7. Response Headers${NC}"
 echo "-------------------------------------------"
 
-HEADERS=$(curl -s -I -A "$MOBILE_UA" -L "$URL")
+HEADERS=$(curl -s -I -A "${MOBILE_UA}" -L "${URL}")
 
 # Check compression
-if echo "$HEADERS" | grep -qi 'content-encoding.*gzip\|br'; then
+if echo "${HEADERS}" | grep -qi 'content-encoding.*gzip\|br'; then
     check_pass "Compression enabled"
 else
     check_fail "Compression" "Not enabled (gzip/brotli)" 10
 fi
 
 # Check cache headers
-if echo "$HEADERS" | grep -qi 'cache-control'; then
+if echo "${HEADERS}" | grep -qi 'cache-control'; then
     check_pass "Cache-Control header present"
 else
     check_warn "No Cache-Control header" "Caching may not be optimized" 3
 fi
 
 # Check HTTPS
-if [[ "$URL" == https://* ]]; then
+if [[ "${URL}" == https://* ]]; then
     check_pass "HTTPS enabled"
 else
     check_fail "HTTPS" "Site not using HTTPS" 15
@@ -300,17 +300,17 @@ echo -e "${BLUE}============================================${NC}"
 echo ""
 
 # Final score
-if [ $SCORE -lt 0 ]; then
+if [[ ${SCORE} -lt 0 ]]; then
     SCORE=0
 fi
 
-if [ $SCORE -ge 90 ]; then
+if [[ ${SCORE} -ge 90 ]]; then
     GRADE="${GREEN}A${NC}"
-elif [ $SCORE -ge 80 ]; then
+elif [[ ${SCORE} -ge 80 ]]; then
     GRADE="${GREEN}B${NC}"
-elif [ $SCORE -ge 70 ]; then
+elif [[ ${SCORE} -ge 70 ]]; then
     GRADE="${YELLOW}C${NC}"
-elif [ $SCORE -ge 60 ]; then
+elif [[ ${SCORE} -ge 60 ]]; then
     GRADE="${YELLOW}D${NC}"
 else
     GRADE="${RED}F${NC}"
@@ -319,10 +319,10 @@ fi
 echo -e "Mobile Performance Score: ${SCORE}/100 (Grade: ${GRADE})"
 echo ""
 
-if [ ${#ISSUES[@]} -gt 0 ]; then
+if [[ ${#ISSUES[@]} -gt 0 ]]; then
     echo "Issues Found:"
     for issue in "${ISSUES[@]}"; do
-        echo "  - $issue"
+        echo "  - ${issue}"
     done
     echo ""
 fi
@@ -334,12 +334,12 @@ echo "  3. Check Core Web Vitals in Search Console"
 echo ""
 
 # JSON output
-if [ "$OUTPUT_FORMAT" = "json" ]; then
+if [[ "${OUTPUT_FORMAT}" = "json" ]]; then
     echo ""
     echo "JSON Output:"
     echo "{"
-    echo "  \"url\": \"$URL\","
-    echo "  \"score\": $SCORE,"
+    echo "  \"url\": \"${URL}\","
+    echo "  \"score\": ${SCORE},"
     echo "  \"issues\": ["
     printf '    "%s",\n' "${ISSUES[@]}" | sed '$ s/,$//'
     echo "  ]"

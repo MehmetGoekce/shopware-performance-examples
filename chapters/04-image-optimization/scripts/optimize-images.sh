@@ -49,7 +49,7 @@ check_dependencies() {
     command -v cwebp >/dev/null 2>&1 || missing+=("webp")
     command -v pngquant >/dev/null 2>&1 || missing+=("pngquant")
 
-    if [ ${#missing[@]} -ne 0 ]; then
+    if [[ ${#missing[@]} -ne 0 ]]; then
         echo -e "${RED}Fehlende Abhängigkeiten:${NC}"
         echo "sudo apt install ${missing[*]}"
         exit 1
@@ -69,12 +69,12 @@ get_size() {
 # Menschenlesbare Größe
 human_size() {
     local bytes=$1
-    if [ $bytes -ge 1048576 ]; then
-        echo "$(echo "scale=2; $bytes/1048576" | bc) MB"
-    elif [ $bytes -ge 1024 ]; then
-        echo "$(echo "scale=2; $bytes/1024" | bc) KB"
+    if [[ ${bytes} -ge 1048576 ]]; then
+        echo "$(echo "scale=2; ${bytes}/1048576" | bc) MB"
+    elif [[ ${bytes} -ge 1024 ]]; then
+        echo "$(echo "scale=2; ${bytes}/1024" | bc) KB"
     else
-        echo "$bytes B"
+        echo "${bytes} B"
     fi
 }
 
@@ -82,26 +82,26 @@ human_size() {
 optimize_jpeg() {
     local file="$1"
     local before
-    before=$(get_size "$file")
+    before=$(get_size "${file}")
 
-    echo -e "${BLUE}JPEG:${NC} $file"
-    echo -n "  Vorher: $(human_size $before)"
+    echo -e "${BLUE}JPEG:${NC} ${file}"
+    echo -n "  Vorher: $(human_size ${before})"
 
-    if [ "$DRY_RUN" = false ]; then
+    if [[ "${DRY_RUN}" = false ]]; then
         # Resize wenn größer als MAX
-        convert "$file" \
+        convert "${file}" \
             -resize "${MAX_WIDTH}x${MAX_HEIGHT}>" \
-            -quality $JPEG_QUALITY \
+            -quality ${JPEG_QUALITY} \
             -strip \
             -interlace Plane \
-            "$file"
+            "${file}"
 
         local after
-        after=$(get_size "$file")
+        after=$(get_size "${file}")
         local saved=$((before - after))
         local percent=$((saved * 100 / before))
 
-        echo -e " → Nachher: $(human_size $after) ${GREEN}(-${percent}%)${NC}"
+        echo -e " → Nachher: $(human_size ${after}) ${GREEN}(-${percent}%)${NC}"
 
         TOTAL_BEFORE=$((TOTAL_BEFORE + before))
         TOTAL_AFTER=$((TOTAL_AFTER + after))
@@ -116,26 +116,26 @@ optimize_jpeg() {
 optimize_png() {
     local file="$1"
     local before
-    before=$(get_size "$file")
+    before=$(get_size "${file}")
 
-    echo -e "${BLUE}PNG:${NC} $file"
-    echo -n "  Vorher: $(human_size $before)"
+    echo -e "${BLUE}PNG:${NC} ${file}"
+    echo -n "  Vorher: $(human_size ${before})"
 
-    if [ "$DRY_RUN" = false ]; then
+    if [[ "${DRY_RUN}" = false ]]; then
         # Resize wenn größer als MAX
-        convert "$file" \
+        convert "${file}" \
             -resize "${MAX_WIDTH}x${MAX_HEIGHT}>" \
-            "$file"
+            "${file}"
 
         # PNG-spezifische Optimierung
-        pngquant --quality=$PNG_QUALITY --strip --ext .png --force "$file" 2>/dev/null || true
+        pngquant --quality=${PNG_QUALITY} --strip --ext .png --force "${file}" 2>/dev/null || true
 
         local after
-        after=$(get_size "$file")
+        after=$(get_size "${file}")
         local saved=$((before - after))
         local percent=$((saved * 100 / before))
 
-        echo -e " → Nachher: $(human_size $after) ${GREEN}(-${percent}%)${NC}"
+        echo -e " → Nachher: $(human_size ${after}) ${GREEN}(-${percent}%)${NC}"
 
         TOTAL_BEFORE=$((TOTAL_BEFORE + before))
         TOTAL_AFTER=$((TOTAL_AFTER + after))
@@ -151,21 +151,21 @@ create_webp() {
     local file="$1"
     local webp_file="${file%.*}.webp"
 
-    if [ -f "$webp_file" ]; then
+    if [[ -f "${webp_file}" ]]; then
         echo -e "  ${YELLOW}WebP existiert bereits${NC}"
         return
     fi
 
-    if [ "$DRY_RUN" = false ]; then
-        cwebp -q $WEBP_QUALITY "$file" -o "$webp_file" 2>/dev/null
+    if [[ "${DRY_RUN}" = false ]]; then
+        cwebp -q ${WEBP_QUALITY} "${file}" -o "${webp_file}" 2>/dev/null
 
         local original webp_size
-        original=$(get_size "$file")
-        webp_size=$(get_size "$webp_file")
+        original=$(get_size "${file}")
+        webp_size=$(get_size "${webp_file}")
         local saved=$((original - webp_size))
         local percent=$((saved * 100 / original))
 
-        echo -e "  ${GREEN}WebP erstellt:${NC} $(human_size $webp_size) ${GREEN}(-${percent}% vs Original)${NC}"
+        echo -e "  ${GREEN}WebP erstellt:${NC} $(human_size ${webp_size}) ${GREEN}(-${percent}% vs Original)${NC}"
     else
         echo -e "  ${YELLOW}WebP würde erstellt: ${webp_file}${NC}"
     fi
@@ -177,24 +177,24 @@ main() {
     echo -e "${GREEN}║         BILDOPTIMIERUNG - Kapitel 4                  ║${NC}"
     echo -e "${GREEN}╚══════════════════════════════════════════════════════╝${NC}"
     echo ""
-    echo "Verzeichnis: $INPUT_DIR"
+    echo "Verzeichnis: ${INPUT_DIR}"
     echo "Max. Größe: ${MAX_WIDTH}×${MAX_HEIGHT}"
-    echo "JPEG-Qualität: $JPEG_QUALITY%"
-    echo "WebP-Qualität: $WEBP_QUALITY%"
+    echo "JPEG-Qualität: ${JPEG_QUALITY}%"
+    echo "WebP-Qualität: ${WEBP_QUALITY}%"
     echo ""
 
     check_dependencies
 
     # Alle Bilder finden und verarbeiten
-    find "$INPUT_DIR" -type f \( -iname "*.jpg" -o -iname "*.jpeg" \) | while read -r file; do
-        optimize_jpeg "$file"
-        create_webp "$file"
+    find "${INPUT_DIR}" -type f \( -iname "*.jpg" -o -iname "*.jpeg" \) | while read -r file; do
+        optimize_jpeg "${file}"
+        create_webp "${file}"
         echo ""
     done
 
-    find "$INPUT_DIR" -type f -iname "*.png" | while read -r file; do
-        optimize_png "$file"
-        create_webp "$file"
+    find "${INPUT_DIR}" -type f -iname "*.png" | while read -r file; do
+        optimize_png "${file}"
+        create_webp "${file}"
         echo ""
     done
 
@@ -203,15 +203,15 @@ main() {
     echo -e "${GREEN}║                   ZUSAMMENFASSUNG                    ║${NC}"
     echo -e "${GREEN}╚══════════════════════════════════════════════════════╝${NC}"
     echo ""
-    echo "Dateien verarbeitet: $FILES_PROCESSED"
+    echo "Dateien verarbeitet: ${FILES_PROCESSED}"
 
-    if [ "$DRY_RUN" = false ] && [ $TOTAL_BEFORE -gt 0 ]; then
+    if [[ "${DRY_RUN}" = false ]] && [[ ${TOTAL_BEFORE} -gt 0 ]]; then
         local total_saved=$((TOTAL_BEFORE - TOTAL_AFTER))
         local total_percent=$((total_saved * 100 / TOTAL_BEFORE))
 
-        echo "Vorher gesamt: $(human_size $TOTAL_BEFORE)"
-        echo "Nachher gesamt: $(human_size $TOTAL_AFTER)"
-        echo -e "${GREEN}Eingespart: $(human_size $total_saved) (-${total_percent}%)${NC}"
+        echo "Vorher gesamt: $(human_size ${TOTAL_BEFORE})"
+        echo "Nachher gesamt: $(human_size ${TOTAL_AFTER})"
+        echo -e "${GREEN}Eingespart: $(human_size ${total_saved}) (-${total_percent}%)${NC}"
     fi
 
     echo ""

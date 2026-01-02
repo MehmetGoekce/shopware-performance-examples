@@ -20,7 +20,7 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 echo "=== Synchrone API-Call Detection ==="
-echo "Shop: $SHOP_PATH"
+echo "Shop: ${SHOP_PATH}"
 echo ""
 
 ISSUES=0
@@ -29,8 +29,8 @@ ISSUES=0
 echo -e "${BLUE}1. HTTP Client Usage in kritischen Pfaden${NC}"
 
 SEARCH_DIRS=(
-    "$SHOP_PATH/custom/plugins"
-    "$SHOP_PATH/src"
+    "${SHOP_PATH}/custom/plugins"
+    "${SHOP_PATH}/src"
 )
 
 SYNC_PATTERNS=(
@@ -44,26 +44,26 @@ SYNC_PATTERNS=(
 FOUND_SYNC=0
 
 for dir in "${SEARCH_DIRS[@]}"; do
-    if [ -d "$dir" ]; then
-        echo "   Suche in: $dir"
+    if [[ -d "${dir}" ]]; then
+        echo "   Suche in: ${dir}"
 
         for pattern in "${SYNC_PATTERNS[@]}"; do
-            MATCHES=$(grep -rln "$pattern" "$dir" --include="*.php" 2>/dev/null | head -10)
+            MATCHES=$(grep -rln "${pattern}" "${dir}" --include="*.php" 2>/dev/null | head -10)
 
-            if [ -n "$MATCHES" ]; then
+            if [[ -n "${MATCHES}" ]]; then
                 echo ""
-                echo -e "   ${YELLOW}Pattern: $pattern${NC}"
+                echo -e "   ${YELLOW}Pattern: ${pattern}${NC}"
 
-                for file in $MATCHES; do
-                    BASENAME=$(basename "$file")
-                    DIRNAME=$(dirname "$file" | sed "s|$SHOP_PATH/||g")
+                for file in ${MATCHES}; do
+                    BASENAME=$(basename "${file}")
+                    DIRNAME=$(dirname "${file}" | sed "s|${SHOP_PATH}/||g")
 
                     # Prüfe ob in kritischem Pfad (Subscriber, Controller, Service)
-                    if echo "$file" | grep -qE "Subscriber|Controller|Service"; then
-                        echo -e "   ${RED}✗${NC} $DIRNAME/$BASENAME"
+                    if echo "${file}" | grep -qE "Subscriber|Controller|Service"; then
+                        echo -e "   ${RED}✗${NC} ${DIRNAME}/${BASENAME}"
                         FOUND_SYNC=$((FOUND_SYNC + 1))
                     else
-                        echo -e "   ${YELLOW}⚠${NC} $DIRNAME/$BASENAME"
+                        echo -e "   ${YELLOW}⚠${NC} ${DIRNAME}/${BASENAME}"
                     fi
                 done
             fi
@@ -71,7 +71,7 @@ for dir in "${SEARCH_DIRS[@]}"; do
     fi
 done
 
-if [ "$FOUND_SYNC" -gt 0 ]; then
+if [[ "${FOUND_SYNC}" -gt 0 ]]; then
     ISSUES=$((ISSUES + 1))
 fi
 
@@ -91,15 +91,15 @@ INTEGRATION_PATTERNS=(
 )
 
 for pattern in "${INTEGRATION_PATTERNS[@]}"; do
-    FOUND=$(find "$SHOP_PATH/custom/plugins" -iname "*$pattern*" -type d 2>/dev/null | head -1)
+    FOUND=$(find "${SHOP_PATH}/custom/plugins" -iname "*${pattern}*" -type d 2>/dev/null | head -1)
 
-    if [ -n "$FOUND" ]; then
-        echo -e "   ${YELLOW}Integration gefunden:${NC} $pattern"
+    if [[ -n "${FOUND}" ]]; then
+        echo -e "   ${YELLOW}Integration gefunden:${NC} ${pattern}"
 
         # Prüfe ob async
-        ASYNC_CHECK=$(grep -rl "MessageBus\|dispatch\|async" "$FOUND" --include="*.php" 2>/dev/null | wc -l)
+        ASYNC_CHECK=$(grep -rl "MessageBus\|dispatch\|async" "${FOUND}" --include="*.php" 2>/dev/null | wc -l)
 
-        if [ "$ASYNC_CHECK" -gt 0 ]; then
+        if [[ "${ASYNC_CHECK}" -gt 0 ]]; then
             echo -e "   ${GREEN}   → Async-Pattern erkannt${NC}"
         else
             echo -e "   ${RED}   → Möglicherweise synchron!${NC}"
@@ -121,16 +121,16 @@ PAYMENT_PATTERNS=(
 )
 
 for pattern in "${PAYMENT_PATTERNS[@]}"; do
-    PAYMENT_PLUGIN=$(find "$SHOP_PATH/custom/plugins" -iname "*$pattern*" -type d 2>/dev/null | head -1)
+    PAYMENT_PLUGIN=$(find "${SHOP_PATH}/custom/plugins" -iname "*${pattern}*" -type d 2>/dev/null | head -1)
 
-    if [ -n "$PAYMENT_PLUGIN" ]; then
-        echo "   $pattern Integration gefunden"
+    if [[ -n "${PAYMENT_PLUGIN}" ]]; then
+        echo "   ${pattern} Integration gefunden"
 
         # Zahlungen sollten nicht im Storefront synchron sein
-        STOREFRONT_CALLS=$(grep -rl "StorefrontController\|PageLoader" "$PAYMENT_PLUGIN" --include="*.php" 2>/dev/null | \
+        STOREFRONT_CALLS=$(grep -rl "StorefrontController\|PageLoader" "${PAYMENT_PLUGIN}" --include="*.php" 2>/dev/null | \
             xargs grep -l "HttpClient\|request(" 2>/dev/null | wc -l)
 
-        if [ "$STOREFRONT_CALLS" -gt 0 ]; then
+        if [[ "${STOREFRONT_CALLS}" -gt 0 ]]; then
             echo -e "   ${YELLOW}   → HTTP-Calls in Storefront-Context${NC}"
         fi
     fi
@@ -141,17 +141,17 @@ echo ""
 echo -e "${BLUE}4. Timeout-Konfiguration${NC}"
 
 # Suche nach Timeout-Konfigurationen
-TIMEOUT_CONFIG=$(grep -rn "timeout" "$SHOP_PATH/custom/plugins" --include="*.php" 2>/dev/null | \
+TIMEOUT_CONFIG=$(grep -rn "timeout" "${SHOP_PATH}/custom/plugins" --include="*.php" 2>/dev/null | \
     grep -E "['\"](timeout|connect_timeout)['\"]" | head -5)
 
-if [ -n "$TIMEOUT_CONFIG" ]; then
+if [[ -n "${TIMEOUT_CONFIG}" ]]; then
     echo "   Timeout-Konfigurationen gefunden:"
-    echo "$TIMEOUT_CONFIG" | while read -r line; do
-        FILE=$(echo "$line" | cut -d':' -f1 | xargs basename)
-        TIMEOUT=$(echo "$line" | grep -oE "[0-9]+" | head -1)
-        echo "   - $FILE: ${TIMEOUT}s"
+    echo "${TIMEOUT_CONFIG}" | while read -r line; do
+        FILE=$(echo "${line}" | cut -d':' -f1 | xargs basename)
+        TIMEOUT=$(echo "${line}" | grep -oE "[0-9]+" | head -1)
+        echo "   - ${FILE}: ${TIMEOUT}s"
 
-        if [ -n "$TIMEOUT" ] && [ "$TIMEOUT" -gt 10 ]; then
+        if [[ -n "${TIMEOUT}" ]] && [[ "${TIMEOUT}" -gt 10 ]]; then
             echo -e "     ${YELLOW}Warnung: Timeout > 10s${NC}"
         fi
     done
@@ -164,13 +164,13 @@ fi
 echo ""
 echo -e "${BLUE}5. Async Message Handler${NC}"
 
-ASYNC_HANDLERS=$(grep -rln "MessageHandlerInterface\|#\[AsMessageHandler\]" "$SHOP_PATH/custom/plugins" --include="*.php" 2>/dev/null | wc -l)
-SYNC_SERVICES=$(grep -rln "implements.*Service\|class.*Service" "$SHOP_PATH/custom/plugins" --include="*.php" 2>/dev/null | wc -l)
+ASYNC_HANDLERS=$(grep -rln "MessageHandlerInterface\|#\[AsMessageHandler\]" "${SHOP_PATH}/custom/plugins" --include="*.php" 2>/dev/null | wc -l)
+SYNC_SERVICES=$(grep -rln "implements.*Service\|class.*Service" "${SHOP_PATH}/custom/plugins" --include="*.php" 2>/dev/null | wc -l)
 
-echo "   Async Message Handler: $ASYNC_HANDLERS"
-echo "   Service-Klassen: $SYNC_SERVICES"
+echo "   Async Message Handler: ${ASYNC_HANDLERS}"
+echo "   Service-Klassen: ${SYNC_SERVICES}"
 
-if [ "$ASYNC_HANDLERS" -eq 0 ] && [ "$SYNC_SERVICES" -gt 5 ]; then
+if [[ "${ASYNC_HANDLERS}" -eq 0 ]] && [[ "${SYNC_SERVICES}" -gt 5 ]]; then
     echo -e "   ${YELLOW}Keine async Handler aber viele Services${NC}"
     echo "   Empfehlung: Externe Calls über Message Queue abwickeln"
 fi
@@ -179,19 +179,19 @@ fi
 echo ""
 echo "=== Zusammenfassung ==="
 
-if [ "$ISSUES" -eq 0 ]; then
+if [[ "${ISSUES}" -eq 0 ]]; then
     echo -e "${GREEN}Keine kritischen synchronen Calls erkannt.${NC}"
     exit 0
 else
-    echo -e "${RED}$ISSUES potentielle(s) Problem(e) gefunden.${NC}"
+    echo -e "${RED}${ISSUES} potentielle(s) Problem(e) gefunden.${NC}"
     echo ""
     echo "Empfohlene Lösungen:"
     echo ""
     echo "  1. Caching für externe Daten:"
-    echo '     $cache->get("erp_stock_$id", fn() => $erp->getStock($id), 300);'
+    echo '     ${cache}->get("erp_stock_${id}", fn() => ${erp}->getStock(${id}), 300);'
     echo ""
     echo "  2. Message Queue verwenden:"
-    echo '     $bus->dispatch(new SyncErpMessage($productId));'
+    echo '     ${bus}->dispatch(new SyncErpMessage(${product}Id));'
     echo ""
     echo "  3. Timeouts setzen (max 5s für Storefront):"
     echo "     'timeout' => 5,"

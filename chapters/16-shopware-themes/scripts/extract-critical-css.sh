@@ -66,7 +66,7 @@ while [[ $# -gt 0 ]]; do
             exit 0
             ;;
         *)
-            if [ -z "$URL" ]; then
+            if [[ -z "${URL}" ]]; then
                 URL="$1"
             fi
             shift
@@ -75,7 +75,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # URL prüfen
-if [ -z "$URL" ]; then
+if [[ -z "${URL}" ]]; then
     echo -e "${RED}Fehler: URL ist erforderlich${NC}"
     echo ""
     show_help
@@ -86,14 +86,14 @@ echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}  Critical CSS Extractor${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
-echo -e "URL:       $URL"
+echo -e "URL:       ${URL}"
 echo -e "Viewport:  ${VIEWPORT_WIDTH}x${VIEWPORT_HEIGHT}"
 echo -e "Timeout:   ${TIMEOUT}ms"
-echo -e "Output:    $OUTPUT_DIR"
+echo -e "Output:    ${OUTPUT_DIR}"
 echo ""
 
 # Verzeichnis erstellen
-mkdir -p "$OUTPUT_DIR"
+mkdir -p "${OUTPUT_DIR}"
 
 # Prüfen ob critical installiert ist
 if ! command -v critical &> /dev/null && ! npx critical --version &> /dev/null; then
@@ -106,14 +106,14 @@ TEMP_HTML=$(mktemp)
 TEMP_CSS=$(mktemp)
 
 # HTML herunterladen
-echo -e "${YELLOW}Lade HTML von $URL...${NC}"
-curl -sL "$URL" > "$TEMP_HTML"
+echo -e "${YELLOW}Lade HTML von ${URL}...${NC}"
+curl -sL "${URL}" > "${TEMP_HTML}"
 
 # Critical CSS extrahieren
 echo -e "${YELLOW}Extrahiere Critical CSS...${NC}"
 
 # Node.js Script für critical
-cat > "$TEMP_CSS.mjs" << 'NODESCRIPT'
+cat > "${TEMP_CSS}.mjs" << 'NODESCRIPT'
 import { generate } from 'critical';
 import { readFileSync, writeFileSync } from 'fs';
 import { resolve } from 'path';
@@ -165,26 +165,26 @@ extractCritical();
 NODESCRIPT
 
 # Critical ausführen
-RESULT=$(node "$TEMP_CSS.mjs" "$URL" "$OUTPUT_DIR" "$VIEWPORT_WIDTH" "$VIEWPORT_HEIGHT" "$TIMEOUT" 2>/dev/null || echo '{"success":false,"error":"Critical extraction failed"}')
+RESULT=$(node "${TEMP_CSS}.mjs" "${URL}" "${OUTPUT_DIR}" "${VIEWPORT_WIDTH}" "${VIEWPORT_HEIGHT}" "${TIMEOUT}" 2>/dev/null || echo '{"success":false,"error":"Critical extraction failed"}')
 
 # Aufräumen
-rm -f "$TEMP_HTML" "$TEMP_CSS" "$TEMP_CSS.mjs"
+rm -f "${TEMP_HTML}" "${TEMP_CSS}" "${TEMP_CSS}.mjs"
 
 # Ergebnis prüfen
-SUCCESS=$(echo "$RESULT" | grep -o '"success":\s*true' || true)
+SUCCESS=$(echo "${RESULT}" | grep -o '"success":\s*true' || true)
 
-if [ -n "$SUCCESS" ]; then
-    SIZE_KB=$(echo "$RESULT" | grep -o '"sizeKB":"[^"]*"' | cut -d'"' -f4)
+if [[ -n "${SUCCESS}" ]]; then
+    SIZE_KB=$(echo "${RESULT}" | grep -o '"sizeKB":"[^"]*"' | cut -d'"' -f4)
 
     echo -e "${GREEN}Critical CSS erfolgreich extrahiert!${NC}"
     echo ""
     echo -e "Größe: ${SIZE_KB} KB"
-    echo -e "Datei: $OUTPUT_DIR/critical.css"
+    echo -e "Datei: ${OUTPUT_DIR}/critical.css"
     echo ""
 
     # Twig-Template erstellen
-    TWIG_FILE="$OUTPUT_DIR/critical.css.twig"
-    cat > "$TWIG_FILE" << 'TWIG'
+    TWIG_FILE="${OUTPUT_DIR}/critical.css.twig"
+    cat > "${TWIG_FILE}" << 'TWIG'
 {#
     Auto-generated Critical CSS
 
@@ -197,18 +197,18 @@ if [ -n "$SUCCESS" ]; then
 #}
 TWIG
 
-    cat "$OUTPUT_DIR/critical.css" >> "$TWIG_FILE"
-    echo -e "Twig:  $TWIG_FILE"
+    cat "${OUTPUT_DIR}/critical.css" >> "${TWIG_FILE}"
+    echo -e "Twig:  ${TWIG_FILE}"
 
     # Minified Version
     if command -v cssnano &> /dev/null || npx cssnano --version &> /dev/null 2>&1; then
         echo ""
         echo -e "${YELLOW}Minifying...${NC}"
-        npx cssnano "$OUTPUT_DIR/critical.css" "$OUTPUT_DIR/critical.min.css" 2>/dev/null || true
+        npx cssnano "${OUTPUT_DIR}/critical.css" "${OUTPUT_DIR}/critical.min.css" 2>/dev/null || true
 
-        if [ -f "$OUTPUT_DIR/critical.min.css" ]; then
-            MIN_SIZE=$(stat -f%z "$OUTPUT_DIR/critical.min.css" 2>/dev/null || stat -c%s "$OUTPUT_DIR/critical.min.css" 2>/dev/null)
-            echo -e "Minified: $(echo "scale=2; $MIN_SIZE / 1024" | bc) KB"
+        if [[ -f "${OUTPUT_DIR}/critical.min.css" ]]; then
+            MIN_SIZE=$(stat -f%z "${OUTPUT_DIR}/critical.min.css" 2>/dev/null || stat -c%s "${OUTPUT_DIR}/critical.min.css" 2>/dev/null)
+            echo -e "Minified: $(echo "scale=2; ${MIN_SIZE} / 1024" | bc) KB"
         fi
     fi
 
@@ -221,12 +221,12 @@ TWIG
     echo ""
 
 else
-    ERROR=$(echo "$RESULT" | grep -o '"error":"[^"]*"' | cut -d'"' -f4)
+    ERROR=$(echo "${RESULT}" | grep -o '"error":"[^"]*"' | cut -d'"' -f4)
     echo -e "${RED}Fehler bei Critical CSS Extraktion:${NC}"
-    echo -e "$ERROR"
+    echo -e "${ERROR}"
     echo ""
     echo -e "${YELLOW}Mögliche Lösungen:${NC}"
-    echo "  1. URL erreichbar? (curl -I $URL)"
+    echo "  1. URL erreichbar? (curl -I ${URL})"
     echo "  2. puppeteer installiert? (npm install puppeteer)"
     echo "  3. Timeout erhöhen (--timeout 60000)"
     echo ""
@@ -234,10 +234,10 @@ else
 fi
 
 # Empfohlene Limits prüfen
-CRITICAL_SIZE=$(stat -f%z "$OUTPUT_DIR/critical.css" 2>/dev/null || stat -c%s "$OUTPUT_DIR/critical.css" 2>/dev/null)
+CRITICAL_SIZE=$(stat -f%z "${OUTPUT_DIR}/critical.css" 2>/dev/null || stat -c%s "${OUTPUT_DIR}/critical.css" 2>/dev/null)
 CRITICAL_KB=$((CRITICAL_SIZE / 1024))
 
-if [ "$CRITICAL_KB" -gt 14 ]; then
+if [[ "${CRITICAL_KB}" -gt 14 ]]; then
     echo -e "${YELLOW}Warnung: Critical CSS ist größer als 14 KB (${CRITICAL_KB} KB)${NC}"
     echo "  - Erwäge manuelle Optimierung"
     echo "  - Entferne Styles für Elemente unter dem Fold"

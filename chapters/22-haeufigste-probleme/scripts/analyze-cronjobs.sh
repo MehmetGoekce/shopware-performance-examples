@@ -24,7 +24,7 @@ PEAK_START=9
 PEAK_END=18
 
 echo "=== Cronjob Analyse ==="
-echo "Shop: $SHOP_PATH"
+echo "Shop: ${SHOP_PATH}"
 echo ""
 
 ISSUES=0
@@ -34,26 +34,26 @@ echo -e "${BLUE}1. System Crontab${NC}"
 
 CRONTAB_ENTRIES=$(crontab -l 2>/dev/null | grep -v "^#" | grep -v "^$" || echo "")
 
-if [ -n "$CRONTAB_ENTRIES" ]; then
+if [[ -n "${CRONTAB_ENTRIES}" ]]; then
     echo "   Gefundene Cronjobs:"
     echo ""
 
-    echo "$CRONTAB_ENTRIES" | while read -r line; do
+    echo "${CRONTAB_ENTRIES}" | while read -r line; do
         # Extrahiere Stunde (zweites Feld bei Standard-Cron)
-        HOUR=$(echo "$line" | awk '{print $2}')
+        HOUR=$(echo "${line}" | awk '{print $2}')
 
         # Prüfe ob numerisch und in Peak-Zeit
-        if [[ "$HOUR" =~ ^[0-9]+$ ]]; then
-            if [ "$HOUR" -ge "$PEAK_START" ] && [ "$HOUR" -le "$PEAK_END" ]; then
-                echo -e "   ${YELLOW}⚠ Peak-Zeit:${NC} $line"
+        if [[ "${HOUR}" =~ ^[0-9]+$ ]]; then
+            if [[ "${HOUR}" -ge "${PEAK_START}" ]] && [[ "${HOUR}" -le "${PEAK_END}" ]]; then
+                echo -e "   ${YELLOW}⚠ Peak-Zeit:${NC} ${line}"
                 ISSUES=$((ISSUES + 1))
             else
-                echo -e "   ${GREEN}✓${NC} $line"
+                echo -e "   ${GREEN}✓${NC} ${line}"
             fi
-        elif [ "$HOUR" = "*" ]; then
-            echo -e "   ${YELLOW}⚠ Läuft stündlich:${NC} $line"
+        elif [[ "${HOUR}" = "*" ]]; then
+            echo -e "   ${YELLOW}⚠ Läuft stündlich:${NC} ${line}"
         else
-            echo "   $line"
+            echo "   ${line}"
         fi
     done
 else
@@ -64,20 +64,20 @@ fi
 echo ""
 echo -e "${BLUE}2. Shopware Scheduled Tasks${NC}"
 
-if [ -f "$SHOP_PATH/bin/console" ]; then
+if [[ -f "${SHOP_PATH}/bin/console" ]]; then
     # Liste scheduled tasks
-    TASKS=$(php "$SHOP_PATH/bin/console" scheduled-task:list 2>/dev/null || echo "")
+    TASKS=$(php "${SHOP_PATH}/bin/console" scheduled-task:list 2>/dev/null || echo "")
 
-    if [ -n "$TASKS" ]; then
+    if [[ -n "${TASKS}" ]]; then
         echo "   Aktive Tasks:"
-        echo "$TASKS" | head -20
+        echo "${TASKS}" | head -20
 
         # Zähle überfällige Tasks
-        OVERDUE=$(echo "$TASKS" | grep -c "overdue" 2>/dev/null || echo "0")
+        OVERDUE=$(echo "${TASKS}" | grep -c "overdue" 2>/dev/null || echo "0")
 
-        if [ "$OVERDUE" -gt 0 ]; then
+        if [[ "${OVERDUE}" -gt 0 ]]; then
             echo ""
-            echo -e "   ${RED}$OVERDUE überfällige Task(s)!${NC}"
+            echo -e "   ${RED}${OVERDUE} überfällige Task(s)!${NC}"
             ISSUES=$((ISSUES + 1))
         fi
     else
@@ -93,9 +93,9 @@ echo -e "${BLUE}3. Message Queue Status${NC}"
 
 # Prüfe ob Worker laufen
 WORKER_COUNT=$(pgrep -f "messenger:consume" 2>/dev/null | wc -l || echo "0")
-echo "   Aktive Worker-Prozesse: $WORKER_COUNT"
+echo "   Aktive Worker-Prozesse: ${WORKER_COUNT}"
 
-if [ "$WORKER_COUNT" -eq 0 ]; then
+if [[ "${WORKER_COUNT}" -eq 0 ]]; then
     echo -e "   ${YELLOW}Keine Worker aktiv!${NC}"
     echo "   Empfehlung: Supervisor für messenger:consume einrichten"
     ISSUES=$((ISSUES + 1))
@@ -104,10 +104,10 @@ fi
 # Queue-Größe prüfen (wenn Redis)
 if command -v redis-cli &> /dev/null; then
     QUEUE_SIZE=$(redis-cli LLEN messenger_messages 2>/dev/null || echo "?")
-    if [ "$QUEUE_SIZE" != "?" ]; then
-        echo "   Queue-Größe: $QUEUE_SIZE"
+    if [[ "${QUEUE_SIZE}" != "?" ]]; then
+        echo "   Queue-Größe: ${QUEUE_SIZE}"
 
-        if [ "$QUEUE_SIZE" -gt 1000 ]; then
+        if [[ "${QUEUE_SIZE}" -gt 1000 ]]; then
             echo -e "   ${RED}Queue zu voll (> 1000)!${NC}"
             ISSUES=$((ISSUES + 1))
         fi
@@ -120,16 +120,16 @@ echo -e "${BLUE}4. Supervisor Konfiguration${NC}"
 
 SUPERVISOR_CONF="/etc/supervisor/conf.d"
 
-if [ -d "$SUPERVISOR_CONF" ]; then
-    SHOPWARE_SUPERVISOR=$(ls "$SUPERVISOR_CONF"/*shopware* 2>/dev/null | head -1 || echo "")
+if [[ -d "${SUPERVISOR_CONF}" ]]; then
+    SHOPWARE_SUPERVISOR=$(ls "${SUPERVISOR_CONF}"/*shopware* 2>/dev/null | head -1 || echo "")
 
-    if [ -n "$SHOPWARE_SUPERVISOR" ]; then
+    if [[ -n "${SHOPWARE_SUPERVISOR}" ]]; then
         echo -e "   ${GREEN}Supervisor-Konfiguration gefunden${NC}"
-        echo "   Datei: $SHOPWARE_SUPERVISOR"
+        echo "   Datei: ${SHOPWARE_SUPERVISOR}"
 
         # Worker-Anzahl
-        NUMPROCS=$(grep "numprocs" "$SHOPWARE_SUPERVISOR" 2>/dev/null | head -1)
-        echo "   $NUMPROCS"
+        NUMPROCS=$(grep "numprocs" "${SHOPWARE_SUPERVISOR}" 2>/dev/null | head -1)
+        echo "   ${NUMPROCS}"
     else
         echo -e "   ${YELLOW}Keine Shopware Supervisor-Konfiguration${NC}"
     fi
@@ -141,19 +141,19 @@ fi
 echo ""
 echo -e "${BLUE}5. Indexer Status${NC}"
 
-if [ -f "$SHOP_PATH/bin/console" ]; then
+if [[ -f "${SHOP_PATH}/bin/console" ]]; then
     # Indexer-Liste
-    INDEXERS=$(php "$SHOP_PATH/bin/console" dal:refresh:index --list 2>/dev/null | grep -E "^\s*-" || echo "")
+    INDEXERS=$(php "${SHOP_PATH}/bin/console" dal:refresh:index --list 2>/dev/null | grep -E "^\s*-" || echo "")
 
-    if [ -n "$INDEXERS" ]; then
-        INDEX_COUNT=$(echo "$INDEXERS" | wc -l)
-        echo "   Registrierte Indexer: $INDEX_COUNT"
+    if [[ -n "${INDEXERS}" ]]; then
+        INDEX_COUNT=$(echo "${INDEXERS}" | wc -l)
+        echo "   Registrierte Indexer: ${INDEX_COUNT}"
 
         # Prüfe letzte Indexierung
-        if [ -f "$SHOP_PATH/var/log/prod.log" ]; then
-            LAST_INDEX=$(grep "Indexing" "$SHOP_PATH/var/log/prod.log" 2>/dev/null | tail -1)
-            if [ -n "$LAST_INDEX" ]; then
-                echo "   Letzte Indexierung: $(echo "$LAST_INDEX" | cut -d' ' -f1-2)"
+        if [[ -f "${SHOP_PATH}/var/log/prod.log" ]]; then
+            LAST_INDEX=$(grep "Indexing" "${SHOP_PATH}/var/log/prod.log" 2>/dev/null | tail -1)
+            if [[ -n "${LAST_INDEX}" ]]; then
+                echo "   Letzte Indexierung: $(echo "${LAST_INDEX}" | cut -d' ' -f1-2)"
             fi
         fi
     fi
@@ -173,7 +173,7 @@ else
 fi
 
 echo -n "   Log Rotation... "
-if [ -f "/etc/logrotate.d/shopware" ] || [ -f "$SHOP_PATH/logrotate.conf" ]; then
+if [[ -f "/etc/logrotate.d/shopware" ]] || [[ -f "${SHOP_PATH}/logrotate.conf" ]]; then
     echo -e "${GREEN}konfiguriert${NC}"
 else
     echo -e "${YELLOW}nicht gefunden${NC}"
@@ -183,11 +183,11 @@ fi
 echo ""
 echo "=== Zusammenfassung ==="
 
-if [ "$ISSUES" -eq 0 ]; then
+if [[ "${ISSUES}" -eq 0 ]]; then
     echo -e "${GREEN}Cronjob-Konfiguration OK.${NC}"
     exit 0
 else
-    echo -e "${YELLOW}$ISSUES Problem(e) gefunden.${NC}"
+    echo -e "${YELLOW}${ISSUES} Problem(e) gefunden.${NC}"
     echo ""
     echo "Empfohlene Optimierungen:"
     echo ""

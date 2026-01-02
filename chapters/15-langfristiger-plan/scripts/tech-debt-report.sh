@@ -109,50 +109,50 @@ HISTORICAL_DATA='[
 # Statistiken berechnen
 # ============================================================
 
-TOTAL_ITEMS=$(echo "$TECH_DEBT_DATA" | jq 'length')
-BACKLOG_ITEMS=$(echo "$TECH_DEBT_DATA" | jq '[.[] | select(.status == "backlog")] | length')
-IN_PROGRESS=$(echo "$TECH_DEBT_DATA" | jq '[.[] | select(.status == "in_progress")] | length')
-TOTAL_HOURS=$(echo "$TECH_DEBT_DATA" | jq '[.[] | select(.status == "backlog") | .estimated_hours] | add')
-AVG_PRIORITY=$(echo "$TECH_DEBT_DATA" | jq '[.[] | select(.status == "backlog") | .priority_score] | add / length | floor')
+TOTAL_ITEMS=$(echo "${TECH_DEBT_DATA}" | jq 'length')
+BACKLOG_ITEMS=$(echo "${TECH_DEBT_DATA}" | jq '[.[] | select(.status == "backlog")] | length')
+IN_PROGRESS=$(echo "${TECH_DEBT_DATA}" | jq '[.[] | select(.status == "in_progress")] | length')
+TOTAL_HOURS=$(echo "${TECH_DEBT_DATA}" | jq '[.[] | select(.status == "backlog") | .estimated_hours] | add')
+AVG_PRIORITY=$(echo "${TECH_DEBT_DATA}" | jq '[.[] | select(.status == "backlog") | .priority_score] | add / length | floor')
 
 # Tech Debt Score (vereinfacht)
-TECH_DEBT_SCORE=$(echo "scale=0; ($BACKLOG_ITEMS * 3) + ($TOTAL_HOURS / 10)" | bc)
+TECH_DEBT_SCORE=$(echo "scale=0; (${BACKLOG_ITEMS} * 3) + (${TOTAL_HOURS} / 10)" | bc)
 
 # Health Status
-if [ "$TECH_DEBT_SCORE" -le 25 ]; then
+if [[ "${TECH_DEBT_SCORE}" -le 25 ]]; then
     HEALTH="healthy"
-    HEALTH_COLOR=$GREEN
-elif [ "$TECH_DEBT_SCORE" -le 50 ]; then
+    HEALTH_COLOR=${GREEN}
+elif [[ "${TECH_DEBT_SCORE}" -le 50 ]]; then
     HEALTH="manageable"
-    HEALTH_COLOR=$YELLOW
-elif [ "$TECH_DEBT_SCORE" -le 75 ]; then
+    HEALTH_COLOR=${YELLOW}
+elif [[ "${TECH_DEBT_SCORE}" -le 75 ]]; then
     HEALTH="concerning"
-    HEALTH_COLOR=$YELLOW
+    HEALTH_COLOR=${YELLOW}
 else
     HEALTH="critical"
-    HEALTH_COLOR=$RED
+    HEALTH_COLOR=${RED}
 fi
 
 # ============================================================
 # Output
 # ============================================================
 
-if [ "$OUTPUT_FORMAT" == "json" ]; then
+if [[ "${OUTPUT_FORMAT}" == "json" ]]; then
     # JSON Output
     cat << EOF
 {
     "generated_at": "$(date -Iseconds)",
     "summary": {
-        "total_items": $TOTAL_ITEMS,
-        "backlog_items": $BACKLOG_ITEMS,
-        "in_progress": $IN_PROGRESS,
-        "total_hours": $TOTAL_HOURS,
-        "tech_debt_score": $TECH_DEBT_SCORE,
-        "health": "$HEALTH"
+        "total_items": ${TOTAL_ITEMS},
+        "backlog_items": ${BACKLOG_ITEMS},
+        "in_progress": ${IN_PROGRESS},
+        "total_hours": ${TOTAL_HOURS},
+        "tech_debt_score": ${TECH_DEBT_SCORE},
+        "health": "${HEALTH}"
     },
-    "items": $TECH_DEBT_DATA,
-    "by_category": $(echo "$TECH_DEBT_DATA" | jq 'group_by(.category) | map({category: .[0].category, count: length})'),
-    "top_priority": $(echo "$TECH_DEBT_DATA" | jq 'sort_by(-.priority_score) | .[0:3]')
+    "items": ${TECH_DEBT_DATA},
+    "by_category": $(echo "${TECH_DEBT_DATA}" | jq 'group_by(.category) | map({category: .[0].category, count: length})'),
+    "top_priority": $(echo "${TECH_DEBT_DATA}" | jq 'sort_by(-.priority_score) | .[0:3]')
 }
 EOF
     exit 0
@@ -170,11 +170,11 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "  Zusammenfassung"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-echo -e "Tech Debt Score:    ${HEALTH_COLOR}$TECH_DEBT_SCORE${NC} ($HEALTH)"
-echo "Backlog Items:      $BACKLOG_ITEMS"
-echo "In Progress:        $IN_PROGRESS"
+echo -e "Tech Debt Score:    ${HEALTH_COLOR}${TECH_DEBT_SCORE}${NC} (${HEALTH})"
+echo "Backlog Items:      ${BACKLOG_ITEMS}"
+echo "In Progress:        ${IN_PROGRESS}"
 echo "Geschätzte Stunden: ${TOTAL_HOURS}h"
-echo "Ø Priority Score:   $AVG_PRIORITY"
+echo "Ø Priority Score:   ${AVG_PRIORITY}"
 echo ""
 
 # By Category
@@ -183,7 +183,7 @@ echo "  Nach Kategorie"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-echo "$TECH_DEBT_DATA" | jq -r 'group_by(.category) | .[] | "\(.[0].category): \(length) Items"'
+echo "${TECH_DEBT_DATA}" | jq -r 'group_by(.category) | .[] | "\(.[0].category): \(length) Items"'
 echo ""
 
 # Top Priority Items
@@ -192,7 +192,7 @@ echo "  Top Priority Items"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-echo "$TECH_DEBT_DATA" | jq -r 'sort_by(-.priority_score) | .[0:5] | .[] |
+echo "${TECH_DEBT_DATA}" | jq -r 'sort_by(-.priority_score) | .[0:5] | .[] |
     "[\(.id)] \(.title)\n    Category: \(.category) | Priority: \(.priority_score) | Hours: \(.estimated_hours)h\n"'
 
 # Sprint Recommendation
@@ -212,16 +212,16 @@ echo ""
 
 # Items die ins Budget passen
 ACCUMULATED=0
-echo "$TECH_DEBT_DATA" | jq -r --argjson budget "$TECH_DEBT_BUDGET" '
+echo "${TECH_DEBT_DATA}" | jq -r --argjson budget "${TECH_DEBT_BUDGET}" '
     sort_by(-.priority_score) |
     .[] |
     select(.status == "backlog") |
     "  ☐ \(.title) (\(.estimated_hours)h)"
 ' | while read -r line; do
-    hours=$(echo "$line" | grep -oP '\(\K[0-9]+(?=h\))')
+    hours=$(echo "${line}" | grep -oP '\(\K[0-9]+(?=h\))')
     new_total=$((ACCUMULATED + hours))
-    if [ $new_total -le $TECH_DEBT_BUDGET ]; then
-        echo "$line"
+    if [[ ${new_total} -le ${TECH_DEBT_BUDGET} ]]; then
+        echo "${line}"
         ACCUMULATED=$new_total
     fi
 done
@@ -229,27 +229,27 @@ done
 echo ""
 
 # Trend (optional)
-if [ "$SHOW_TREND" = true ]; then
+if [[ "${SHOW_TREND}" = true ]]; then
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "  Trend (letzte 3 Monate)"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
 
-    echo "$HISTORICAL_DATA" | jq -r '.[] | "\(.month): Score \(.score) | Items: \(.items) | Hours: \(.hours)h"'
+    echo "${HISTORICAL_DATA}" | jq -r '.[] | "\(.month): Score \(.score) | Items: \(.items) | Hours: \(.hours)h"'
 
     # Trend berechnen
-    FIRST_SCORE=$(echo "$HISTORICAL_DATA" | jq '.[0].score')
-    LAST_SCORE=$(echo "$HISTORICAL_DATA" | jq '.[-1].score')
+    FIRST_SCORE=$(echo "${HISTORICAL_DATA}" | jq '.[0].score')
+    LAST_SCORE=$(echo "${HISTORICAL_DATA}" | jq '.[-1].score')
 
-    if [ "$LAST_SCORE" -lt "$FIRST_SCORE" ]; then
+    if [[ "${LAST_SCORE}" -lt "${FIRST_SCORE}" ]]; then
         TREND_TEXT="improving ↓"
-        TREND_COLOR=$GREEN
-    elif [ "$LAST_SCORE" -gt "$FIRST_SCORE" ]; then
+        TREND_COLOR=${GREEN}
+    elif [[ "${LAST_SCORE}" -gt "${FIRST_SCORE}" ]]; then
         TREND_TEXT="worsening ↑"
-        TREND_COLOR=$RED
+        TREND_COLOR=${RED}
     else
         TREND_TEXT="stable →"
-        TREND_COLOR=$YELLOW
+        TREND_COLOR=${YELLOW}
     fi
 
     echo ""
@@ -263,17 +263,17 @@ echo "  Empfehlungen"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-if [ "$HEALTH" == "critical" ]; then
+if [[ "${HEALTH}" == "critical" ]]; then
     echo -e "${RED}KRITISCH: Tech Debt Sprint empfohlen!${NC}"
     echo "  - Dedizierter Sprint für Tech Debt"
     echo "  - Feature Freeze erwägen"
     echo "  - Root Cause Analysis durchführen"
-elif [ "$HEALTH" == "concerning" ]; then
+elif [[ "${HEALTH}" == "concerning" ]]; then
     echo -e "${YELLOW}ACHTUNG: Tech Debt wächst.${NC}"
     echo "  - 25% Regel strikt einhalten"
     echo "  - Priorisierung überprüfen"
     echo "  - Mehr Automatisierung"
-elif [ "$HEALTH" == "manageable" ]; then
+elif [[ "${HEALTH}" == "manageable" ]]; then
     echo -e "${YELLOW}OK: Tech Debt unter Kontrolle.${NC}"
     echo "  - Weiter 25% Regel anwenden"
     echo "  - Regelmässig reviewen"

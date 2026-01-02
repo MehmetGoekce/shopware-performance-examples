@@ -17,8 +17,8 @@ set -euo pipefail
 # Konfiguration
 THEME_NAME="${1:-PerformanceTheme}"
 SHOPWARE_ROOT="${SHOPWARE_ROOT:-/var/www/html}"
-PUBLIC_DIR="$SHOPWARE_ROOT/public"
-BUNDLE_DIR="$PUBLIC_DIR/bundles"
+PUBLIC_DIR="${SHOPWARE_ROOT}/public"
+BUNDLE_DIR="${PUBLIC_DIR}/bundles"
 OUTPUT_DIR="./reports"
 
 # Farben
@@ -39,17 +39,17 @@ echo -e "${BLUE}========================================${NC}"
 echo ""
 
 # Verzeichnis erstellen
-mkdir -p "$OUTPUT_DIR"
+mkdir -p "${OUTPUT_DIR}"
 
 # Funktion: Dateigröße formatieren
 format_size() {
     local size=$1
-    if [ "$size" -lt 1024 ]; then
+    if [[ "${size}" -lt 1024 ]]; then
         echo "${size} B"
-    elif [ "$size" -lt 1048576 ]; then
-        echo "$(echo "scale=1; $size / 1024" | bc) KB"
+    elif [[ "${size}" -lt 1048576 ]]; then
+        echo "$(echo "scale=1; ${size} / 1024" | bc) KB"
     else
-        echo "$(echo "scale=2; $size / 1048576" | bc) MB"
+        echo "$(echo "scale=2; ${size} / 1048576" | bc) MB"
     fi
 }
 
@@ -57,7 +57,7 @@ format_size() {
 gzip_size() {
     local file=$1
     if command -v gzip &> /dev/null; then
-        gzip -c "$file" | wc -c
+        gzip -c "${file}" | wc -c
     else
         echo "0"
     fi
@@ -67,7 +67,7 @@ gzip_size() {
 brotli_size() {
     local file=$1
     if command -v brotli &> /dev/null; then
-        brotli -c "$file" | wc -c
+        brotli -c "${file}" | wc -c
     else
         echo "0"
     fi
@@ -77,16 +77,16 @@ brotli_size() {
 echo -e "${YELLOW}Analysiere JavaScript-Bundles...${NC}"
 echo ""
 
-JS_DIR="$BUNDLE_DIR/storefront/js"
+JS_DIR="${BUNDLE_DIR}/storefront/js"
 TOTAL_JS=0
 JS_FILES=()
 
-if [ -d "$JS_DIR" ]; then
+if [[ -d "${JS_DIR}" ]]; then
     while IFS= read -r -d '' file; do
-        size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null)
+        size=$(stat -f%z "${file}" 2>/dev/null || stat -c%s "${file}" 2>/dev/null)
         TOTAL_JS=$((TOTAL_JS + size))
-        JS_FILES+=("$size:$file")
-    done < <(find "$JS_DIR" -name "*.js" -type f -print0)
+        JS_FILES+=("${size}:${file}")
+    done < <(find "${JS_DIR}" -name "*.js" -type f -print0)
 
     # Nach Größe sortieren
     mapfile -t sorted < <(printf '%s\n' "${JS_FILES[@]}" | sort -t: -k1 -rn)
@@ -96,29 +96,29 @@ if [ -d "$JS_DIR" ]; then
     for entry in "${sorted[@]}"; do
         size="${entry%%:*}"
         file="${entry#*:}"
-        filename=$(basename "$file")
-        gzip=$(gzip_size "$file")
-        echo -e "  $(format_size $size) (gzip: $(format_size $gzip)) - $filename"
+        filename=$(basename "${file}")
+        gzip=$(gzip_size "${file}")
+        echo -e "  $(format_size ${size}) (gzip: $(format_size ${gzip})) - ${filename}"
     done
     echo ""
 else
-    echo -e "${RED}JavaScript-Verzeichnis nicht gefunden: $JS_DIR${NC}"
+    echo -e "${RED}JavaScript-Verzeichnis nicht gefunden: ${JS_DIR}${NC}"
 fi
 
 # CSS-Bundles analysieren
 echo -e "${YELLOW}Analysiere CSS-Bundles...${NC}"
 echo ""
 
-CSS_DIR="$BUNDLE_DIR/storefront/css"
+CSS_DIR="${BUNDLE_DIR}/storefront/css"
 TOTAL_CSS=0
 CSS_FILES=()
 
-if [ -d "$CSS_DIR" ]; then
+if [[ -d "${CSS_DIR}" ]]; then
     while IFS= read -r -d '' file; do
-        size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null)
+        size=$(stat -f%z "${file}" 2>/dev/null || stat -c%s "${file}" 2>/dev/null)
         TOTAL_CSS=$((TOTAL_CSS + size))
-        CSS_FILES+=("$size:$file")
-    done < <(find "$CSS_DIR" -name "*.css" -type f -print0)
+        CSS_FILES+=("${size}:${file}")
+    done < <(find "${CSS_DIR}" -name "*.css" -type f -print0)
 
     # Nach Größe sortieren
     mapfile -t sorted < <(printf '%s\n' "${CSS_FILES[@]}" | sort -t: -k1 -rn)
@@ -128,13 +128,13 @@ if [ -d "$CSS_DIR" ]; then
     for entry in "${sorted[@]}"; do
         size="${entry%%:*}"
         file="${entry#*:}"
-        filename=$(basename "$file")
-        gzip=$(gzip_size "$file")
-        echo -e "  $(format_size $size) (gzip: $(format_size $gzip)) - $filename"
+        filename=$(basename "${file}")
+        gzip=$(gzip_size "${file}")
+        echo -e "  $(format_size ${size}) (gzip: $(format_size ${gzip})) - ${filename}"
     done
     echo ""
 else
-    echo -e "${RED}CSS-Verzeichnis nicht gefunden: $CSS_DIR${NC}"
+    echo -e "${RED}CSS-Verzeichnis nicht gefunden: ${CSS_DIR}${NC}"
 fi
 
 # Zusammenfassung
@@ -147,28 +147,28 @@ echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}  Zusammenfassung${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
-echo -e "JavaScript:  $(format_size $TOTAL_JS)"
-echo -e "CSS:         $(format_size $TOTAL_CSS)"
-echo -e "Gesamt:      $(format_size $TOTAL)"
+echo -e "JavaScript:  $(format_size ${TOTAL_JS})"
+echo -e "CSS:         $(format_size ${TOTAL_CSS})"
+echo -e "Gesamt:      $(format_size ${TOTAL})"
 echo ""
 
 # Bewertung
 echo -e "${YELLOW}Bewertung:${NC}"
 echo ""
 
-if [ "$JS_KB" -gt "$THRESHOLD_JS" ]; then
+if [[ "${JS_KB}" -gt "${THRESHOLD_JS}" ]]; then
     echo -e "  ${RED}[WARNUNG]${NC} JavaScript überschreitet Limit (${JS_KB}KB > ${THRESHOLD_JS}KB)"
 else
     echo -e "  ${GREEN}[OK]${NC} JavaScript unter Limit (${JS_KB}KB <= ${THRESHOLD_JS}KB)"
 fi
 
-if [ "$CSS_KB" -gt "$THRESHOLD_CSS" ]; then
+if [[ "${CSS_KB}" -gt "${THRESHOLD_CSS}" ]]; then
     echo -e "  ${RED}[WARNUNG]${NC} CSS überschreitet Limit (${CSS_KB}KB > ${THRESHOLD_CSS}KB)"
 else
     echo -e "  ${GREEN}[OK]${NC} CSS unter Limit (${CSS_KB}KB <= ${THRESHOLD_CSS}KB)"
 fi
 
-if [ "$TOTAL_KB" -gt "$THRESHOLD_TOTAL" ]; then
+if [[ "${TOTAL_KB}" -gt "${THRESHOLD_TOTAL}" ]]; then
     echo -e "  ${RED}[WARNUNG]${NC} Gesamt überschreitet Limit (${TOTAL_KB}KB > ${THRESHOLD_TOTAL}KB)"
 else
     echo -e "  ${GREEN}[OK]${NC} Gesamt unter Limit (${TOTAL_KB}KB <= ${THRESHOLD_TOTAL}KB)"
@@ -192,11 +192,11 @@ LIBRARIES=(
 )
 
 for lib_info in "${LIBRARIES[@]}"; do
-    IFS=':' read -r pattern name size <<< "$lib_info"
+    IFS=':' read -r pattern name size <<< "${lib_info}"
 
-    if [ -d "$JS_DIR" ]; then
-        if grep -rq "$pattern" "$JS_DIR" 2>/dev/null; then
-            echo -e "  ${YELLOW}[GEFUNDEN]${NC} $name (~${size}KB)"
+    if [[ -d "${JS_DIR}" ]]; then
+        if grep -rq "${pattern}" "${JS_DIR}" 2>/dev/null; then
+            echo -e "  ${YELLOW}[GEFUNDEN]${NC} ${name} (~${size}KB)"
         fi
     fi
 done
@@ -204,40 +204,40 @@ done
 echo ""
 
 # JSON-Report erstellen
-REPORT_FILE="$OUTPUT_DIR/bundle-report-$(date +%Y%m%d-%H%M%S).json"
+REPORT_FILE="${OUTPUT_DIR}/bundle-report-$(date +%Y%m%d-%H%M%S).json"
 
-cat > "$REPORT_FILE" << EOF
+cat > "${REPORT_FILE}" << EOF
 {
   "timestamp": "$(date -Iseconds)",
-  "theme": "$THEME_NAME",
+  "theme": "${THEME_NAME}",
   "summary": {
     "javascript": {
-      "totalBytes": $TOTAL_JS,
-      "totalKB": $JS_KB,
-      "threshold": $THRESHOLD_JS,
-      "passed": $([ "$JS_KB" -le "$THRESHOLD_JS" ] && echo "true" || echo "false")
+      "totalBytes": ${TOTAL_JS},
+      "totalKB": ${JS_KB},
+      "threshold": ${THRESHOLD_JS},
+      "passed": $([ "${JS_KB}" -le "${THRESHOLD_JS}" ] && echo "true" || echo "false")
     },
     "css": {
-      "totalBytes": $TOTAL_CSS,
-      "totalKB": $CSS_KB,
-      "threshold": $THRESHOLD_CSS,
-      "passed": $([ "$CSS_KB" -le "$THRESHOLD_CSS" ] && echo "true" || echo "false")
+      "totalBytes": ${TOTAL_CSS},
+      "totalKB": ${CSS_KB},
+      "threshold": ${THRESHOLD_CSS},
+      "passed": $([ "${CSS_KB}" -le "${THRESHOLD_CSS}" ] && echo "true" || echo "false")
     },
     "total": {
-      "totalBytes": $TOTAL,
-      "totalKB": $TOTAL_KB,
-      "threshold": $THRESHOLD_TOTAL,
-      "passed": $([ "$TOTAL_KB" -le "$THRESHOLD_TOTAL" ] && echo "true" || echo "false")
+      "totalBytes": ${TOTAL},
+      "totalKB": ${TOTAL_KB},
+      "threshold": ${THRESHOLD_TOTAL},
+      "passed": $([ "${TOTAL_KB}" -le "${THRESHOLD_TOTAL}" ] && echo "true" || echo "false")
     }
   }
 }
 EOF
 
-echo -e "${GREEN}Report gespeichert: $REPORT_FILE${NC}"
+echo -e "${GREEN}Report gespeichert: ${REPORT_FILE}${NC}"
 echo ""
 
 # Empfehlungen
-if [ "$TOTAL_KB" -gt "$THRESHOLD_TOTAL" ]; then
+if [[ "${TOTAL_KB}" -gt "${THRESHOLD_TOTAL}" ]]; then
     echo -e "${YELLOW}Empfehlungen zur Optimierung:${NC}"
     echo ""
     echo "  1. Nicht benötigte Plugins mit PluginManager.deregister() entfernen"
@@ -249,7 +249,7 @@ if [ "$TOTAL_KB" -gt "$THRESHOLD_TOTAL" ]; then
 fi
 
 # Exit-Code basierend auf Ergebnis
-if [ "$TOTAL_KB" -gt "$THRESHOLD_TOTAL" ]; then
+if [[ "${TOTAL_KB}" -gt "${THRESHOLD_TOTAL}" ]]; then
     exit 1
 else
     exit 0

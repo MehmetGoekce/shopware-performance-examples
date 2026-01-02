@@ -45,8 +45,8 @@ usage() {
 }
 
 # Prüfungen
-if [ ! -f "$LOG_FILE" ]; then
-    echo "FEHLER: Log-Datei nicht gefunden: $LOG_FILE"
+if [[ ! -f "${LOG_FILE}" ]]; then
+    echo "FEHLER: Log-Datei nicht gefunden: ${LOG_FILE}"
     exit 1
 fi
 
@@ -57,7 +57,7 @@ if ! command -v jq &> /dev/null; then
 fi
 
 # Zeitfenster in Sekunden umrechnen
-case "$TIME_WINDOW" in
+case "${TIME_WINDOW}" in
     1h)  SECONDS_AGO=3600 ;;
     6h)  SECONDS_AGO=21600 ;;
     24h) SECONDS_AGO=86400 ;;
@@ -69,8 +69,8 @@ esac
 CUTOFF_TIME=$(($(date +%s) - SECONDS_AGO))
 CUTOFF_MS=$((CUTOFF_TIME * 1000))
 
-echo "=== RUM Statistiken (letzte $TIME_WINDOW) ==="
-echo "Log-Datei: $LOG_FILE"
+echo "=== RUM Statistiken (letzte ${TIME_WINDOW}) ==="
+echo "Log-Datei: ${LOG_FILE}"
 echo "Zeitpunkt: $(date)"
 echo ""
 
@@ -79,7 +79,7 @@ calculate_percentile() {
     local values="$1"
     local percentile="$2"
 
-    echo "$values" | sort -n | awk -v p="$percentile" '
+    echo "${values}" | sort -n | awk -v p="${percentile}" '
         BEGIN { count = 0 }
         { values[count++] = $1 }
         END {
@@ -97,64 +97,64 @@ analyze_metric() {
 
     # Werte extrahieren (nur innerhalb Zeitfenster)
     local values
-    values=$(grep "\"metric\":\"$metric\"" "$LOG_FILE" 2>/dev/null | \
-        jq -r "select(.context.timestamp > $CUTOFF_MS) | .context.value" 2>/dev/null | \
+    values=$(grep "\"metric\":\"${metric}\"" "${LOG_FILE}" 2>/dev/null | \
+        jq -r "select(.context.timestamp > ${CUTOFF_MS}) | .context.value" 2>/dev/null | \
         grep -E '^[0-9.]+$')
 
-    if [ -z "$values" ]; then
+    if [[ -z "${values}" ]]; then
         echo "  Keine Daten"
         return
     fi
 
     local count p50 p75 p90 p99
-    count=$(echo "$values" | wc -l)
-    p50=$(calculate_percentile "$values" 50)
-    p75=$(calculate_percentile "$values" 75)
-    p90=$(calculate_percentile "$values" 90)
-    p99=$(calculate_percentile "$values" 99)
+    count=$(echo "${values}" | wc -l)
+    p50=$(calculate_percentile "${values}" 50)
+    p75=$(calculate_percentile "${values}" 75)
+    p90=$(calculate_percentile "${values}" 90)
+    p99=$(calculate_percentile "${values}" 99)
 
     # Rating berechnen
-    local good_threshold=${THRESHOLDS_GOOD[$metric]}
-    local poor_threshold=${THRESHOLDS_POOR[$metric]}
+    local good_threshold=${THRESHOLDS_GOOD[${metric}]}
+    local poor_threshold=${THRESHOLDS_POOR[${metric}]}
 
-    local rating_color=$GREEN
+    local rating_color=${GREEN}
     local rating_text="GOOD"
 
-    if (( $(echo "$p75 > $poor_threshold" | bc -l) )); then
-        rating_color=$RED
+    if (( $(echo "${p75} > ${poor_threshold}" | bc -l) )); then
+        rating_color=${RED}
         rating_text="POOR"
-    elif (( $(echo "$p75 > $good_threshold" | bc -l) )); then
-        rating_color=$YELLOW
+    elif (( $(echo "${p75} > ${good_threshold}" | bc -l) )); then
+        rating_color=${YELLOW}
         rating_text="NEEDS IMPROVEMENT"
     fi
 
     # Good Rate berechnen
     local good_count good_rate
-    good_count=$(echo "$values" | awk -v t="$good_threshold" '$1 <= t' | wc -l)
-    good_rate=$(echo "scale=1; $good_count * 100 / $count" | bc)
+    good_count=$(echo "${values}" | awk -v t="${good_threshold}" '$1 <= t' | wc -l)
+    good_rate=$(echo "scale=1; ${good_count} * 100 / ${count}" | bc)
 
     # Ausgabe
-    echo "  Samples: $count"
-    echo "  p50: $p50"
-    echo "  p75: $p75"
-    echo "  p90: $p90"
-    echo "  p99: $p99"
-    echo -e "  Rating: ${rating_color}${rating_text}${NC} ($good_rate% unter $good_threshold)"
+    echo "  Samples: ${count}"
+    echo "  p50: ${p50}"
+    echo "  p75: ${p75}"
+    echo "  p90: ${p90}"
+    echo "  p99: ${p99}"
+    echo -e "  Rating: ${rating_color}${rating_text}${NC} (${good_rate}% unter ${good_threshold})"
 }
 
 # Alle Metriken analysieren
 for metric in LCP INP CLS FCP TTFB; do
-    echo "$metric:"
-    analyze_metric "$metric"
+    echo "${metric}:"
+    analyze_metric "${metric}"
     echo ""
 done
 
 # Zusammenfassung nach Seiten-Typ
 echo "=== Nach Seiten-Typ ==="
 for page_type in home product category checkout; do
-    count=$(grep "\"page_type\":\"$page_type\"" "$LOG_FILE" 2>/dev/null | wc -l)
-    if [ "$count" -gt 0 ]; then
-        echo "  $page_type: $count Samples"
+    count=$(grep "\"page_type\":\"${page_type}\"" "${LOG_FILE}" 2>/dev/null | wc -l)
+    if [[ "${count}" -gt 0 ]]; then
+        echo "  ${page_type}: ${count} Samples"
     fi
 done
 echo ""
@@ -162,16 +162,16 @@ echo ""
 # Zusammenfassung nach Gerät
 echo "=== Nach Gerät ==="
 for device in mobile desktop tablet; do
-    count=$(grep "\"device_type\":\"$device\"" "$LOG_FILE" 2>/dev/null | wc -l)
-    if [ "$count" -gt 0 ]; then
-        echo "  $device: $count Samples"
+    count=$(grep "\"device_type\":\"${device}\"" "${LOG_FILE}" 2>/dev/null | wc -l)
+    if [[ "${count}" -gt 0 ]]; then
+        echo "  ${device}: ${count} Samples"
     fi
 done
 echo ""
 
 # Top 5 langsamste Seiten
 echo "=== Top 5 langsamste Seiten (LCP) ==="
-grep "\"metric\":\"LCP\"" "$LOG_FILE" 2>/dev/null | \
+grep "\"metric\":\"LCP\"" "${LOG_FILE}" 2>/dev/null | \
     jq -r '.context | "\(.value)\t\(.page)"' 2>/dev/null | \
     sort -rn | head -5 | \
     awk '{printf "  %.0fms\t%s\n", $1, $2}'

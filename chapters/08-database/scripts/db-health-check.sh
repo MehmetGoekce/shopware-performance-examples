@@ -13,7 +13,7 @@
 DB_NAME="${1:-shopware}"
 
 echo "=========================================="
-echo "Datenbank-Gesundheitscheck: $DB_NAME"
+echo "Datenbank-Gesundheitscheck: ${DB_NAME}"
 echo "=========================================="
 echo "Zeit: $(date)"
 echo ""
@@ -56,9 +56,9 @@ SELECT ROUND((1 - (
 
 echo "Hit-Rate: ${HIT_RATE}%"
 
-if (( $(echo "$HIT_RATE >= 99" | bc -l) )); then
+if (( $(echo "${HIT_RATE} >= 99" | bc -l) )); then
     status_ok "Buffer Pool Hit-Rate optimal"
-elif (( $(echo "$HIT_RATE >= 95" | bc -l) )); then
+elif (( $(echo "${HIT_RATE} >= 95" | bc -l) )); then
     status_warn "Buffer Pool Hit-Rate akzeptabel"
 else
     status_fail "Buffer Pool Hit-Rate zu niedrig - Buffer Pool erhoehen!"
@@ -77,9 +77,9 @@ CONN_PERCENT=$((CURRENT_CONN * 100 / MAX_CONN))
 
 echo "Aktive Verbindungen: ${CURRENT_CONN} / ${MAX_CONN} (${CONN_PERCENT}%)"
 
-if [ $CONN_PERCENT -lt 70 ]; then
+if [[ ${CONN_PERCENT} -lt 70 ]]; then
     status_ok "Verbindungen im normalen Bereich"
-elif [ $CONN_PERCENT -lt 90 ]; then
+elif [[ ${CONN_PERCENT} -lt 90 ]]; then
     status_warn "Verbindungen werden knapp"
 else
     status_fail "Verbindungen kritisch hoch!"
@@ -93,11 +93,11 @@ echo ""
 echo "=== 4. Slow Queries ==="
 
 SLOW_LOG=$(mysql -N -e "SELECT @@slow_query_log")
-if [ "$SLOW_LOG" = "1" ] || [ "$SLOW_LOG" = "ON" ]; then
+if [[ "${SLOW_LOG}" = "1" ]] || [[ "${SLOW_LOG}" = "ON" ]]; then
     status_ok "Slow Query Log aktiviert"
 
     SLOW_COUNT=$(mysql -N -e "SHOW GLOBAL STATUS LIKE 'Slow_queries'" | awk '{print $2}')
-    echo "Slow Queries seit Start: $SLOW_COUNT"
+    echo "Slow Queries seit Start: ${SLOW_COUNT}"
 
     LONG_QUERY_TIME=$(mysql -N -e "SELECT @@long_query_time")
     echo "Schwellwert: ${LONG_QUERY_TIME}s"
@@ -119,7 +119,7 @@ SELECT
     ROUND(data_free / 1024 / 1024, 2) AS 'Fragmentiert (MB)',
     ROUND(data_free / (data_length + index_length + data_free) * 100, 2) AS 'Fragmentierung (%)'
 FROM information_schema.tables
-WHERE table_schema = '$DB_NAME'
+WHERE table_schema = '${DB_NAME}'
 AND data_free > 10 * 1024 * 1024
 ORDER BY data_free DESC
 LIMIT 5;" 2>/dev/null
@@ -127,13 +127,13 @@ LIMIT 5;" 2>/dev/null
 FRAG_COUNT=$(mysql -N -e "
 SELECT COUNT(*)
 FROM information_schema.tables
-WHERE table_schema = '$DB_NAME'
+WHERE table_schema = '${DB_NAME}'
 AND data_free > 100 * 1024 * 1024")
 
-if [ "$FRAG_COUNT" -eq 0 ]; then
+if [[ "${FRAG_COUNT}" -eq 0 ]]; then
     status_ok "Keine stark fragmentierten Tabellen"
 else
-    status_warn "$FRAG_COUNT Tabellen mit >100MB Fragmentierung"
+    status_warn "${FRAG_COUNT} Tabellen mit >100MB Fragmentierung"
     echo "Empfehlung: OPTIMIZE TABLE [tabelle];"
 fi
 echo ""
@@ -150,7 +150,7 @@ SELECT
     ROUND(SUM(index_length) / 1024 / 1024 / 1024, 2) AS 'Indizes (GB)',
     ROUND(SUM(data_length + index_length) / 1024 / 1024 / 1024, 2) AS 'Total (GB)'
 FROM information_schema.tables
-WHERE table_schema = '$DB_NAME';"
+WHERE table_schema = '${DB_NAME}';"
 echo ""
 
 # ==============================================================================

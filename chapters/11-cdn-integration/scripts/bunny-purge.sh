@@ -47,7 +47,7 @@ usage() {
 }
 
 check_config() {
-    if [ -z "$API_KEY" ]; then
+    if [[ -z "${API_KEY}" ]]; then
         echo -e "${RED}FEHLER: BUNNY_API_KEY nicht gesetzt${NC}"
         echo ""
         echo "API Key finden:"
@@ -59,7 +59,7 @@ check_config() {
 check_zone_config() {
     check_config
 
-    if [ -z "$PULL_ZONE_ID" ]; then
+    if [[ -z "${PULL_ZONE_ID}" ]]; then
         echo -e "${RED}FEHLER: BUNNY_PULL_ZONE_ID nicht gesetzt${NC}"
         echo ""
         echo "Pull Zone ID finden:"
@@ -81,29 +81,29 @@ test_connection() {
     # Account-Info abrufen
     response=$(curl -s -X GET \
         "${API_BASE}/user" \
-        -H "AccessKey: $API_KEY")
+        -H "AccessKey: ${API_KEY}")
 
     # Prüfen ob Antwort gültig
-    if echo "$response" | jq -e '.Id' > /dev/null 2>&1; then
-        email=$(echo "$response" | jq -r '.Email')
-        balance=$(echo "$response" | jq -r '.Balance')
+    if echo "${response}" | jq -e '.Id' > /dev/null 2>&1; then
+        email=$(echo "${response}" | jq -r '.Email')
+        balance=$(echo "${response}" | jq -r '.Balance')
 
         echo -e "${GREEN}Verbindung erfolgreich!${NC}"
         echo ""
-        echo "Account: $email"
-        echo "Balance: \$$balance"
+        echo "Account: ${email}"
+        echo "Balance: \$${balance}"
 
         # Pull Zones auflisten
         echo ""
         echo "Pull Zones:"
         zones=$(curl -s -X GET \
             "${API_BASE}/pullzone" \
-            -H "AccessKey: $API_KEY")
+            -H "AccessKey: ${API_KEY}")
 
-        echo "$zones" | jq -r '.[] | "  - \(.Name) (ID: \(.Id))"'
+        echo "${zones}" | jq -r '.[] | "  - \(.Name) (ID: \(.Id))"'
     else
         echo -e "${RED}Verbindung fehlgeschlagen!${NC}"
-        echo "$response"
+        echo "${response}"
         exit 1
     fi
 }
@@ -118,29 +118,29 @@ purge_all() {
 
     check_zone_config
 
-    echo "Pull Zone ID: $PULL_ZONE_ID"
+    echo "Pull Zone ID: ${PULL_ZONE_ID}"
     echo ""
 
     echo -e "${YELLOW}WARNUNG: Dies löscht den gesamten Cache der Pull Zone!${NC}"
     read -p "Fortfahren? (y/N) " -n 1 -r
     echo
 
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    if [[ ! ${REPLY} =~ ^[Yy]$ ]]; then
         echo "Abgebrochen."
         exit 0
     fi
 
     response=$(curl -s -X POST \
         "${API_BASE}/pullzone/${PULL_ZONE_ID}/purgeCache" \
-        -H "AccessKey: $API_KEY" \
+        -H "AccessKey: ${API_KEY}" \
         -H "Content-Length: 0")
 
     # Bunny gibt bei Erfolg leere Antwort
-    if [ -z "$response" ] || [ "$response" == "{}" ]; then
+    if [[ -z "${response}" ]] || [[ "${response}" == "{}" ]]; then
         echo -e "${GREEN}Cache erfolgreich geleert!${NC}"
     else
         echo -e "${RED}Purge fehlgeschlagen!${NC}"
-        echo "$response"
+        echo "${response}"
         exit 1
     fi
 }
@@ -157,22 +157,22 @@ purge_url() {
 
     check_config
 
-    echo "URL: $url"
+    echo "URL: ${url}"
     echo ""
 
     # URL encodieren
-    encoded_url=$(echo -n "$url" | jq -sRr @uri)
+    encoded_url=$(echo -n "${url}" | jq -sRr @uri)
 
     response=$(curl -s -X POST \
         "${API_BASE}/purge?url=${encoded_url}" \
-        -H "AccessKey: $API_KEY" \
+        -H "AccessKey: ${API_KEY}" \
         -H "Content-Length: 0")
 
-    if [ -z "$response" ] || [ "$response" == "{}" ]; then
+    if [[ -z "${response}" ]] || [[ "${response}" == "{}" ]]; then
         echo -e "${GREEN}URL erfolgreich gepurged!${NC}"
     else
         echo -e "${RED}Purge fehlgeschlagen!${NC}"
-        echo "$response"
+        echo "${response}"
         exit 1
     fi
 }
@@ -190,19 +190,19 @@ get_stats() {
     # Letzte 24 Stunden
     response=$(curl -s -X GET \
         "${API_BASE}/pullzone/${PULL_ZONE_ID}/statistics" \
-        -H "AccessKey: $API_KEY")
+        -H "AccessKey: ${API_KEY}")
 
-    if echo "$response" | jq -e '.TotalBandwidthUsed' > /dev/null 2>&1; then
-        bandwidth=$(echo "$response" | jq -r '.TotalBandwidthUsed')
-        requests=$(echo "$response" | jq -r '.TotalRequestsServed')
-        cache_hits=$(echo "$response" | jq -r '.CacheHitRate // "N/A"')
+    if echo "${response}" | jq -e '.TotalBandwidthUsed' > /dev/null 2>&1; then
+        bandwidth=$(echo "${response}" | jq -r '.TotalBandwidthUsed')
+        requests=$(echo "${response}" | jq -r '.TotalRequestsServed')
+        cache_hits=$(echo "${response}" | jq -r '.CacheHitRate // "N/A"')
 
-        echo "Bandwidth:  $(numfmt --to=iec-i --suffix=B $bandwidth 2>/dev/null || echo "$bandwidth bytes")"
-        echo "Requests:   $requests"
-        echo "Hit Rate:   $cache_hits"
+        echo "Bandwidth:  $(numfmt --to=iec-i --suffix=B ${bandwidth} 2>/dev/null || echo "${bandwidth} bytes")"
+        echo "Requests:   ${requests}"
+        echo "Hit Rate:   ${cache_hits}"
     else
         echo "Statistiken nicht verfügbar"
-        echo "$response"
+        echo "${response}"
     fi
 }
 
@@ -210,7 +210,7 @@ get_stats() {
 # Hauptlogik
 # ============================================================================
 
-if [ $# -eq 0 ]; then
+if [[ $# -eq 0 ]]; then
     usage
 fi
 
@@ -219,7 +219,7 @@ case "$1" in
         purge_all
         ;;
     --url)
-        if [ -z "$2" ]; then
+        if [[ -z "$2" ]]; then
             echo -e "${RED}FEHLER: URL erforderlich${NC}"
             usage
         fi
