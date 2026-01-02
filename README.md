@@ -25,6 +25,14 @@ open http://localhost:8000
 - Git
 - Make (optional, für Convenience-Commands)
 
+## Kompatibilität
+
+| Shopware | PHP | Extras |
+|----------|-----|--------|
+| 6.5.x, 6.6.x | 8.2 - 8.4 | Redis 7+, ES 8.x (optional) |
+
+Siehe [COMPATIBILITY.md](COMPATIBILITY.md) für Details zu Versionen und bekannten API-Änderungen.
+
 ## Struktur
 
 ```
