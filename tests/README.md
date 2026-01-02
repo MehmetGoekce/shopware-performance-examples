@@ -108,18 +108,30 @@ Die folgenden API-Änderungen wurden dokumentiert (temporär ignoriert):
 | `Criteria::addCriteria()` | OptimizedProductService.php | Existiert nicht |
 | `StorefrontRenderEvent::setParameters()` | ScriptLoadingSubscriber.php | Deprecated |
 
-### Phase 3: Unit Tests erweitern (Pending)
-- [ ] Tests fuer alle PHP Services (29 Dateien)
-  - [ ] `08-database/src/Service/CachedProductService.php`
-  - [ ] `17-shopware-plugins/src/Service/*.php`
-  - [ ] `18-shopware-elasticsearch/src/*.php`
-- [ ] Tests fuer alle JavaScript Utilities (15 Dateien)
-  - [ ] `03-core-web-vitals/scripts/cwv-diagnostics.js`
-  - [ ] `05-css-javascript/scripts/*.js`
-  - [ ] `16-shopware-themes/src/*.js`
-- [ ] BATS Tests fuer kritische Shell Scripts
-  - [ ] `07-shopware-cache/scripts/cache-warmup.php`
-  - [ ] `18-shopware-elasticsearch/scripts/es-reindex.sh`
+### Phase 3: Unit Tests erweitern (In Progress)
+
+**Current Status:** 172 tests (91 PHP + 81 JavaScript)
+
+#### PHP Unit Tests (91 tests)
+- [x] `StatisticalAnalyzer.php` - 15 tests (Welch's t-test, Bayesian, Sample Size)
+- [x] `FeatureFlagService.php` - 17 tests (11 pass, 6 skipped due to readonly)
+- [x] `ThemePerformanceAnalyzer.php` - 28 tests (with Shopware stubs)
+- [x] Existing snapshot tests - 31 tests
+- [ ] `08-database/src/Service/CachedProductService.php`
+- [ ] `17-shopware-plugins/src/Service/*.php`
+- [ ] `18-shopware-elasticsearch/src/*.php`
+
+#### JavaScript Unit Tests (81 tests)
+- [x] `analyze-experiment.test.js` - 22 tests (statistical analysis, CLI parsing)
+- [x] `coverage-analysis.test.js` - 27 tests (render-blocking, bundle analysis)
+- [x] `network-aware-images.test.js` - 23 tests (existing)
+- [x] `config-validation.test.js` - 9 tests (existing)
+- [ ] `03-core-web-vitals/scripts/cwv-diagnostics.js` (browser-only, needs Playwright)
+- [ ] `16-shopware-themes/src/*.js`
+
+#### Shell/BATS Tests (Pending)
+- [ ] `07-shopware-cache/scripts/cache-warmup.php`
+- [ ] `18-shopware-elasticsearch/scripts/es-reindex.sh`
 
 ### Phase 4: Integration Tests (Pending)
 - [ ] Shopware Integration Tests (mit Mocks)
