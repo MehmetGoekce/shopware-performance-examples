@@ -1,0 +1,172 @@
+{#
+ # JavaScript mit defer laden
+ # Kapitel 5: CSS und JavaScript optimieren
+ #
+ # Überschreibt das Standard meta.html.twig um:
+ # 1. JavaScript mit defer zu laden (nicht blocking)
+ # 2. Third-Party Scripts zu verzögern
+ # 3. GTM erst nach Load Event zu laden
+ #
+ # Installation:
+ # Kopieren nach: Resources/views/storefront/layout/meta.html.twig
+ #
+ # @see https://github.com/MehmetGoekce/shopware-performance-examples
+ #}
+
+{% sw_extends '@Storefront/storefront/layout/meta.html.twig' %}
+
+
+{# ============================================================ #}
+{# JavaScript mit defer laden                                   #}
+{# ============================================================ #}
+
+{% block layout_head_javascript %}
+    {# Haupt-JavaScript mit defer - blockiert nicht das Rendering #}
+    {% for file in theme_config('assets.js') %}
+        <script src="{{ asset(file, 'theme') }}" defer></script>
+    {% endfor %}
+
+    {# Plugin-JavaScript mit defer #}
+    {% block layout_head_javascript_plugins %}
+        {{ parent() }}
+    {% endblock %}
+{% endblock %}
+
+
+{# ============================================================ #}
+{# Third-Party Scripts verzögert laden                          #}
+{# ============================================================ #}
+
+{% block layout_head_javascript_tracking %}
+    {# NICHT parent() aufrufen - wir laden alles verzögert #}
+
+    <script>
+    /**
+     * Third-Party Scripts nach User-Interaktion oder Timeout laden
+     * Verbessert TBT und INP signifikant
+     */
+    (function() {
+        'use strict';
+
+        var loaded = false;
+
+        function loadThirdPartyScripts() {
+            if (loaded) return;
+            loaded = true;
+
+            // Google Tag Manager (verzögert)
+            {% if config('core.analytics.gtmId') %}
+            setTimeout(function() {
+                (function(w,d,s,l,i){
+                    w[l]=w[l]||[];
+                    w[l].push({'gtm.start': new Date().getTime(), event:'gtm.js'});
+                    var f=d.getElementsByTagName(s)[0],
+                        j=d.createElement(s),
+                        dl=l!='dataLayer'?'&l='+l:'';
+                    j.async=true;
+                    j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;
+                    f.parentNode.insertBefore(j,f);
+                })(window,document,'script','dataLayer','{{ config('core.analytics.gtmId') }}');
+            }, 2000); // 2 Sekunden nach Interaktion
+            {% endif %}
+
+            // Google Analytics 4 (falls kein GTM)
+            {% if config('core.analytics.ga4Id') and not config('core.analytics.gtmId') %}
+            setTimeout(function() {
+                var script = document.createElement('script');
+                script.async = true;
+                script.src = 'https://www.googletagmanager.com/gtag/js?id={{ config('core.analytics.ga4Id') }}';
+                document.head.appendChild(script);
+
+                window.dataLayer = window.dataLayer || [];
+                function gtag(){dataLayer.push(arguments);}
+                gtag('js', new Date());
+                gtag('config', '{{ config('core.analytics.ga4Id') }}', {
+                    'anonymize_ip': true
+                });
+            }, 2000);
+            {% endif %}
+
+            console.log('[Performance] Third-Party Scripts geladen');
+        }
+
+        // Trigger: User-Interaktion oder 5s Timeout
+        var events = ['scroll', 'click', 'touchstart', 'keydown', 'mousemove'];
+        function onInteraction() {
+            loadThirdPartyScripts();
+            events.forEach(function(e) {
+                document.removeEventListener(e, onInteraction, {passive: true});
+            });
+        }
+
+        events.forEach(function(e) {
+            document.addEventListener(e, onInteraction, {passive: true});
+        });
+
+        // Fallback: Nach 5 Sekunden laden
+        setTimeout(loadThirdPartyScripts, 5000);
+    })();
+    </script>
+{% endblock %}
+
+
+{# ============================================================ #}
+{# Chat-Widget nur bei Klick laden                              #}
+{# ============================================================ #}
+
+{% block base_body_script %}
+    {{ parent() }}
+
+    {% if config('chat.enabled') %}
+    <script>
+    /**
+     * Chat-Widget On-Demand laden
+     * Spart ~150-300 KB JavaScript beim initialen Load
+     */
+    (function() {
+        var chatButton = document.getElementById('chat-trigger');
+        if (!chatButton) return;
+
+        var chatLoaded = false;
+
+        chatButton.addEventListener('click', function() {
+            if (chatLoaded) return;
+            chatLoaded = true;
+
+            // Loading-State
+            chatButton.textContent = 'Lädt...';
+            chatButton.disabled = true;
+
+            // Chat-Widget laden (Beispiel: Zendesk)
+            {% if config('chat.provider') == 'zendesk' %}
+            var script = document.createElement('script');
+            script.id = 'ze-snippet';
+            script.src = 'https://static.zdassets.com/ekr/snippet.js?key={{ config('chat.zendeskKey') }}';
+            script.onload = function() {
+                if (window.zE) {
+                    zE('webWidget', 'open');
+                }
+                chatButton.style.display = 'none';
+            };
+            document.body.appendChild(script);
+            {% endif %}
+
+            {% if config('chat.provider') == 'intercom' %}
+            window.intercomSettings = {
+                app_id: '{{ config('chat.intercomAppId') }}'
+            };
+            var script = document.createElement('script');
+            script.src = 'https://widget.intercom.io/widget/{{ config('chat.intercomAppId') }}';
+            script.onload = function() {
+                if (window.Intercom) {
+                    Intercom('show');
+                }
+                chatButton.style.display = 'none';
+            };
+            document.body.appendChild(script);
+            {% endif %}
+        });
+    })();
+    </script>
+    {% endif %}
+{% endblock %}

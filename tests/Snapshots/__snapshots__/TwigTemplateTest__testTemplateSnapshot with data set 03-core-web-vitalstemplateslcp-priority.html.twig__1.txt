@@ -1,0 +1,125 @@
+{#
+ # LCP-Bildpriorisierung Template
+ # Kapitel 3: Core Web Vitals messen und optimieren
+ #
+ # Dieses Template zeigt, wie man LCP-Bilder mit fetchpriority="high"
+ # priorisiert und Lazy Loading nur für Below-the-fold Inhalte verwendet.
+ #
+ # @see https://github.com/MehmetGoekce/shopware-performance-examples
+ #}
+
+{# Beispiel 1: CMS Image Element mit LCP-Priorisierung #}
+{% block element_image_inner %}
+    {# Konfigurierbar im CMS: Ist dieses Bild above-the-fold? #}
+    {% set isAboveFold = element.config.aboveFold.value|default(false) %}
+    {% set media = element.data.media %}
+
+    {% if media %}
+        <img
+            src="{{ media.url }}"
+            alt="{{ media.alt|default('') }}"
+            {# Wichtig: Immer Dimensionen angeben für CLS-Vermeidung #}
+            {% if media.metaData.width %}width="{{ media.metaData.width }}"{% endif %}
+            {% if media.metaData.height %}height="{{ media.metaData.height }}"{% endif %}
+
+            {# LCP-Optimierung: Above-the-fold = eager + high priority #}
+            {% if isAboveFold %}
+                loading="eager"
+                fetchpriority="high"
+                decoding="sync"
+            {% else %}
+                loading="lazy"
+                fetchpriority="low"
+                decoding="async"
+            {% endif %}
+
+            class="cms-image {% if isAboveFold %}cms-image--lcp{% endif %}"
+        >
+    {% endif %}
+{% endblock %}
+
+
+{# Beispiel 2: Hero-Banner mit automatischer LCP-Erkennung #}
+{% block cms_element_hero_banner %}
+    {% set heroMedia = element.data.media %}
+
+    {# Hero-Banner ist fast immer das LCP-Element #}
+    <picture class="hero-banner">
+        {# WebP für moderne Browser #}
+        <source
+            srcset="{{ heroMedia.url|replace({'.jpg': '.webp', '.png': '.webp'}) }}"
+            type="image/webp"
+        >
+        {# Fallback für ältere Browser #}
+        <img
+            src="{{ heroMedia.url }}"
+            alt="{{ heroMedia.alt }}"
+            width="{{ heroMedia.metaData.width }}"
+            height="{{ heroMedia.metaData.height }}"
+            loading="eager"
+            fetchpriority="high"
+            decoding="sync"
+            class="hero-banner__image"
+        >
+    </picture>
+{% endblock %}
+
+
+{# Beispiel 3: Produktbild auf PDP (oft LCP) #}
+{% block component_product_box_image %}
+    {% set isFirstProduct = loop.first|default(false) %}
+    {% set cover = product.cover.media %}
+
+    {% if cover %}
+        <img
+            src="{{ cover.url }}"
+            alt="{{ cover.alt|default(product.translated.name) }}"
+            width="{{ cover.metaData.width|default(800) }}"
+            height="{{ cover.metaData.height|default(800) }}"
+
+            {# Erstes Produktbild könnte LCP sein #}
+            {% if isFirstProduct %}
+                loading="eager"
+                fetchpriority="high"
+            {% else %}
+                loading="lazy"
+                fetchpriority="auto"
+            {% endif %}
+
+            class="product-image"
+        >
+    {% endif %}
+{% endblock %}
+
+
+{# Beispiel 4: Responsive Bilder mit srcset #}
+{% block responsive_image %}
+    {% set media = element.data.media %}
+
+    <img
+        {# Standard-Bild #}
+        src="{{ media.url }}"
+
+        {# Responsive srcset für verschiedene Viewports #}
+        srcset="
+            {{ media.thumbnails.400.url }} 400w,
+            {{ media.thumbnails.800.url }} 800w,
+            {{ media.thumbnails.1200.url }} 1200w,
+            {{ media.url }} 1920w
+        "
+
+        {# sizes hilft dem Browser die richtige Größe zu wählen #}
+        sizes="
+            (max-width: 400px) 100vw,
+            (max-width: 800px) 80vw,
+            (max-width: 1200px) 60vw,
+            1200px
+        "
+
+        alt="{{ media.alt }}"
+        width="{{ media.metaData.width }}"
+        height="{{ media.metaData.height }}"
+        loading="lazy"
+        decoding="async"
+    >
+{% endblock %}

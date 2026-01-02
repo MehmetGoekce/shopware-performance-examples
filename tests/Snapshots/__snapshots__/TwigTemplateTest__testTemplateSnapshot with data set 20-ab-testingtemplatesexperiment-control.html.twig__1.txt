@@ -1,0 +1,172 @@
+{#
+  Experiment Control Template - Standard Variante
+
+  Dieses Template zeigt die Control-Variante eines Experiments.
+  Minimal angepasst für Performance-Tracking.
+
+  @author Mehmet Gökçe
+  @since 1.0.0
+#}
+
+{% extends '@Storefront/storefront/base.html.twig' %}
+
+{% block base_body_classes %}
+    {{ parent() }}
+    experiment-control
+{% endblock %}
+
+{#
+  Experiment Data Attributes für JavaScript-Tracking
+#}
+{% block base_body_attributes %}
+    {{ parent() }}
+    {{ experimentDataAttributes|raw }}
+    data-experiment-active="true"
+{% endblock %}
+
+{#
+  Performance-Tracking Script (minimal, <1KB)
+#}
+{% block base_script_tracking %}
+    {{ parent() }}
+
+    {% if experimentVariants is defined %}
+        <script>
+            // Lightweight Experiment Tracker
+            (function() {
+                'use strict';
+
+                // Performance Observer für Core Web Vitals
+                const observer = new PerformanceObserver(function(list) {
+                    const entries = list.getEntries();
+
+                    for (const entry of entries) {
+                        trackMetric(entry);
+                    }
+                });
+
+                // Observe LCP, FID, CLS
+                observer.observe({ entryTypes: ['largest-contentful-paint', 'first-input', 'layout-shift'] });
+
+                // Track Metric
+                function trackMetric(entry) {
+                    const experimentKey = getExperimentKey();
+                    const variant = getVariant();
+
+                    if (!experimentKey || !variant) return;
+
+                    let metric, value;
+
+                    switch (entry.entryType) {
+                        case 'largest-contentful-paint':
+                            metric = 'lcp';
+                            value = entry.renderTime || entry.loadTime;
+                            break;
+
+                        case 'first-input':
+                            metric = 'fid';
+                            value = entry.processingStart - entry.startTime;
+                            break;
+
+                        case 'layout-shift':
+                            // CLS wird kumulativ berechnet
+                            if (!entry.hadRecentInput) {
+                                metric = 'cls';
+                                value = (window._clsValue || 0) + entry.value;
+                                window._clsValue = value;
+                            }
+                            break;
+                    }
+
+                    if (metric && value !== undefined) {
+                        sendMetric(experimentKey, variant, metric, value);
+                    }
+                }
+
+                // Send to Backend
+                function sendMetric(experiment, variant, metric, value) {
+                    // Verwende sendBeacon für zuverlässigen Versand
+                    if (navigator.sendBeacon) {
+                        const data = new FormData();
+                        data.append('experiment', experiment);
+                        data.append('variant', variant);
+                        data.append('metric', metric);
+                        data.append('value', value);
+
+                        navigator.sendBeacon('/api/experiment/metric', data);
+                    }
+                }
+
+                // Get Experiment Key from Cookie
+                function getExperimentKey() {
+                    const cookies = document.cookie.split('; ');
+                    for (const cookie of cookies) {
+                        if (cookie.startsWith('exp_')) {
+                            return cookie.split('=')[0].substring(4);
+                        }
+                    }
+                    return null;
+                }
+
+                // Get Variant from Cookie
+                function getVariant() {
+                    const key = getExperimentKey();
+                    if (!key) return null;
+
+                    const cookie = document.cookie
+                        .split('; ')
+                        .find(row => row.startsWith('exp_' + key + '='));
+
+                    return cookie ? cookie.split('=')[1] : null;
+                }
+
+                // Track Navigation Timing (on page load)
+                window.addEventListener('load', function() {
+                    const timing = performance.timing;
+                    const experimentKey = getExperimentKey();
+                    const variant = getVariant();
+
+                    if (!experimentKey || !variant) return;
+
+                    // TTFB
+                    const ttfb = timing.responseStart - timing.requestStart;
+                    sendMetric(experimentKey, variant, 'ttfb', ttfb);
+
+                    // DOM Interactive
+                    const domInteractive = timing.domInteractive - timing.navigationStart;
+                    sendMetric(experimentKey, variant, 'dom_interactive', domInteractive);
+
+                    // Load Complete
+                    const loadComplete = timing.loadEventEnd - timing.navigationStart;
+                    sendMetric(experimentKey, variant, 'load_event_end', loadComplete);
+
+                    // Resource Count
+                    const resources = performance.getEntriesByType('resource');
+                    sendMetric(experimentKey, variant, 'resource_count', resources.length);
+                });
+            })();
+        </script>
+    {% endif %}
+{% endblock %}
+
+{#
+  Main Content Block - Control Variante
+  Hier würde die Standard-Implementierung stehen
+#}
+{% block page_content %}
+    <div class="experiment-variant-control">
+        {# Standard Content #}
+        {{ parent() }}
+    </div>
+{% endblock %}
+
+{#
+  Performance Hints für Control-Variante
+#}
+{% block base_header %}
+    {# Resource Hints #}
+    <link rel="dns-prefetch" href="https://cdn.example.com">
+    <link rel="preconnect" href="https://api.example.com" crossorigin>
+
+    {{ parent() }}
+{% endblock %}

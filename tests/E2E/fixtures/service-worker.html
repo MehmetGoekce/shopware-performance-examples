@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Service Worker Test</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, sans-serif; padding: 20px; }
+
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-pending { background: #ff9800; }
+        .status-success { background: #4caf50; }
+        .status-error { background: #f44336; }
+
+        .test-button {
+            padding: 10px 20px;
+            background: #2196f3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+
+        .test-button:hover { background: #1976d2; }
+
+        #log {
+            margin-top: 20px;
+            padding: 10px;
+            background: #1e1e1e;
+            color: #0f0;
+            border-radius: 8px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+
+        .cache-list {
+            list-style: none;
+            margin: 10px 0;
+        }
+        .cache-list li {
+            padding: 5px 10px;
+            background: #f5f5f5;
+            margin: 3px 0;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Service Worker Test Page</h1>
+
+    <div class="test-section">
+        <h2>Service Worker Status</h2>
+        <p id="sw-status">
+            <span class="status-indicator status-pending"></span>
+            <span id="sw-status-text">Checking...</span>
+        </p>
+        <p id="sw-controller">Controller: <span id="controller-status">None</span></p>
+    </div>
+
+    <div class="test-section">
+        <h2>Registration</h2>
+        <button class="test-button" id="btn-register">Register SW</button>
+        <button class="test-button" id="btn-unregister">Unregister SW</button>
+        <button class="test-button" id="btn-update">Check for Updates</button>
+    </div>
+
+    <div class="test-section">
+        <h2>Cache Tests</h2>
+        <button class="test-button" id="btn-list-caches">List Caches</button>
+        <button class="test-button" id="btn-clear-caches">Clear All Caches</button>
+        <ul id="cache-list" class="cache-list"></ul>
+    </div>
+
+    <div class="test-section">
+        <h2>Fetch Tests</h2>
+        <button class="test-button" id="btn-fetch-static">Fetch Static Asset</button>
+        <button class="test-button" id="btn-fetch-api">Fetch API</button>
+        <button class="test-button" id="btn-fetch-image">Fetch Image</button>
+        <button class="test-button" id="btn-fetch-offline">Test Offline</button>
+    </div>
+
+    <div id="log">
+        <strong>Service Worker Log:</strong><br>
+    </div>
+
+    <script>
+        const log = document.getElementById('log');
+        const swStatusText = document.getElementById('sw-status-text');
+        const swStatusIndicator = document.querySelector('.status-indicator');
+        const controllerStatus = document.getElementById('controller-status');
+        const cacheList = document.getElementById('cache-list');
+
+        function addLog(message, type = 'info') {
+            const colors = { info: '#0f0', error: '#f44', warn: '#ff0', success: '#4caf50' };
+            log.innerHTML += `<span style="color:${colors[type]}">[${new Date().toISOString().substr(11, 12)}] ${message}</span><br>`;
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function updateStatus(status, text) {
+            swStatusIndicator.className = `status-indicator status-${status}`;
+            swStatusText.textContent = text;
+        }
+
+        // Check initial SW status
+        async function checkSWStatus() {
+            if (!('serviceWorker' in navigator)) {
+                updateStatus('error', 'Service Workers not supported');
+                addLog('Service Workers not supported in this browser', 'error');
+                return;
+            }
+
+            const registration = await navigator.serviceWorker.getRegistration();
+            if (registration) {
+                updateStatus('success', 'Registered');
+                addLog(`SW registered: ${registration.scope}`, 'success');
+
+                if (registration.active) {
+                    controllerStatus.textContent = 'Active';
+                } else if (registration.waiting) {
+                    controllerStatus.textContent = 'Waiting';
+                } else if (registration.installing) {
+                    controllerStatus.textContent = 'Installing';
+                }
+            } else {
+                updateStatus('pending', 'Not registered');
+                addLog('No Service Worker registered', 'warn');
+            }
+        }
+
+        // Register SW
+        document.getElementById('btn-register').addEventListener('click', async () => {
+            try {
+                addLog('Registering Service Worker...');
+                const registration = await navigator.serviceWorker.register(
+                    '/chapters/19-mobile-performance/src/ServiceWorker/sw.js',
+                    { scope: '/' }
+                );
+
+                registration.addEventListener('updatefound', () => {
+                    addLog('New SW version found', 'info');
+                });
+
+                if (registration.installing) {
+                    addLog('SW installing...', 'info');
+                } else if (registration.waiting) {
+                    addLog('SW waiting to activate', 'warn');
+                } else if (registration.active) {
+                    addLog('SW active', 'success');
+                }
+
+                updateStatus('success', 'Registered');
+                window.swRegistration = registration;
+            } catch (error) {
+                addLog(`Registration failed: ${error.message}`, 'error');
+                updateStatus('error', 'Registration failed');
+            }
+        });
+
+        // Unregister SW
+        document.getElementById('btn-unregister').addEventListener('click', async () => {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            for (const reg of registrations) {
+                await reg.unregister();
+                addLog(`Unregistered: ${reg.scope}`, 'success');
+            }
+            updateStatus('pending', 'Unregistered');
+            controllerStatus.textContent = 'None';
+        });
+
+        // Check for updates
+        document.getElementById('btn-update').addEventListener('click', async () => {
+            const registration = await navigator.serviceWorker.getRegistration();
+            if (registration) {
+                await registration.update();
+                addLog('Checked for updates', 'info');
+            } else {
+                addLog('No SW to update', 'warn');
+            }
+        });
+
+        // List caches
+        document.getElementById('btn-list-caches').addEventListener('click', async () => {
+            const cacheNames = await caches.keys();
+            cacheList.innerHTML = '';
+
+            if (cacheNames.length === 0) {
+                cacheList.innerHTML = '<li>No caches found</li>';
+                addLog('No caches found', 'info');
+                return;
+            }
+
+            for (const name of cacheNames) {
+                const cache = await caches.open(name);
+                const keys = await cache.keys();
+                const li = document.createElement('li');
+                li.textContent = `${name} (${keys.length} entries)`;
+                cacheList.appendChild(li);
+                addLog(`Cache: ${name} - ${keys.length} entries`, 'info');
+            }
+
+            window.cacheNames = cacheNames;
+        });
+
+        // Clear caches
+        document.getElementById('btn-clear-caches').addEventListener('click', async () => {
+            const cacheNames = await caches.keys();
+            for (const name of cacheNames) {
+                await caches.delete(name);
+                addLog(`Deleted cache: ${name}`, 'success');
+            }
+            cacheList.innerHTML = '<li>All caches cleared</li>';
+        });
+
+        // Fetch tests
+        document.getElementById('btn-fetch-static').addEventListener('click', async () => {
+            try {
+                const response = await fetch('/test-static.js');
+                addLog(`Static fetch: ${response.status} (${response.headers.get('x-sw-cache') || 'network'})`, 'info');
+                window.lastFetchResult = { type: 'static', status: response.status };
+            } catch (error) {
+                addLog(`Static fetch error: ${error.message}`, 'error');
+            }
+        });
+
+        document.getElementById('btn-fetch-api').addEventListener('click', async () => {
+            try {
+                const response = await fetch('/store-api/test');
+                addLog(`API fetch: ${response.status}`, 'info');
+                window.lastFetchResult = { type: 'api', status: response.status };
+            } catch (error) {
+                addLog(`API fetch error: ${error.message}`, 'error');
+            }
+        });
+
+        document.getElementById('btn-fetch-image').addEventListener('click', async () => {
+            try {
+                const response = await fetch('/test-image.jpg');
+                addLog(`Image fetch: ${response.status}`, 'info');
+                window.lastFetchResult = { type: 'image', status: response.status };
+            } catch (error) {
+                addLog(`Image fetch error: ${error.message}`, 'error');
+            }
+        });
+
+        document.getElementById('btn-fetch-offline').addEventListener('click', async () => {
+            addLog('Testing offline mode - check Network tab', 'warn');
+            window.offlineTestReady = true;
+        });
+
+        // Listen for SW messages
+        navigator.serviceWorker.addEventListener('message', (event) => {
+            addLog(`SW message: ${JSON.stringify(event.data)}`, 'info');
+        });
+
+        // Initialize
+        checkSWStatus();
+        addLog('Test page initialized');
+        window.testReady = true;
+    </script>
+</body>
+</html>

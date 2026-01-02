@@ -1,0 +1,330 @@
+{#
+  Experiment Variant Template - Test Variante
+
+  Dieses Template zeigt die Test-Variante mit Performance-Optimierungen.
+  Beispiel: Optimierter Checkout mit AJAX statt Full Page Reload.
+
+  @author Mehmet Gökçe
+  @since 1.0.0
+#}
+
+{% extends '@Storefront/storefront/base.html.twig' %}
+
+{% block base_body_classes %}
+    {{ parent() }}
+    experiment-variant
+    experiment-variant-optimized
+{% endblock %}
+
+{#
+  Experiment Data Attributes
+#}
+{% block base_body_attributes %}
+    {{ parent() }}
+    {{ experimentDataAttributes|raw }}
+    data-experiment-active="true"
+    data-variant="optimized"
+{% endblock %}
+
+{#
+  Performance-Tracking Script (identisch zu Control)
+#}
+{% block base_script_tracking %}
+    {{ parent() }}
+
+    {% if experimentVariants is defined %}
+        <script>
+            // Lightweight Experiment Tracker (identisch zu Control)
+            (function() {
+                'use strict';
+
+                const observer = new PerformanceObserver(function(list) {
+                    const entries = list.getEntries();
+
+                    for (const entry of entries) {
+                        trackMetric(entry);
+                    }
+                });
+
+                observer.observe({ entryTypes: ['largest-contentful-paint', 'first-input', 'layout-shift'] });
+
+                function trackMetric(entry) {
+                    const experimentKey = getExperimentKey();
+                    const variant = getVariant();
+
+                    if (!experimentKey || !variant) return;
+
+                    let metric, value;
+
+                    switch (entry.entryType) {
+                        case 'largest-contentful-paint':
+                            metric = 'lcp';
+                            value = entry.renderTime || entry.loadTime;
+                            break;
+
+                        case 'first-input':
+                            metric = 'fid';
+                            value = entry.processingStart - entry.startTime;
+                            break;
+
+                        case 'layout-shift':
+                            if (!entry.hadRecentInput) {
+                                metric = 'cls';
+                                value = (window._clsValue || 0) + entry.value;
+                                window._clsValue = value;
+                            }
+                            break;
+                    }
+
+                    if (metric && value !== undefined) {
+                        sendMetric(experimentKey, variant, metric, value);
+                    }
+                }
+
+                function sendMetric(experiment, variant, metric, value) {
+                    if (navigator.sendBeacon) {
+                        const data = new FormData();
+                        data.append('experiment', experiment);
+                        data.append('variant', variant);
+                        data.append('metric', metric);
+                        data.append('value', value);
+
+                        navigator.sendBeacon('/api/experiment/metric', data);
+                    }
+                }
+
+                function getExperimentKey() {
+                    const cookies = document.cookie.split('; ');
+                    for (const cookie of cookies) {
+                        if (cookie.startsWith('exp_')) {
+                            return cookie.split('=')[0].substring(4);
+                        }
+                    }
+                    return null;
+                }
+
+                function getVariant() {
+                    const key = getExperimentKey();
+                    if (!key) return null;
+
+                    const cookie = document.cookie
+                        .split('; ')
+                        .find(row => row.startsWith('exp_' + key + '='));
+
+                    return cookie ? cookie.split('=')[1] : null;
+                }
+
+                window.addEventListener('load', function() {
+                    const timing = performance.timing;
+                    const experimentKey = getExperimentKey();
+                    const variant = getVariant();
+
+                    if (!experimentKey || !variant) return;
+
+                    const ttfb = timing.responseStart - timing.requestStart;
+                    sendMetric(experimentKey, variant, 'ttfb', ttfb);
+
+                    const domInteractive = timing.domInteractive - timing.navigationStart;
+                    sendMetric(experimentKey, variant, 'dom_interactive', domInteractive);
+
+                    const loadComplete = timing.loadEventEnd - timing.navigationStart;
+                    sendMetric(experimentKey, variant, 'load_event_end', loadComplete);
+
+                    const resources = performance.getEntriesByType('resource');
+                    sendMetric(experimentKey, variant, 'resource_count', resources.length);
+                });
+            })();
+        </script>
+    {% endif %}
+{% endblock %}
+
+{#
+  Optimized Content Block - AJAX-basierter Checkout (Beispiel)
+#}
+{% block page_content %}
+    <div class="experiment-variant-optimized">
+        {# Optimierte Implementierung #}
+
+        {# Beispiel: Checkout ohne Full Page Reload #}
+        {% if page.name == 'checkout' %}
+            <div id="checkout-container" data-ajax-checkout="true">
+                {# Checkout-Formular mit AJAX-Submit #}
+                <form id="checkout-form" class="checkout-form" data-ajax="true">
+                    {# Formular-Felder #}
+                    {{ parent() }}
+
+                    {# AJAX Submit Button #}
+                    <button type="submit" class="btn btn-primary" data-ajax-submit="true">
+                        Weiter zur Zahlung
+                    </button>
+                </form>
+            </div>
+
+            {# AJAX Checkout Script (minimiert) #}
+            <script>
+                (function() {
+                    const form = document.getElementById('checkout-form');
+                    if (!form) return;
+
+                    form.addEventListener('submit', function(e) {
+                        e.preventDefault();
+
+                        // Formular-Daten sammeln
+                        const formData = new FormData(form);
+
+                        // AJAX Request
+                        fetch(form.action, {
+                            method: 'POST',
+                            body: formData,
+                            headers: {
+                                'X-Requested-With': 'XMLHttpRequest'
+                            }
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                // Update nur relevanten Teil der Seite
+                                document.getElementById('checkout-container').innerHTML = data.html;
+
+                                // Track Conversion
+                                const experimentKey = getExperimentKey();
+                                const variant = getVariant();
+
+                                if (experimentKey && variant) {
+                                    trackConversion(experimentKey, variant);
+                                }
+                            } else {
+                                // Fehlerbehandlung
+                                showError(data.message);
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Checkout error:', error);
+                            // Fallback zu Standard-Submit
+                            form.submit();
+                        });
+                    });
+
+                    function trackConversion(experiment, variant) {
+                        if (navigator.sendBeacon) {
+                            const data = new FormData();
+                            data.append('experiment', experiment);
+                            data.append('variant', variant);
+                            data.append('conversion_type', 'checkout_step');
+
+                            navigator.sendBeacon('/api/experiment/conversion', data);
+                        }
+                    }
+
+                    function getExperimentKey() {
+                        const cookies = document.cookie.split('; ');
+                        for (const cookie of cookies) {
+                            if (cookie.startsWith('exp_')) {
+                                return cookie.split('=')[0].substring(4);
+                            }
+                        }
+                        return null;
+                    }
+
+                    function getVariant() {
+                        const key = getExperimentKey();
+                        if (!key) return null;
+
+                        const cookie = document.cookie
+                            .split('; ')
+                            .find(row => row.startsWith('exp_' + key + '='));
+
+                        return cookie ? cookie.split('=')[1] : null;
+                    }
+
+                    function showError(message) {
+                        // Einfache Fehleranzeige
+                        const errorDiv = document.createElement('div');
+                        errorDiv.className = 'alert alert-danger';
+                        errorDiv.textContent = message;
+                        form.insertBefore(errorDiv, form.firstChild);
+                    }
+                })();
+            </script>
+        {% else %}
+            {# Andere Seiten: Standard Content #}
+            {{ parent() }}
+        {% endif %}
+    </div>
+{% endblock %}
+
+{#
+  Performance-Optimierungen für Variante
+#}
+{% block base_header %}
+    {# Aggressive Resource Hints #}
+    <link rel="dns-prefetch" href="https://cdn.example.com">
+    <link rel="preconnect" href="https://api.example.com" crossorigin>
+    <link rel="preload" as="fetch" href="/api/checkout/validate" crossorigin>
+
+    {{ parent() }}
+{% endblock %}
+
+{#
+  Lazy Load Images (Beispiel für Listing-Optimierung)
+#}
+{% block component_product_box_image %}
+    {% if experimentVariants.product_listing_lazy_loading is defined and experimentVariants.product_listing_lazy_loading == 'lazy_intersection' %}
+        {# Intersection Observer Lazy Loading #}
+        <img
+            data-src="{{ product.cover.url }}"
+            alt="{{ product.translated.name }}"
+            class="lazy-image"
+            width="{{ product.cover.width }}"
+            height="{{ product.cover.height }}"
+        >
+
+        {# Blur Placeholder #}
+        <div class="lazy-placeholder" style="background-image: url({{ product.cover.thumbnailUrl }});"></div>
+
+        {# Lazy Load Script #}
+        <script>
+            // Intersection Observer für Lazy Loading
+            if ('IntersectionObserver' in window) {
+                const imageObserver = new IntersectionObserver((entries, observer) => {
+                    entries.forEach(entry => {
+                        if (entry.isIntersecting) {
+                            const img = entry.target;
+                            img.src = img.dataset.src;
+                            img.classList.add('loaded');
+                            observer.unobserve(img);
+                        }
+                    });
+                });
+
+                document.querySelectorAll('.lazy-image').forEach(img => {
+                    imageObserver.observe(img);
+                });
+            }
+        </script>
+    {% else %}
+        {# Standard Image Loading #}
+        {{ parent() }}
+    {% endif %}
+{% endblock %}
+
+{#
+  Inline Critical CSS (wenn Feature Flag aktiv)
+#}
+{% block base_head %}
+    {{ parent() }}
+
+    {% if featureFlags is defined and 'critical_css_inline' in featureFlags %}
+        <style>
+            /* Critical CSS für Above-the-Fold Content */
+            body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+            .header { background: #fff; border-bottom: 1px solid #e0e0e0; }
+            .main-navigation { display: flex; padding: 1rem; }
+            /* ... weitere kritische Styles ... */
+        </style>
+
+        {# Rest asynchron laden #}
+        <link rel="preload" as="style" href="{{ asset('bundles/storefront/css/all.css') }}" onload="this.onload=null;this.rel='stylesheet'">
+        <noscript><link rel="stylesheet" href="{{ asset('bundles/storefront/css/all.css') }}"></noscript>
+    {% endif %}
+{% endblock %}

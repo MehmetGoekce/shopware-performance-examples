@@ -1,0 +1,734 @@
+{#
+/**
+ * Mobile-Optimized Checkout Template
+ *
+ * One-page checkout design for mobile devices featuring:
+ * - Accordion sections for step-by-step flow
+ * - Touch-optimized inputs (48px minimum)
+ * - Sticky order summary
+ * - Express checkout options
+ * - Guest checkout support
+ *
+ * Usage:
+ *   Extend or include in your theme's checkout templates.
+ *   Override in: templates/storefront/page/checkout/confirm/index.html.twig
+ */
+#}
+
+{% sw_extends '@Storefront/storefront/page/checkout/confirm/index.html.twig' %}
+
+{% block base_body_classes %}
+    {{ parent() }}
+    mobile-checkout-page
+{% endblock %}
+
+{% block page_checkout_confirm %}
+<div class="mobile-checkout" id="mobile-checkout">
+    {# Express Checkout Section #}
+    <section class="express-checkout-section">
+        <h2 class="express-title">Schnell bezahlen mit</h2>
+        <div class="express-buttons">
+            {# Apple Pay / Google Pay #}
+            <div id="payment-request-button" class="express-btn"></div>
+
+            {# PayPal Express #}
+            {% if paypalEnabled %}
+            <div id="paypal-button-container" class="express-btn"></div>
+            {% endif %}
+        </div>
+
+        <div class="express-divider">
+            <span>oder per Formular</span>
+        </div>
+    </section>
+
+    {# Main Checkout Form #}
+    <form id="checkout-form" class="checkout-form" method="post" action="{{ path('frontend.checkout.confirm') }}">
+        {{ sw_csrf('frontend.checkout.confirm') }}
+
+        {# Section 1: Personal Data / Login #}
+        <section class="checkout-section" data-section="personal" data-completed="false">
+            <header class="section-header" data-toggle="section" aria-expanded="true">
+                <span class="section-number">1</span>
+                <div class="section-title">
+                    <h2>Persönliche Daten</h2>
+                    <span class="section-summary"></span>
+                </div>
+                <span class="section-icon">
+                    {% sw_icon 'arrow-medium-down' %}
+                </span>
+            </header>
+
+            <div class="section-content" aria-hidden="false">
+                {# Guest Checkout Toggle #}
+                <div class="guest-checkout-toggle">
+                    <label class="toggle-option">
+                        <input type="radio" name="checkout_type" value="guest" checked>
+                        <span>Als Gast bestellen</span>
+                    </label>
+                    <label class="toggle-option">
+                        <input type="radio" name="checkout_type" value="login">
+                        <span>Anmelden</span>
+                    </label>
+                </div>
+
+                {# Guest Form #}
+                <div class="guest-form" id="guest-form">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="email">E-Mail *</label>
+                            <input type="email" id="email" name="email"
+                                   required autocomplete="email"
+                                   inputmode="email"
+                                   class="form-control">
+                        </div>
+                    </div>
+                </div>
+
+                {# Login Form (hidden by default) #}
+                <div class="login-form hidden" id="login-form">
+                    <div class="form-group">
+                        <label for="login-email">E-Mail</label>
+                        <input type="email" id="login-email" name="login_email"
+                               autocomplete="email" inputmode="email"
+                               class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label for="login-password">Passwort</label>
+                        <input type="password" id="login-password" name="login_password"
+                               autocomplete="current-password"
+                               class="form-control">
+                    </div>
+                    <button type="button" class="btn btn-secondary" id="login-btn">
+                        Anmelden
+                    </button>
+                </div>
+
+                <button type="button" class="btn btn-primary btn-continue" data-next="shipping">
+                    Weiter zur Lieferadresse
+                </button>
+            </div>
+        </section>
+
+        {# Section 2: Shipping Address #}
+        <section class="checkout-section" data-section="shipping" data-completed="false">
+            <header class="section-header" data-toggle="section" aria-expanded="false">
+                <span class="section-number">2</span>
+                <div class="section-title">
+                    <h2>Lieferadresse</h2>
+                    <span class="section-summary"></span>
+                </div>
+                <span class="section-icon">
+                    {% sw_icon 'arrow-medium-down' %}
+                </span>
+            </header>
+
+            <div class="section-content" aria-hidden="true">
+                <div class="form-row form-row-2">
+                    <div class="form-group">
+                        <label for="firstName">Vorname *</label>
+                        <input type="text" id="firstName" name="shippingAddress[firstName]"
+                               required autocomplete="given-name"
+                               class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label for="lastName">Nachname *</label>
+                        <input type="text" id="lastName" name="shippingAddress[lastName]"
+                               required autocomplete="family-name"
+                               class="form-control">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="street">Straße und Hausnummer *</label>
+                    <input type="text" id="street" name="shippingAddress[street]"
+                           required autocomplete="street-address"
+                           class="form-control">
+                </div>
+
+                <div class="form-row form-row-2">
+                    <div class="form-group">
+                        <label for="zipcode">PLZ *</label>
+                        <input type="text" id="zipcode" name="shippingAddress[zipcode]"
+                               required autocomplete="postal-code"
+                               inputmode="numeric" pattern="[0-9]*"
+                               class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label for="city">Stadt *</label>
+                        <input type="text" id="city" name="shippingAddress[city]"
+                               required autocomplete="address-level2"
+                               class="form-control">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="phone">Telefon (für Lieferung)</label>
+                    <input type="tel" id="phone" name="shippingAddress[phoneNumber]"
+                           autocomplete="tel" inputmode="tel"
+                           class="form-control">
+                </div>
+
+                {# Shipping Method #}
+                <div class="shipping-methods">
+                    <h3>Versandart</h3>
+                    {% for method in page.shippingMethods %}
+                    <label class="shipping-option">
+                        <input type="radio" name="shippingMethodId" value="{{ method.id }}"
+                               {{ loop.first ? 'checked' : '' }}>
+                        <span class="option-content">
+                            <span class="option-name">{{ method.name }}</span>
+                            <span class="option-price">{{ method.prices.first.price|currency }}</span>
+                        </span>
+                    </label>
+                    {% endfor %}
+                </div>
+
+                <button type="button" class="btn btn-primary btn-continue" data-next="payment">
+                    Weiter zur Zahlung
+                </button>
+            </div>
+        </section>
+
+        {# Section 3: Payment #}
+        <section class="checkout-section" data-section="payment" data-completed="false">
+            <header class="section-header" data-toggle="section" aria-expanded="false">
+                <span class="section-number">3</span>
+                <div class="section-title">
+                    <h2>Zahlungsart</h2>
+                    <span class="section-summary"></span>
+                </div>
+                <span class="section-icon">
+                    {% sw_icon 'arrow-medium-down' %}
+                </span>
+            </header>
+
+            <div class="section-content" aria-hidden="true">
+                <div class="payment-methods">
+                    {% for method in page.paymentMethods %}
+                    <label class="payment-option">
+                        <input type="radio" name="paymentMethodId" value="{{ method.id }}"
+                               {{ loop.first ? 'checked' : '' }}>
+                        <span class="option-content">
+                            {% if method.media %}
+                            <img src="{{ method.media.url }}" alt="{{ method.name }}"
+                                 class="payment-icon" loading="lazy">
+                            {% endif %}
+                            <span class="option-name">{{ method.name }}</span>
+                        </span>
+                    </label>
+                    {% endfor %}
+                </div>
+
+                <button type="button" class="btn btn-primary btn-continue" data-next="review">
+                    Weiter zur Übersicht
+                </button>
+            </div>
+        </section>
+
+        {# Section 4: Review & Order #}
+        <section class="checkout-section checkout-review" data-section="review">
+            <header class="section-header" data-toggle="section" aria-expanded="false">
+                <span class="section-number">4</span>
+                <div class="section-title">
+                    <h2>Bestellung prüfen</h2>
+                </div>
+                <span class="section-icon">
+                    {% sw_icon 'arrow-medium-down' %}
+                </span>
+            </header>
+
+            <div class="section-content" aria-hidden="true">
+                {# Order Summary #}
+                <div class="order-items">
+                    {% for lineItem in page.cart.lineItems %}
+                    <div class="order-item">
+                        {% if lineItem.cover %}
+                        <img src="{{ lineItem.cover.url }}" alt="{{ lineItem.label }}"
+                             class="item-image" loading="lazy"
+                             width="60" height="60">
+                        {% endif %}
+                        <div class="item-details">
+                            <span class="item-name">{{ lineItem.label }}</span>
+                            <span class="item-quantity">× {{ lineItem.quantity }}</span>
+                        </div>
+                        <span class="item-price">{{ lineItem.price.totalPrice|currency }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                {# Totals #}
+                <div class="order-totals">
+                    <div class="total-row">
+                        <span>Zwischensumme</span>
+                        <span>{{ page.cart.price.netPrice|currency }}</span>
+                    </div>
+                    <div class="total-row">
+                        <span>Versand</span>
+                        <span>{{ page.cart.deliveries.first.shippingCosts.totalPrice|currency }}</span>
+                    </div>
+                    {% if page.cart.price.calculatedTaxes %}
+                    <div class="total-row">
+                        <span>MwSt.</span>
+                        <span>{{ page.cart.price.calculatedTaxes.getAmount|currency }}</span>
+                    </div>
+                    {% endif %}
+                    <div class="total-row total-final">
+                        <span>Gesamt</span>
+                        <span>{{ page.cart.price.totalPrice|currency }}</span>
+                    </div>
+                </div>
+
+                {# Terms & Conditions #}
+                <div class="terms-checkbox">
+                    <label class="checkbox-label">
+                        <input type="checkbox" name="tos" required>
+                        <span>Ich habe die <a href="{{ path('frontend.cms.page', {id: tosPageId}) }}" target="_blank">AGB</a>
+                              und <a href="{{ path('frontend.cms.page', {id: privacyPageId}) }}" target="_blank">Datenschutzerklärung</a>
+                              gelesen und akzeptiere sie.</span>
+                    </label>
+                </div>
+            </div>
+        </section>
+
+        {# Sticky Footer #}
+        <div class="checkout-footer">
+            <div class="footer-content">
+                <div class="order-total">
+                    <span class="total-label">Gesamt:</span>
+                    <span class="total-amount">{{ page.cart.price.totalPrice|currency }}</span>
+                </div>
+                <button type="submit" class="btn btn-order" id="submit-order">
+                    <span class="btn-text">Jetzt kaufen</span>
+                    <span class="btn-loading hidden">
+                        {% sw_icon 'loader' %}
+                    </span>
+                </button>
+            </div>
+            {# Trust Badges #}
+            <div class="trust-badges">
+                {% sw_icon 'lock' %}
+                <span>Sichere Zahlung (SSL)</span>
+            </div>
+        </div>
+    </form>
+</div>
+
+{# Styles #}
+<style>
+.mobile-checkout {
+    padding-bottom: 140px; /* Space for sticky footer */
+}
+
+/* Section Styles */
+.checkout-section {
+    border-bottom: 1px solid #e5e7eb;
+    background: white;
+}
+
+.section-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px;
+    min-height: 64px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.section-number {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: #1a1a1a;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+.section-title {
+    flex: 1;
+}
+
+.section-title h2 {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0;
+}
+
+.section-summary {
+    font-size: 14px;
+    color: #6b7280;
+}
+
+.section-icon {
+    transition: transform 0.3s ease;
+}
+
+.section-header[aria-expanded="true"] .section-icon {
+    transform: rotate(180deg);
+}
+
+.section-content {
+    padding: 0 16px 24px;
+}
+
+.section-content[aria-hidden="true"] {
+    display: none;
+}
+
+/* Completed section styling */
+.checkout-section[data-completed="true"] .section-number {
+    background: #10b981;
+}
+
+/* Form Styles */
+.form-group {
+    margin-bottom: 16px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.form-control {
+    width: 100%;
+    min-height: 48px;
+    padding: 12px 16px;
+    font-size: 16px; /* Prevents iOS zoom */
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    background: white;
+}
+
+.form-control:focus {
+    outline: none;
+    border-color: #1a1a1a;
+    box-shadow: 0 0 0 3px rgba(26, 26, 26, 0.1);
+}
+
+.form-row {
+    display: flex;
+    gap: 12px;
+}
+
+.form-row-2 > .form-group {
+    flex: 1;
+}
+
+/* Shipping/Payment Options */
+.shipping-option,
+.payment-option {
+    display: flex;
+    align-items: center;
+    padding: 12px 16px;
+    margin-bottom: 8px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    cursor: pointer;
+    min-height: 56px;
+}
+
+.shipping-option:has(input:checked),
+.payment-option:has(input:checked) {
+    border-color: #1a1a1a;
+    background: #f9fafb;
+}
+
+.option-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex: 1;
+    margin-left: 12px;
+}
+
+.payment-icon {
+    width: 40px;
+    height: 24px;
+    object-fit: contain;
+}
+
+/* Buttons */
+.btn {
+    min-height: 48px;
+    padding: 12px 24px;
+    font-size: 16px;
+    font-weight: 600;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-primary {
+    background: #1a1a1a;
+    color: white;
+}
+
+.btn-primary:active {
+    transform: scale(0.98);
+}
+
+.btn-continue {
+    width: 100%;
+    margin-top: 16px;
+}
+
+/* Sticky Footer */
+.checkout-footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: white;
+    border-top: 1px solid #e5e7eb;
+    padding: 12px 16px;
+    z-index: 100;
+    box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.footer-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+}
+
+.order-total {
+    display: flex;
+    flex-direction: column;
+}
+
+.total-label {
+    font-size: 14px;
+    color: #6b7280;
+}
+
+.total-amount {
+    font-size: 20px;
+    font-weight: 700;
+}
+
+.btn-order {
+    flex: 1;
+    max-width: 200px;
+    background: #10b981;
+    color: white;
+}
+
+.trust-badges {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 8px;
+    font-size: 12px;
+    color: #6b7280;
+}
+
+/* Order Items */
+.order-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.item-image {
+    width: 60px;
+    height: 60px;
+    object-fit: cover;
+    border-radius: 4px;
+}
+
+.item-details {
+    flex: 1;
+}
+
+.item-name {
+    display: block;
+    font-weight: 500;
+}
+
+.item-quantity {
+    font-size: 14px;
+    color: #6b7280;
+}
+
+/* Terms */
+.terms-checkbox {
+    margin-top: 16px;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    min-height: 48px;
+    padding: 8px 0;
+}
+
+.checkbox-label input {
+    width: 24px;
+    height: 24px;
+    margin-top: 2px;
+}
+
+/* Express Checkout */
+.express-checkout-section {
+    padding: 16px;
+    background: #f9fafb;
+    text-align: center;
+}
+
+.express-title {
+    font-size: 14px;
+    color: #6b7280;
+    margin-bottom: 12px;
+}
+
+.express-buttons {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+}
+
+.express-btn {
+    flex: 1;
+    max-width: 150px;
+}
+
+.express-divider {
+    display: flex;
+    align-items: center;
+    margin-top: 16px;
+}
+
+.express-divider::before,
+.express-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: #d1d5db;
+}
+
+.express-divider span {
+    padding: 0 16px;
+    font-size: 14px;
+    color: #6b7280;
+}
+
+/* Hidden class */
+.hidden {
+    display: none !important;
+}
+</style>
+
+{# JavaScript #}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const checkout = document.getElementById('mobile-checkout');
+
+    // Section toggling
+    checkout.querySelectorAll('[data-toggle="section"]').forEach(header => {
+        header.addEventListener('click', function() {
+            const section = this.closest('.checkout-section');
+            const content = section.querySelector('.section-content');
+            const isExpanded = this.getAttribute('aria-expanded') === 'true';
+
+            // Close all sections
+            checkout.querySelectorAll('.section-header').forEach(h => {
+                h.setAttribute('aria-expanded', 'false');
+            });
+            checkout.querySelectorAll('.section-content').forEach(c => {
+                c.setAttribute('aria-hidden', 'true');
+            });
+
+            // Open clicked section
+            if (!isExpanded) {
+                this.setAttribute('aria-expanded', 'true');
+                content.setAttribute('aria-hidden', 'false');
+            }
+        });
+    });
+
+    // Continue buttons
+    checkout.querySelectorAll('[data-next]').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const currentSection = this.closest('.checkout-section');
+            const nextSectionName = this.dataset.next;
+            const nextSection = checkout.querySelector(`[data-section="${nextSectionName}"]`);
+
+            // Mark current as completed
+            currentSection.dataset.completed = 'true';
+
+            // Update summary
+            updateSectionSummary(currentSection);
+
+            // Collapse current, expand next
+            currentSection.querySelector('.section-header').setAttribute('aria-expanded', 'false');
+            currentSection.querySelector('.section-content').setAttribute('aria-hidden', 'true');
+
+            nextSection.querySelector('.section-header').setAttribute('aria-expanded', 'true');
+            nextSection.querySelector('.section-content').setAttribute('aria-hidden', 'false');
+
+            // Scroll to next section
+            nextSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+    });
+
+    // Guest/Login toggle
+    const checkoutTypeInputs = checkout.querySelectorAll('[name="checkout_type"]');
+    checkoutTypeInputs.forEach(input => {
+        input.addEventListener('change', function() {
+            const guestForm = document.getElementById('guest-form');
+            const loginForm = document.getElementById('login-form');
+
+            if (this.value === 'guest') {
+                guestForm.classList.remove('hidden');
+                loginForm.classList.add('hidden');
+            } else {
+                guestForm.classList.add('hidden');
+                loginForm.classList.remove('hidden');
+            }
+        });
+    });
+
+    // Form submission
+    document.getElementById('checkout-form').addEventListener('submit', function(e) {
+        const submitBtn = document.getElementById('submit-order');
+        submitBtn.querySelector('.btn-text').classList.add('hidden');
+        submitBtn.querySelector('.btn-loading').classList.remove('hidden');
+        submitBtn.disabled = true;
+    });
+
+    function updateSectionSummary(section) {
+        const sectionName = section.dataset.section;
+        const summary = section.querySelector('.section-summary');
+
+        if (sectionName === 'personal') {
+            const email = document.getElementById('email').value;
+            summary.textContent = email;
+        } else if (sectionName === 'shipping') {
+            const city = document.getElementById('city').value;
+            const zipcode = document.getElementById('zipcode').value;
+            summary.textContent = `${zipcode} ${city}`;
+        } else if (sectionName === 'payment') {
+            const selected = section.querySelector('input[name="paymentMethodId"]:checked');
+            if (selected) {
+                const label = selected.closest('label').querySelector('.option-name');
+                summary.textContent = label.textContent;
+            }
+        }
+    }
+});
+</script>
+{% endblock %}

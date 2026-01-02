@@ -1,0 +1,119 @@
+{#
+/**
+ * Responsive Picture Element for Shopware 6
+ *
+ * Generates optimized <picture> element with:
+ * - WebP/AVIF modern formats with fallback
+ * - Multiple sizes for different viewports
+ * - Art direction support (different crops per viewport)
+ * - Lazy loading for below-fold images
+ *
+ * Usage:
+ *   {% sw_include '@Storefront/component/responsive-picture.html.twig' with {
+ *       media: product.cover.media,
+ *       alt: product.name,
+ *       lazy: true,
+ *       priority: false,
+ *       sizes: '(max-width: 480px) 100vw, (max-width: 768px) 50vw, 33vw',
+ *       class: 'product-image'
+ *   } %}
+ *
+ * @param media      - Shopware media entity
+ * @param alt        - Alt text for accessibility
+ * @param lazy       - Enable lazy loading (default: true)
+ * @param priority   - High priority loading for LCP images (default: false)
+ * @param sizes      - Sizes attribute for responsive images
+ * @param class      - CSS class for img element
+ * @param aspectRatio - Aspect ratio (e.g., '1/1', '16/9')
+ */
+#}
+
+{% set lazy = lazy ?? true %}
+{% set priority = priority ?? false %}
+{% set sizes = sizes ?? '100vw' %}
+{% set aspectRatio = aspectRatio ?? null %}
+
+{# Get thumbnails sorted by width #}
+{% set thumbnails = media.thumbnails.elements|sort((a, b) => a.width <=> b.width) %}
+
+{# Determine loading behavior #}
+{% set loading = priority ? 'eager' : (lazy ? 'lazy' : 'eager') %}
+{% set fetchPriority = priority ? 'high' : 'auto' %}
+{% set decoding = priority ? 'sync' : 'async' %}
+
+{# Get dimensions from largest thumbnail or original #}
+{% set width = thumbnails|last.width ?? media.metaData.width ?? 800 %}
+{% set height = thumbnails|last.height ?? media.metaData.height ?? 800 %}
+
+<picture class="responsive-picture {{ class ?? '' }}">
+    {# Mobile-first: smallest sources first #}
+
+    {# AVIF format (best compression, newer browsers) #}
+    {% if thumbnails|length > 0 %}
+        {% set avifSrcset = [] %}
+        {% for thumb in thumbnails %}
+            {% set avifUrl = thumb.url|replace({'.jpg': '.avif', '.jpeg': '.avif', '.png': '.avif'}) %}
+            {% set avifSrcset = avifSrcset|merge([avifUrl ~ ' ' ~ thumb.width ~ 'w']) %}
+        {% endfor %}
+        <source
+            type="image/avif"
+            srcset="{{ avifSrcset|join(', ') }}"
+            sizes="{{ sizes }}">
+    {% endif %}
+
+    {# WebP format (good compression, wide support) #}
+    {% if thumbnails|length > 0 %}
+        {% set webpSrcset = [] %}
+        {% for thumb in thumbnails %}
+            {% set webpUrl = thumb.url|replace({'.jpg': '.webp', '.jpeg': '.webp', '.png': '.webp'}) %}
+            {% set webpSrcset = webpSrcset|merge([webpUrl ~ ' ' ~ thumb.width ~ 'w']) %}
+        {% endfor %}
+        <source
+            type="image/webp"
+            srcset="{{ webpSrcset|join(', ') }}"
+            sizes="{{ sizes }}">
+    {% endif %}
+
+    {# Original format (fallback) #}
+    {% if thumbnails|length > 0 %}
+        {% set srcset = [] %}
+        {% for thumb in thumbnails %}
+            {% set srcset = srcset|merge([thumb.url ~ ' ' ~ thumb.width ~ 'w']) %}
+        {% endfor %}
+        <source
+            srcset="{{ srcset|join(', ') }}"
+            sizes="{{ sizes }}">
+    {% endif %}
+
+    {# Fallback img element #}
+    <img
+        src="{{ media.url }}"
+        alt="{{ alt ?? media.alt ?? '' }}"
+        width="{{ width }}"
+        height="{{ height }}"
+        loading="{{ loading }}"
+        decoding="{{ decoding }}"
+        {% if priority %}fetchpriority="{{ fetchPriority }}"{% endif %}
+        {% if aspectRatio %}style="aspect-ratio: {{ aspectRatio }};"{% endif %}
+        class="responsive-image {{ class ?? '' }}">
+</picture>
+
+{# Styles #}
+{% block styles %}
+<style>
+.responsive-picture {
+    display: block;
+}
+
+.responsive-image {
+    width: 100%;
+    height: auto;
+    object-fit: cover;
+}
+
+/* Placeholder while loading */
+.responsive-picture[data-loading="true"] .responsive-image {
+    background: #f3f4f6;
+}
+</style>
+{% endblock %}

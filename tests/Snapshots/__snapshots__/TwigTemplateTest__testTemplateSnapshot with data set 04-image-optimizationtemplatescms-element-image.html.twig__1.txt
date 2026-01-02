@@ -1,0 +1,97 @@
+{#
+ # CMS Image Element mit Lazy Loading Steuerung
+ # Kapitel 4: Bildoptimierung
+ #
+ # Überschreibt das Standard CMS-Bild-Element um:
+ # 1. Above-the-fold Bilder mit eager loading zu laden
+ # 2. fetchpriority für LCP-Bilder zu setzen
+ # 3. Korrekte sizes-Attribute zu generieren
+ #
+ # Installation:
+ # Kopieren nach: Resources/views/storefront/element/cms-element-image.html.twig
+ #
+ # @see https://github.com/MehmetGoekce/shopware-performance-examples
+ #}
+
+{% sw_extends '@Storefront/storefront/element/cms-element-image.html.twig' %}
+
+{% block element_image_inner %}
+    {# Konfigurierbar im CMS: Ist dieses Bild above-the-fold? #}
+    {% set isAboveFold = element.config.aboveFold.value|default(false) %}
+    {% set media = element.data.media %}
+
+    {% if media %}
+        {# Optimierte Thumbnail-Generierung mit sw_thumbnails #}
+        {% sw_thumbnails 'cms-image-' ~ element.id with {
+            media: media,
+
+            {# sizes-Attribut basierend auf CMS-Konfiguration #}
+            sizes: {
+                'xs': '100vw',
+                'sm': '100vw',
+                'md': element.config.minHeight.value ? element.config.minHeight.value ~ 'px' : '50vw',
+                'lg': element.config.minHeight.value ? element.config.minHeight.value ~ 'px' : '33vw',
+                'xl': element.config.minHeight.value ? element.config.minHeight.value ~ 'px' : '33vw'
+            },
+
+            attributes: {
+                'class': 'cms-image' ~ (isAboveFold ? ' cms-image--lcp' : ''),
+                'alt': media.alt|default(media.fileName|default('')),
+
+                {# Kritisch: Loading-Strategie basierend auf Position #}
+                'loading': isAboveFold ? 'eager' : 'lazy',
+                'fetchpriority': isAboveFold ? 'high' : 'auto',
+                'decoding': isAboveFold ? 'sync' : 'async'
+            }
+        } %}
+    {% endif %}
+{% endblock %}
+
+
+{# ============================================================ #}
+{# Alternative: Manuelles img-Tag mit mehr Kontrolle            #}
+{# ============================================================ #}
+
+{% block element_image_inner_manual %}
+    {% set isAboveFold = element.config.aboveFold.value|default(false) %}
+    {% set media = element.data.media %}
+
+    {% if media %}
+        <img
+            {# Standard-Bild (Fallback) #}
+            src="{{ media.url }}"
+
+            {# Responsive srcset mit allen verfügbaren Thumbnails #}
+            {% if media.thumbnails|length > 0 %}
+                srcset="
+                    {%- for thumbnail in media.thumbnails|sort((a, b) => a.width <=> b.width) -%}
+                        {{ thumbnail.url }} {{ thumbnail.width }}w{% if not loop.last %}, {% endif %}
+                    {%- endfor -%},
+                    {{ media.url }} {{ media.metaData.width|default(1920) }}w
+                "
+
+                {# sizes für verschiedene Viewports #}
+                sizes="
+                    (max-width: 575px) 100vw,
+                    (max-width: 767px) 100vw,
+                    (max-width: 991px) 50vw,
+                    33vw
+                "
+            {% endif %}
+
+            {# Alt-Text für Barrierefreiheit #}
+            alt="{{ media.alt|default(media.fileName|default('')) }}"
+
+            {# Dimensionen für CLS-Vermeidung #}
+            {% if media.metaData.width %}width="{{ media.metaData.width }}"{% endif %}
+            {% if media.metaData.height %}height="{{ media.metaData.height }}"{% endif %}
+
+            {# Loading-Strategie #}
+            loading="{{ isAboveFold ? 'eager' : 'lazy' }}"
+            fetchpriority="{{ isAboveFold ? 'high' : 'auto' }}"
+            decoding="{{ isAboveFold ? 'sync' : 'async' }}"
+
+            class="cms-image{% if isAboveFold %} cms-image--lcp{% endif %}"
+        >
+    {% endif %}
+{% endblock %}

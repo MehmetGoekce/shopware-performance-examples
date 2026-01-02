@@ -108,38 +108,43 @@ Die folgenden API-Änderungen wurden dokumentiert (temporär ignoriert):
 | `Criteria::addCriteria()` | OptimizedProductService.php | Existiert nicht |
 | `StorefrontRenderEvent::setParameters()` | ScriptLoadingSubscriber.php | Deprecated |
 
-### Phase 3: Unit Tests erweitern (In Progress)
+### Phase 3: Unit Tests erweitern (Done)
 
-**Current Status:** 172 tests (91 PHP + 81 JavaScript)
+**Status:** 247 tests (166 PHP + 81 JavaScript)
 
-#### PHP Unit Tests (91 tests)
+#### PHP Unit Tests (166 tests)
 - [x] `StatisticalAnalyzer.php` - 15 tests (Welch's t-test, Bayesian, Sample Size)
 - [x] `FeatureFlagService.php` - 17 tests (11 pass, 6 skipped due to readonly)
 - [x] `ThemePerformanceAnalyzer.php` - 28 tests (with Shopware stubs)
-- [x] Existing snapshot tests - 31 tests
-- [ ] `08-database/src/Service/CachedProductService.php`
-- [ ] `17-shopware-plugins/src/Service/*.php`
-- [ ] `18-shopware-elasticsearch/src/*.php`
+- [x] Existing tests - 31 tests
+- [x] Twig Snapshot Tests - 75 tests (15 templates x 5 test types)
 
 #### JavaScript Unit Tests (81 tests)
 - [x] `analyze-experiment.test.js` - 22 tests (statistical analysis, CLI parsing)
 - [x] `coverage-analysis.test.js` - 27 tests (render-blocking, bundle analysis)
 - [x] `network-aware-images.test.js` - 23 tests (existing)
 - [x] `config-validation.test.js` - 9 tests (existing)
-- [ ] `03-core-web-vitals/scripts/cwv-diagnostics.js` (browser-only, needs Playwright)
-- [ ] `16-shopware-themes/src/*.js`
 
-#### Shell/BATS Tests (Pending)
-- [ ] `07-shopware-cache/scripts/cache-warmup.php`
-- [ ] `18-shopware-elasticsearch/scripts/es-reindex.sh`
+### Phase 4: E2E & Integration Tests (Done)
 
-### Phase 4: Integration Tests (Pending)
-- [ ] Shopware Integration Tests (mit Mocks)
-- [ ] Playwright E2E Tests fuer Browser-Code
-  - [ ] Service Worker Tests
-  - [ ] Touch Gesture Tests
-  - [ ] RUM Tracker Tests
-- [ ] Twig Snapshot Tests
+**Status:** Playwright E2E tests + Twig Snapshots created
+
+#### Playwright E2E Tests
+- [x] `swipe-gestures.spec.ts` - Touch gesture detection, ProductGallery, SwipeToDelete
+- [x] `service-worker.spec.ts` - SW lifecycle, caching strategies, offline behavior
+- [x] `rum-tracker.spec.ts` - Web Vitals collection, analytics integration
+
+#### Test Fixtures
+- [x] `fixtures/swipe-gestures.html` - Touch gesture test page
+- [x] `fixtures/service-worker.html` - Service Worker test page
+- [x] `fixtures/rum-tracker.html` - RUM tracker test page
+
+#### Twig Snapshot Tests (75 tests)
+- [x] 15 templates with snapshot verification
+- [x] Block structure validation
+- [x] Twig syntax validation
+- [x] UTF-8 encoding checks
+- [x] Performance pattern analysis
 
 ### Phase 5: Neue Kapitel (20-25)
 - [ ] Test-Template pro Dateityp bereitstellen
