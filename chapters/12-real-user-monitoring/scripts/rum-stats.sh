@@ -96,7 +96,8 @@ analyze_metric() {
     local metric="$1"
 
     # Werte extrahieren (nur innerhalb Zeitfenster)
-    local values=$(grep "\"metric\":\"$metric\"" "$LOG_FILE" 2>/dev/null | \
+    local values
+    values=$(grep "\"metric\":\"$metric\"" "$LOG_FILE" 2>/dev/null | \
         jq -r "select(.context.timestamp > $CUTOFF_MS) | .context.value" 2>/dev/null | \
         grep -E '^[0-9.]+$')
 
@@ -105,11 +106,12 @@ analyze_metric() {
         return
     fi
 
-    local count=$(echo "$values" | wc -l)
-    local p50=$(calculate_percentile "$values" 50)
-    local p75=$(calculate_percentile "$values" 75)
-    local p90=$(calculate_percentile "$values" 90)
-    local p99=$(calculate_percentile "$values" 99)
+    local count p50 p75 p90 p99
+    count=$(echo "$values" | wc -l)
+    p50=$(calculate_percentile "$values" 50)
+    p75=$(calculate_percentile "$values" 75)
+    p90=$(calculate_percentile "$values" 90)
+    p99=$(calculate_percentile "$values" 99)
 
     # Rating berechnen
     local good_threshold=${THRESHOLDS_GOOD[$metric]}
@@ -127,8 +129,9 @@ analyze_metric() {
     fi
 
     # Good Rate berechnen
-    local good_count=$(echo "$values" | awk -v t="$good_threshold" '$1 <= t' | wc -l)
-    local good_rate=$(echo "scale=1; $good_count * 100 / $count" | bc)
+    local good_count good_rate
+    good_count=$(echo "$values" | awk -v t="$good_threshold" '$1 <= t' | wc -l)
+    good_rate=$(echo "scale=1; $good_count * 100 / $count" | bc)
 
     # Ausgabe
     echo "  Samples: $count"

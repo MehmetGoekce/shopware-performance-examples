@@ -70,6 +70,7 @@ for i in {1..30}; do
 
     NEW_MASTER_INFO=$($SENTINEL_CLI SENTINEL get-master-addr-by-name $MASTER_NAME)
     NEW_MASTER_IP=$(echo $NEW_MASTER_INFO | awk '{print $1}')
+    NEW_MASTER_PORT=$(echo $NEW_MASTER_INFO | awk '{print $2}')
 
     if [ "$NEW_MASTER_IP" != "$MASTER_IP" ]; then
         END_TIME=$(date +%s%3N)

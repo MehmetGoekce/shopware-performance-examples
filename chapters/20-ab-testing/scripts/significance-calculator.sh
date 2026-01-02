@@ -140,23 +140,28 @@ function calculate_stats() {
     done
 
     # Mean
-    local mean=$(echo "scale=2; $sum / $n" | bc -l)
+    local mean
+    mean=$(echo "scale=2; $sum / $n" | bc -l)
 
     # Variance
     local var_sum=0
+    local diff sq
     for val in "${arr[@]}"; do
-        local diff=$(echo "$val - $mean" | bc -l)
-        local sq=$(echo "$diff * $diff" | bc -l)
+        diff=$(echo "$val - $mean" | bc -l)
+        sq=$(echo "$diff * $diff" | bc -l)
         var_sum=$(echo "$var_sum + $sq" | bc -l)
     done
 
-    local variance=$(echo "scale=2; $var_sum / ($n - 1)" | bc -l)
+    local variance
+    variance=$(echo "scale=2; $var_sum / ($n - 1)" | bc -l)
 
     # Standard Deviation
-    local stddev=$(echo "scale=2; sqrt($variance)" | bc -l)
+    local stddev
+    stddev=$(echo "scale=2; sqrt($variance)" | bc -l)
 
     # Standard Error
-    local stderr=$(echo "scale=2; $stddev / sqrt($n)" | bc -l)
+    local stderr
+    stderr=$(echo "scale=2; $stddev / sqrt($n)" | bc -l)
 
     echo "$n,$mean,$stddev,$stderr"
 }
@@ -167,8 +172,9 @@ function calculate_t_statistic() {
     local se1=$3
     local se2=$4
 
-    local se_pooled=$(echo "scale=4; sqrt($se1 * $se1 + $se2 * $se2)" | bc -l)
-    local t=$(echo "scale=4; ($mean1 - $mean2) / $se_pooled" | bc -l)
+    local se_pooled t
+    se_pooled=$(echo "scale=4; sqrt($se1 * $se1 + $se2 * $se2)" | bc -l)
+    t=$(echo "scale=4; ($mean1 - $mean2) / $se_pooled" | bc -l)
 
     # Absolute value
     t=$(echo "$t" | tr -d '-')

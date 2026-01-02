@@ -85,7 +85,8 @@ send_alert() {
         color="danger"
     fi
 
-    local message="$emoji *${level^^}* $metric Alert
+    local message
+    message="$emoji *${level^^}* $metric Alert
 • Wert (p75): *$value* (Schwelle: $threshold)
 • Samples: $samples
 • Zeit: $(date '+%Y-%m-%d %H:%M:%S')"
@@ -111,7 +112,8 @@ check_metric() {
     local metric="$1"
 
     # Werte extrahieren
-    local values=$(grep "\"metric\":\"$metric\"" "$LOG_FILE" 2>/dev/null | \
+    local values
+    values=$(grep "\"metric\":\"$metric\"" "$LOG_FILE" 2>/dev/null | \
         jq -r "select(.context.timestamp > $CUTOFF_MS) | .context.value" 2>/dev/null | \
         grep -E '^[0-9.]+$')
 
@@ -119,14 +121,16 @@ check_metric() {
         return
     fi
 
-    local count=$(echo "$values" | wc -l)
+    local count
+    count=$(echo "$values" | wc -l)
 
     # Nicht genug Samples
     if [ "$count" -lt "$MIN_SAMPLES" ]; then
         return
     fi
 
-    local p75=$(calculate_p75 "$values")
+    local p75
+    p75=$(calculate_p75 "$values")
 
     # Für CLS: Wert * 1000 für Integer-Vergleich
     local compare_value="$p75"

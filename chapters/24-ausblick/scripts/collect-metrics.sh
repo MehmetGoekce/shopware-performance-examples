@@ -28,10 +28,12 @@ fi
 START_TIME=$(date +%s)
 
 collect_metrics() {
-    local timestamp=$(date -Iseconds)
+    local timestamp
+    timestamp=$(date -Iseconds)
 
     # PageSpeed API abfragen (kein API-Key nötig für Basis-Daten)
-    local response=$(curl -s "https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=$URL&strategy=mobile" 2>/dev/null)
+    local response
+    response=$(curl -s "https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=$URL&strategy=mobile" 2>/dev/null)
 
     if [ -z "$response" ]; then
         echo "[$timestamp] Fehler: Keine API-Antwort"
@@ -40,7 +42,8 @@ collect_metrics() {
 
     # Metriken extrahieren mit jq
     if command -v jq &> /dev/null; then
-        local metrics=$(echo "$response" | jq -c '{
+        local metrics
+        metrics=$(echo "$response" | jq -c '{
             timestamp: "'"$timestamp"'",
             TTFB: .lighthouseResult.audits["server-response-time"].numericValue,
             FCP: .lighthouseResult.audits["first-contentful-paint"].numericValue,
@@ -53,7 +56,8 @@ collect_metrics() {
 
         if [ -n "$metrics" ] && [ "$metrics" != "null" ]; then
             # An JSON-Array anhängen
-            local temp=$(mktemp)
+            local temp
+            temp=$(mktemp)
             jq ". += [$metrics]" "$OUTPUT" > "$temp" && mv "$temp" "$OUTPUT"
             echo "[$timestamp] Metriken gespeichert"
             return 0

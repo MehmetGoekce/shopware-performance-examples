@@ -89,7 +89,7 @@ if [ -d "$JS_DIR" ]; then
     done < <(find "$JS_DIR" -name "*.js" -type f -print0)
 
     # Nach Größe sortieren
-    IFS=$'\n' sorted=($(sort -t: -k1 -rn <<<"${JS_FILES[*]}")); unset IFS
+    mapfile -t sorted < <(printf '%s\n' "${JS_FILES[@]}" | sort -t: -k1 -rn)
 
     echo "JavaScript-Dateien (nach Größe):"
     echo "--------------------------------"
@@ -121,7 +121,7 @@ if [ -d "$CSS_DIR" ]; then
     done < <(find "$CSS_DIR" -name "*.css" -type f -print0)
 
     # Nach Größe sortieren
-    IFS=$'\n' sorted=($(sort -t: -k1 -rn <<<"${CSS_FILES[*]}")); unset IFS
+    mapfile -t sorted < <(printf '%s\n' "${CSS_FILES[@]}" | sort -t: -k1 -rn)
 
     echo "CSS-Dateien (nach Größe):"
     echo "------------------------"

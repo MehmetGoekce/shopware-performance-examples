@@ -120,8 +120,8 @@ echo -e "${BLUE}4. Cart-Session-Größe${NC}"
 
 if [ -d "$SHOP_PATH/var/sessions" ]; then
     # Session-Dateien analysieren
-    AVG_SESSION_SIZE=$(find "$SHOP_PATH/var/sessions" -type f -name "sess_*" 2>/dev/null | \
-        xargs ls -la 2>/dev/null | awk '{sum+=$5; count++} END {if(count>0) print int(sum/count/1024); else print "0"}')
+    AVG_SESSION_SIZE=$(find "$SHOP_PATH/var/sessions" -type f -name "sess_*" -print0 2>/dev/null | \
+        xargs -0 ls -la 2>/dev/null | awk '{sum+=$5; count++} END {if(count>0) print int(sum/count/1024); else print "0"}')
 
     echo "   Durchschnittliche Session-Größe: ${AVG_SESSION_SIZE} KB"
 

@@ -117,7 +117,7 @@ fi
 echo -e "${YELLOW}Phase 1: Measuring WITH plugin active...${NC}"
 clear_cache
 
-read -r with_avg with_min with_max <<< $(measure_url "$TEST_URL")
+read -r with_avg with_min with_max <<< "$(measure_url "$TEST_URL")"
 
 echo -e "  Average: ${with_avg}s (min: ${with_min}s, max: ${with_max}s)"
 
@@ -128,7 +128,7 @@ clear_cache
 
 # Phase 3: Measure without plugin
 echo -e "${YELLOW}Phase 3: Measuring WITHOUT plugin...${NC}"
-read -r without_avg without_min without_max <<< $(measure_url "$TEST_URL")
+read -r without_avg without_min without_max <<< "$(measure_url "$TEST_URL")"
 
 echo -e "  Average: ${without_avg}s (min: ${without_min}s, max: ${without_max}s)"
 

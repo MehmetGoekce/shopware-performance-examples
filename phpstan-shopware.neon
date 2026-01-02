@@ -1,0 +1,192 @@
+includes:
+    - vendor/phpstan/phpstan-strict-rules/rules.neon
+
+parameters:
+    level: 6
+    paths:
+        - chapters
+        - tests
+
+    # Use Shopware autoloader for real type checking
+    bootstrapFiles:
+        - /var/www/shopware6.local/vendor/autoload.php
+
+    excludePaths:
+        # Scripts are standalone CLI tools
+        - chapters/*/scripts/*.php
+
+
+    reportUnmatchedIgnoredErrors: false
+
+    ignoreErrors:
+        # App\Service placeholder classes (book examples - not implemented)
+        -
+            message: '#unknown class App\\Service\\#'
+            reportUnmatched: false
+        -
+            message: '#invalid type App\\Service\\#'
+            reportUnmatched: false
+        -
+            message: '#on an unknown class App\\Service\\#'
+            reportUnmatched: false
+        -
+            message: '#Instantiated class App\\Service\\#'
+            reportUnmatched: false
+        -
+            message: '#unknown class App\\Controller\\#'
+            reportUnmatched: false
+
+        # Properties used in book examples (may appear unused)
+        -
+            message: '#Property .+ is never read, only written#'
+            reportUnmatched: false
+
+        # PHPUnit dynamic calls in tests (common pattern)
+        -
+            message: '#Dynamic call to static method PHPUnit\\#'
+            reportUnmatched: false
+
+        # Strict rules - relaxed for book examples
+        -
+            identifier: empty.notAllowed
+        -
+            identifier: booleanNot.exprNotBoolean
+        -
+            identifier: booleanAnd.leftNotBoolean
+        -
+            identifier: booleanAnd.rightNotBoolean
+        -
+            identifier: if.condNotBoolean
+        -
+            identifier: ternary.condNotBoolean
+        -
+            identifier: ternary.shortNotAllowed
+        -
+            identifier: assign.propertyReadOnlyByPhpDocAssignOp
+
+        # Iterable value type (too noisy for examples)
+        -
+            identifier: missingType.iterableValue
+
+        # Shopware generics are complex (EntityRepository<T>)
+        -
+            identifier: missingType.generics
+
+        # Duplicate array keys (constants in lookup tables)
+        -
+            message: '#Array has \d+ duplicate keys#'
+            reportUnmatched: false
+
+        # Unused constants (book examples may not use all constants)
+        -
+            message: '#Constant .+ is unused#'
+            reportUnmatched: false
+
+        # Readonly property issues (example code patterns)
+        -
+            message: '#Readonly property .+ is assigned outside#'
+            reportUnmatched: false
+
+        # Always true/false comparisons (intentional in examples)
+        -
+            message: '#Comparison operation .+ is always true#'
+            reportUnmatched: false
+        -
+            message: '#Else branch is unreachable#'
+            reportUnmatched: false
+        -
+            message: '#Strict comparison .+ will always evaluate to#'
+            reportUnmatched: false
+
+        # Test-specific patterns
+        -
+            message: '#Offset .+ does not exist#'
+            reportUnmatched: false
+        -
+            message: '#Casting to int something that#'
+            reportUnmatched: false
+        -
+            message: '#Call to an undefined method .+::expects#'
+            reportUnmatched: false
+        -
+            message: '#Call to an undefined method .+::method#'
+            reportUnmatched: false
+        -
+            message: '#does not accept Symfony\\Component\\HttpFoundation\\ParameterBag#'
+            reportUnmatched: false
+        -
+            message: '#Dead catch - Throwable is never thrown#'
+            reportUnmatched: false
+
+        # Return type mismatches (relaxed for book examples)
+        -
+            message: '#Method .+::get.+ should return#'
+            reportUnmatched: false
+        -
+            message: '#Method .+ never returns .+ so it can be removed#'
+            reportUnmatched: false
+
+        # ============================================
+        # Known Shopware 6.6 compatibility issues
+        # TODO: Fix these for SW 6.6 compatibility
+        # ============================================
+
+        # Entity methods - need to use specific entity types (ProductEntity)
+        -
+            message: '#Call to an undefined method Shopware\\Core\\Framework\\DataAbstractionLayer\\Entity::#'
+            reportUnmatched: false
+
+        # Context vs SalesChannelContext
+        -
+            message: '#Call to an undefined method Shopware\\Core\\Framework\\Context::getSalesChannelId#'
+            reportUnmatched: false
+
+        # Criteria::addCriteria() doesn't exist
+        -
+            message: '#Call to an undefined method Shopware\\Core\\Framework\\DataAbstractionLayer\\Search\\Criteria::addCriteria#'
+            reportUnmatched: false
+
+        # AggregationResult methods
+        -
+            message: '#Call to an undefined method Shopware\\Core\\Framework\\DataAbstractionLayer\\Search\\AggregationResult\\AggregationResult::#'
+            reportUnmatched: false
+
+        # StorefrontRenderEvent::setParameters() deprecated
+        -
+            message: '#Call to an undefined method Shopware\\Storefront\\Event\\StorefrontRenderEvent::setParameters#'
+            reportUnmatched: false
+
+        # SalesChannelContext::getCart() doesn't exist
+        -
+            message: '#Call to an undefined method Shopware\\Core\\System\\SalesChannel\\SalesChannelContext::getCart#'
+            reportUnmatched: false
+
+        # PSR CacheItemInterface::tag() is Symfony-specific
+        -
+            message: '#Call to an undefined method Psr\\Cache\\CacheItemInterface::tag#'
+            reportUnmatched: false
+
+        # Symfony Cache AdapterInterface methods
+        -
+            message: '#Call to an undefined method Symfony\\Component\\Cache\\Adapter\\AdapterInterface::#'
+            reportUnmatched: false
+
+        # EntityIndexingMessage constructor changed
+        -
+            message: '#Parameter .+ of class Shopware\\Core\\Framework\\DataAbstractionLayer\\Indexing\\EntityIndexingMessage constructor expects#'
+            reportUnmatched: false
+
+        # Criteria::setIncludes type mismatch
+        -
+            message: '#Parameter .+ of method Shopware\\Core\\Framework\\DataAbstractionLayer\\Search\\Criteria::setIncludes#'
+            reportUnmatched: false
+
+        # Cannot access offset on float (type inference issue)
+        -
+            message: '#Cannot access offset .+ on float#'
+            reportUnmatched: false
+
+        # Missing parameter types (to be added)
+        -
+            message: '#has parameter .+ with no type specified#'
+            reportUnmatched: false

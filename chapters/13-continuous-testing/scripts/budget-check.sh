@@ -62,7 +62,7 @@ fi
 
 # Temporäres Verzeichnis
 TMP_DIR=$(mktemp -d)
-trap "rm -rf $TMP_DIR" EXIT
+trap 'rm -rf "$TMP_DIR"' EXIT
 
 echo "Führe Lighthouse-Test aus..."
 echo ""

@@ -37,7 +37,8 @@ print_header() {
 
 warmup_url() {
     local url=$1
-    local start=$(date +%s%N)
+    local start
+    start=$(date +%s%N)
 
     # Request mit gzip, User-Agent setzen
     status=$(curl -s -o /dev/null -w "%{http_code}" \
@@ -45,7 +46,8 @@ warmup_url() {
         -H "User-Agent: CacheWarmup/1.0" \
         "$url" 2>/dev/null)
 
-    local end=$(date +%s%N)
+    local end
+    end=$(date +%s%N)
     local duration=$(( (end - start) / 1000000 ))
 
     if [ "$status" == "200" ]; then

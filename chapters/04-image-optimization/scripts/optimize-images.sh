@@ -81,7 +81,8 @@ human_size() {
 # JPEG optimieren
 optimize_jpeg() {
     local file="$1"
-    local before=$(get_size "$file")
+    local before
+    before=$(get_size "$file")
 
     echo -e "${BLUE}JPEG:${NC} $file"
     echo -n "  Vorher: $(human_size $before)"
@@ -95,7 +96,8 @@ optimize_jpeg() {
             -interlace Plane \
             "$file"
 
-        local after=$(get_size "$file")
+        local after
+        after=$(get_size "$file")
         local saved=$((before - after))
         local percent=$((saved * 100 / before))
 
@@ -113,7 +115,8 @@ optimize_jpeg() {
 # PNG optimieren
 optimize_png() {
     local file="$1"
-    local before=$(get_size "$file")
+    local before
+    before=$(get_size "$file")
 
     echo -e "${BLUE}PNG:${NC} $file"
     echo -n "  Vorher: $(human_size $before)"
@@ -127,7 +130,8 @@ optimize_png() {
         # PNG-spezifische Optimierung
         pngquant --quality=$PNG_QUALITY --strip --ext .png --force "$file" 2>/dev/null || true
 
-        local after=$(get_size "$file")
+        local after
+        after=$(get_size "$file")
         local saved=$((before - after))
         local percent=$((saved * 100 / before))
 
@@ -155,8 +159,9 @@ create_webp() {
     if [ "$DRY_RUN" = false ]; then
         cwebp -q $WEBP_QUALITY "$file" -o "$webp_file" 2>/dev/null
 
-        local original=$(get_size "$file")
-        local webp_size=$(get_size "$webp_file")
+        local original webp_size
+        original=$(get_size "$file")
+        webp_size=$(get_size "$webp_file")
         local saved=$((original - webp_size))
         local percent=$((saved * 100 / original))
 

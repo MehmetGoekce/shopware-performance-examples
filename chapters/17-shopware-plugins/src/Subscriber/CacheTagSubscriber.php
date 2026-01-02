@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Subscriber;
 
-use Shopware\Core\Framework\Adapter\Cache\CacheTagCollector;
+use Shopware\Core\Framework\Adapter\Cache\CacheTagCollection;
 use Shopware\Storefront\Event\StorefrontRenderEvent;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpFoundation\Request;
@@ -34,7 +34,7 @@ use Symfony\Component\HttpFoundation\Request;
 class CacheTagSubscriber implements EventSubscriberInterface
 {
     public function __construct(
-        private readonly CacheTagCollector $cacheTagCollector
+        private readonly CacheTagCollection $cacheTagCollection
     ) {}
 
     public static function getSubscribedEvents(): array
@@ -67,12 +67,12 @@ class CacheTagSubscriber implements EventSubscriberInterface
                 // Product detail page - add custom product tag
                 $productId = $request->get('productId');
                 if ($productId) {
-                    $this->cacheTagCollector->add(
+                    $this->cacheTagCollection->add(
                         sprintf('custom-product-%s', $productId)
                     );
 
                     // Tag for price-sensitive invalidation
-                    $this->cacheTagCollector->add(
+                    $this->cacheTagCollection->add(
                         sprintf('product-price-%s', $productId)
                     );
                 }
@@ -82,7 +82,7 @@ class CacheTagSubscriber implements EventSubscriberInterface
                 // Category page - add category-specific tags
                 $navigationId = $request->get('navigationId');
                 if ($navigationId) {
-                    $this->cacheTagCollector->add(
+                    $this->cacheTagCollection->add(
                         sprintf('custom-category-%s', $navigationId)
                     );
                 }
@@ -90,14 +90,14 @@ class CacheTagSubscriber implements EventSubscriberInterface
 
             case 'frontend.home.page':
                 // Homepage - special tag for homepage-specific content
-                $this->cacheTagCollector->add('homepage');
-                $this->cacheTagCollector->add('featured-products');
+                $this->cacheTagCollection->add('homepage');
+                $this->cacheTagCollection->add('featured-products');
                 break;
 
             case 'frontend.checkout.cart.page':
                 // Cart page should NOT be cached aggressively
                 // But we can add tags for partial caching
-                $this->cacheTagCollector->add('cart-recommendations');
+                $this->cacheTagCollection->add('cart-recommendations');
                 break;
         }
     }
@@ -116,14 +116,14 @@ class CacheTagSubscriber implements EventSubscriberInterface
         if (method_exists($page, 'getCmsPage')) {
             $cmsPage = $page->getCmsPage();
             if ($cmsPage !== null) {
-                $this->cacheTagCollector->add(
+                $this->cacheTagCollection->add(
                     sprintf('custom-cms-%s', $cmsPage->getId())
                 );
 
                 // Tag each CMS block for granular invalidation
                 foreach ($cmsPage->getSections() as $section) {
                     foreach ($section->getBlocks() as $block) {
-                        $this->cacheTagCollector->add(
+                        $this->cacheTagCollection->add(
                             sprintf('cms-block-%s', $block->getId())
                         );
                     }
@@ -137,7 +137,7 @@ class CacheTagSubscriber implements EventSubscriberInterface
         if (method_exists($page, 'getProduct')) {
             $product = $page->getProduct();
             if ($product !== null && $product->getManufacturerId()) {
-                $this->cacheTagCollector->add(
+                $this->cacheTagCollection->add(
                     sprintf('manufacturer-%s', $product->getManufacturerId())
                 );
             }
@@ -147,13 +147,13 @@ class CacheTagSubscriber implements EventSubscriberInterface
         // Time-based tags for scheduled content
         // ============================================
         // These allow invalidation based on time windows
-        $this->cacheTagCollector->add(
+        $this->cacheTagCollection->add(
             sprintf('day-%s', date('Y-m-d'))
         );
 
         // For hourly promotions
         if ($this->hasTimeBasedContent()) {
-            $this->cacheTagCollector->add(
+            $this->cacheTagCollection->add(
                 sprintf('hour-%s', date('Y-m-d-H'))
             );
         }
