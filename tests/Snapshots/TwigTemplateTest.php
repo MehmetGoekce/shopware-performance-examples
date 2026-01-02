@@ -65,6 +65,7 @@ class TwigTemplateTest extends TestCase
         // Use relative path as snapshot name
         $snapshotName = str_replace(['/', '.html.twig'], ['_', ''], $relativePath);
 
+        // @phpstan-ignore-next-line (spatie/phpunit-snapshot-assertions accepts optional name parameter)
         $this->assertMatchesTextSnapshot($content, $snapshotName);
     }
 

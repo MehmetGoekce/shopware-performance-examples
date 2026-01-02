@@ -24,6 +24,7 @@ use Psr\Log\LoggerInterface;
 class ThemePerformanceAnalyzerTest extends TestCase
 {
     private ThemePerformanceAnalyzer $analyzer;
+    /** @var \ReflectionClass<ThemePerformanceAnalyzer> */
     private \ReflectionClass $reflection;
 
     protected function setUp(): void
