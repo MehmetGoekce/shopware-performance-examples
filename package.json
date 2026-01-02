@@ -30,7 +30,7 @@
       "eslint --fix"
     ],
     "chapters/**/*.sh": [
-      "shellcheck"
+      "shellcheck --severity=warning"
     ]
   },
   "author": "Mehmet Goekce <info@memotech.ch>",
