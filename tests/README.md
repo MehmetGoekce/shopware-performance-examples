@@ -146,11 +146,27 @@ Die folgenden API-Änderungen wurden dokumentiert (temporär ignoriert):
 - [x] UTF-8 encoding checks
 - [x] Performance pattern analysis
 
-### Phase 5: Neue Kapitel (20-25)
-- [ ] Test-Template pro Dateityp bereitstellen
-- [ ] Pre-commit Hook fuer Linting
-- [ ] Automatische Snapshot-Updates
-- [ ] Coverage-Report pro Kapitel
+### Phase 5: Neue Kapitel (20-25) (Done)
+
+**Status:** Templates, Hooks, und Tools eingerichtet
+
+#### Templates
+- [x] `templates/php-service.template.php` - PHP Service-Klasse
+- [x] `templates/php-test.template.php` - PHPUnit Test
+- [x] `templates/js-class.template.js` - JavaScript ES6 Klasse
+- [x] `templates/js-test.template.test.js` - Vitest Test
+- [x] `templates/shell-script.template.sh` - Bash Script
+- [x] `templates/twig-storefront.template.html.twig` - Shopware Storefront
+
+#### Pre-commit Hook
+- [x] Husky fuer Git Hooks
+- [x] lint-staged fuer staged files
+- [x] ESLint fuer JavaScript
+- [x] ShellCheck fuer Bash Scripts
+
+#### Scripts
+- [x] `scripts/update-snapshots.sh` - Automatische Snapshot-Updates
+- [x] `scripts/coverage-by-chapter.sh` - Coverage-Report pro Kapitel
 
 ---
 
@@ -170,4 +186,12 @@ npm run shellcheck
 # Coverage Reports generieren
 composer test:coverage  # -> coverage/index.html
 npm run test:coverage   # -> coverage/index.html
+
+# Coverage per chapter
+./scripts/coverage-by-chapter.sh
+./scripts/coverage-by-chapter.sh --json
+
+# Snapshot management
+./scripts/update-snapshots.sh         # Update all snapshots
+./scripts/update-snapshots.sh --check # Check if snapshots are outdated
 ```

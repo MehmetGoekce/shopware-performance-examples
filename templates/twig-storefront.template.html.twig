@@ -1,0 +1,78 @@
+{#
+  [TEMPLATE_NAME] - [KURZE_BESCHREIBUNG]
+
+  [LÄNGERE_BESCHREIBUNG]
+
+  Installation:
+    1. Kopieren nach: [ZIEL_PFAD]
+    2. Cache leeren: bin/console cache:clear
+
+  Performance-Hinweise:
+    - [HINWEIS_1]
+    - [HINWEIS_2]
+
+  @author [AUTHOR]
+  @since 1.0.0
+  @see [KAPITEL_REFERENZ]
+#}
+
+{% sw_extends '@Storefront/storefront/base.html.twig' %}
+
+{# CSS-Klassen für Styling und A/B-Testing #}
+{% block base_body_classes %}
+    {{ parent() }}
+    custom-template
+{% endblock %}
+
+{# Data-Attribute für JavaScript-Interaktion #}
+{% block base_body_attributes %}
+    {{ parent() }}
+    data-custom-enabled="true"
+{% endblock %}
+
+{# Zusätzliche Meta-Tags #}
+{% block base_head_meta %}
+    {{ parent() }}
+    {# Performance-relevante Meta-Tags #}
+{% endblock %}
+
+{# Kritisches CSS inline laden #}
+{% block base_head_stylesheets %}
+    {{ parent() }}
+    {# Optional: Inline critical CSS
+    <style>
+        .above-fold { ... }
+    </style>
+    #}
+{% endblock %}
+
+{# Hauptinhalt überschreiben #}
+{% block base_main_inner %}
+    <div class="custom-container">
+        {# Shopware-Inhalte einbinden #}
+        {{ parent() }}
+
+        {# Eigene Inhalte #}
+        <section class="custom-section">
+            {% if customData is defined %}
+                {% for item in customData %}
+                    <div class="custom-item">
+                        {{ item.name }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        </section>
+    </div>
+{% endblock %}
+
+{# JavaScript am Ende der Seite #}
+{% block base_body_script %}
+    {{ parent() }}
+
+    {# Defer-Script für Performance #}
+    <script defer>
+        document.addEventListener('DOMContentLoaded', function() {
+            // TODO: Initialisierung
+        });
+    </script>
+{% endblock %}
