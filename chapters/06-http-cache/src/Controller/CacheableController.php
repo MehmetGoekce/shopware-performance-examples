@@ -169,26 +169,31 @@ class CacheableController extends StorefrontController
     // Private Hilfsmethoden (Dummy-Implementierungen)
     // ============================================================
 
+    // EXAMPLE: Vereinfacht für Lernzwecke. Produktions-Code würde hier die Shopware DAL nutzen.
     private function getPageData(): array
     {
         return ['example' => 'data'];
     }
 
+    // EXAMPLE: Vereinfacht für Lernzwecke. Produktions-Code würde hier die Shopware DAL nutzen.
     private function getPromotions(): array
     {
         return [];
     }
 
+    // EXAMPLE: Vereinfacht für Lernzwecke. Produktions-Code würde hier die Shopware DAL nutzen.
     private function getLegalContent(string $page): string
     {
         return '';
     }
 
+    // EXAMPLE: Vereinfacht für Lernzwecke. Produktions-Code würde hier die Shopware DAL nutzen.
     private function getWishlistItems(SalesChannelContext $context): array
     {
         return [];
     }
 
+    // EXAMPLE: Vereinfacht für Lernzwecke. Produktions-Code würde hier die Shopware DAL nutzen.
     private function getProductStock(string $productId): int
     {
         return 10;

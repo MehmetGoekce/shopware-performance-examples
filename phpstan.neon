@@ -83,6 +83,11 @@ parameters:
             message: '#Property .+ is never read, only written#'
             reportUnmatched: false
 
+        # PerformanceExamples namespace (src/ not autoloaded, loaded via require_once in tests)
+        -
+            message: '#PerformanceExamples\\#'
+            reportUnmatched: false
+
         # PHPUnit dynamic calls in tests (common pattern)
         -
             message: '#Dynamic call to static method PHPUnit\\#'

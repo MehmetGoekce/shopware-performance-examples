@@ -84,14 +84,20 @@ shopware-performance-examples/
 
 ## Verwendung
 
-### Bestimmtes Kapitel auschecken
+### Kapitel-Code verwenden
+
+Jedes Kapitel hat ein eigenes Verzeichnis mit README, Code und Scripts:
 
 ```bash
-# Kapitel 10: Redis
-git checkout chapter-10
+# Kapitel 10: Redis Sentinel
+cd chapters/10-redis-sentinel/
+cat README.md
 
-# Vorher/Nachher vergleichen
-git diff chapter-10-before chapter-10-after
+# Scripts ausführen
+./chapters/10-redis-sentinel/scripts/test-failover.sh
+
+# Alle Kapitel auflisten
+ls chapters/
 ```
 
 ### Benchmarks ausführen

@@ -87,7 +87,7 @@ for chapter_dir in chapters/*/; do
     e2e_tests=$(grep -rl "$chapter" tests/E2E/ 2>/dev/null | wc -l)
 
     # Snapshot tests
-    snapshot_tests=$(grep -c "$chapter" tests/Snapshots/TwigTemplateSnapshotTest.php 2>/dev/null)
+    snapshot_tests=$(grep -c "$chapter" tests/Snapshots/TwigTemplateTest.php 2>/dev/null)
     [[ -z "$snapshot_tests" ]] && snapshot_tests=0
 
     # Re-enable exit on error

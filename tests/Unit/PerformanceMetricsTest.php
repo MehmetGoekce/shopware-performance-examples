@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Memotech\ShopwarePerformance\Tests\Unit;
 
+use PerformanceExamples\ValueObject\CwvThresholds;
 use PHPUnit\Framework\TestCase;
+
+require_once __DIR__ . '/../../src/ValueObject/CwvThresholds.php';
 
 /**
  * Unit Tests for Performance Metrics Calculations
@@ -15,11 +18,13 @@ class PerformanceMetricsTest extends TestCase
 {
     /**
      * Core Web Vitals thresholds (Google 2024).
+     *
+     * @see CwvThresholds
      */
     private const CWV_THRESHOLDS = [
-        'LCP' => ['good' => 2500, 'poor' => 4000],      // ms
-        'INP' => ['good' => 200, 'poor' => 500],        // ms
-        'CLS' => ['good' => 0.1, 'poor' => 0.25],       // score
+        'LCP' => ['good' => CwvThresholds::LCP_GOOD, 'poor' => CwvThresholds::LCP_POOR],
+        'INP' => ['good' => CwvThresholds::INP_GOOD, 'poor' => CwvThresholds::INP_POOR],
+        'CLS' => ['good' => CwvThresholds::CLS_GOOD, 'poor' => CwvThresholds::CLS_POOR],
     ];
 
     /**

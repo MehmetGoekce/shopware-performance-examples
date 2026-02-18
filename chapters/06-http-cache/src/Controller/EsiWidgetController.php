@@ -199,6 +199,7 @@ class EsiWidgetController extends StorefrontController
     // Private Hilfsmethoden
     // ============================================================
 
+    // EXAMPLE: Vereinfacht für Lernzwecke. Produktions-Code würde hier die Shopware DAL nutzen.
     private function getProductStock(string $productId, SalesChannelContext $context): int
     {
         $criteria = new Criteria([$productId]);
@@ -207,6 +208,7 @@ class EsiWidgetController extends StorefrontController
         return $product?->getStock() ?? 0;
     }
 
+    // EXAMPLE: Vereinfacht für Lernzwecke. Produktions-Code würde hier die Shopware DAL nutzen.
     private function getProductPrice(string $productId, SalesChannelContext $context): float
     {
         $criteria = new Criteria([$productId]);
@@ -217,12 +219,14 @@ class EsiWidgetController extends StorefrontController
         return $product?->getCurrencyPrice($context->getCurrency()->getId())?->getGross() ?? 0.0;
     }
 
+    // EXAMPLE: Vereinfacht für Lernzwecke. Produktions-Code würde hier die Shopware DAL nutzen.
     private function getRecentlyViewedProducts(SalesChannelContext $context): array
     {
         // Implementierung: Aus Session oder Cookie laden
         return [];
     }
 
+    // EXAMPLE: Vereinfacht für Lernzwecke. Produktions-Code würde hier die Shopware DAL nutzen.
     private function getPromotion(string $promotionId): array
     {
         // Implementierung: Promotion aus Datenbank laden

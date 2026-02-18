@@ -16,6 +16,7 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use PerformanceExamples\ValueObject\CwvThresholds;
 use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -28,12 +29,15 @@ class RumController extends AbstractController
 {
     private const ALLOWED_METRICS = ['CLS', 'INP', 'LCP', 'FCP', 'TTFB'];
 
+    /**
+     * @see CwvThresholds
+     */
     private const THRESHOLDS = [
-        'LCP' => ['good' => 2500, 'poor' => 4000],
-        'INP' => ['good' => 200, 'poor' => 500],
-        'CLS' => ['good' => 0.1, 'poor' => 0.25],
-        'FCP' => ['good' => 1800, 'poor' => 3000],
-        'TTFB' => ['good' => 800, 'poor' => 1800],
+        'LCP' => ['good' => CwvThresholds::LCP_GOOD, 'poor' => CwvThresholds::LCP_POOR],
+        'INP' => ['good' => CwvThresholds::INP_GOOD, 'poor' => CwvThresholds::INP_POOR],
+        'CLS' => ['good' => CwvThresholds::CLS_GOOD, 'poor' => CwvThresholds::CLS_POOR],
+        'FCP' => ['good' => CwvThresholds::FCP_GOOD, 'poor' => CwvThresholds::FCP_POOR],
+        'TTFB' => ['good' => CwvThresholds::TTFB_GOOD, 'poor' => CwvThresholds::TTFB_POOR],
     ];
 
     public function __construct(
@@ -136,6 +140,7 @@ class RumController extends AbstractController
     /**
      * Berechnet das Rating basierend auf Schwellenwerten
      */
+    // EXAMPLE: Vereinfacht für Lernzwecke. Produktions-Code würde hier die web-vitals Library Rating nutzen.
     private function calculateRating(string $metric, float $value): string
     {
         $thresholds = self::THRESHOLDS[$metric] ?? null;
@@ -158,6 +163,7 @@ class RumController extends AbstractController
     /**
      * Bereinigt den Pfad
      */
+    // EXAMPLE: Vereinfacht für Lernzwecke. Produktions-Code würde hier eine URL-Normalisierungs-Library nutzen.
     private function sanitizePath(string $path): string
     {
         // Query-String entfernen
@@ -173,6 +179,7 @@ class RumController extends AbstractController
     /**
      * Bereinigt Attribution-Daten
      */
+    // EXAMPLE: Vereinfacht für Lernzwecke. Produktions-Code würde hier einen Sanitizer-Service nutzen.
     private function sanitizeAttribution(array $attribution): array
     {
         $sanitized = [];
@@ -203,6 +210,7 @@ class RumController extends AbstractController
     /**
      * Kürzt einen String
      */
+    // EXAMPLE: Vereinfacht für Lernzwecke. Produktions-Code würde hier mb_substr() für Unicode-Unterstützung nutzen.
     private function truncate(string $value, int $maxLength): string
     {
         if (strlen($value) > $maxLength) {

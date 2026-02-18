@@ -15,6 +15,7 @@ declare(strict_types=1);
 
 namespace App\Service;
 
+use PerformanceExamples\ValueObject\CwvThresholds;
 use Psr\Log\LoggerInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
@@ -22,14 +23,16 @@ class RumAlertService
 {
     /**
      * Core Web Vitals Schwellenwerte (p75)
-     * Quelle: https://web.dev/articles/vitals
+     * Mapping: good → warning, poor → critical
+     *
+     * @see CwvThresholds
      */
     private const THRESHOLDS = [
-        'LCP' => ['warning' => 2500, 'critical' => 4000],
-        'INP' => ['warning' => 200, 'critical' => 500],
-        'CLS' => ['warning' => 0.1, 'critical' => 0.25],
-        'FCP' => ['warning' => 1800, 'critical' => 3000],
-        'TTFB' => ['warning' => 800, 'critical' => 1800],
+        'LCP' => ['warning' => CwvThresholds::LCP_GOOD, 'critical' => CwvThresholds::LCP_POOR],
+        'INP' => ['warning' => CwvThresholds::INP_GOOD, 'critical' => CwvThresholds::INP_POOR],
+        'CLS' => ['warning' => CwvThresholds::CLS_GOOD, 'critical' => CwvThresholds::CLS_POOR],
+        'FCP' => ['warning' => CwvThresholds::FCP_GOOD, 'critical' => CwvThresholds::FCP_POOR],
+        'TTFB' => ['warning' => CwvThresholds::TTFB_GOOD, 'critical' => CwvThresholds::TTFB_POOR],
     ];
 
     /**
@@ -185,6 +188,7 @@ class RumAlertService
     /**
      * Sendet Alert an Slack
      */
+    // EXAMPLE: Vereinfacht für Lernzwecke. Produktions-Code würde hier Retry-Logik und Rate-Limiting nutzen.
     private function sendSlackAlert(string $message, string $level): void
     {
         $color = $level === 'critical' ? 'danger' : 'warning';
@@ -211,6 +215,7 @@ class RumAlertService
     /**
      * Sendet Alert per Email
      */
+    // EXAMPLE: Vereinfacht für Lernzwecke. Produktions-Code würde hier Symfony Mailer nutzen.
     private function sendEmailAlert(
         string $metric,
         float $value,
