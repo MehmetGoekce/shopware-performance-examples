@@ -90,7 +90,7 @@ measure_url() {
 clear_cache() {
     cd "${SHOPWARE_ROOT}"
     bin/console cache:clear > /dev/null 2>&1
-    bin/console http:cache:clear > /dev/null 2>&1
+    bin/console cache:clear > /dev/null 2>&1
 }
 
 echo -e "${BLUE}========================================${NC}"

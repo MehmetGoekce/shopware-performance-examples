@@ -4,14 +4,12 @@
 # Datei: config/packages/shopware.yaml
 # @see https://github.com/MehmetGoekce/shopware-performance-examples
 
+# Hinweis: HTTP-Cache wird über Umgebungsvariablen aktiviert:
+#   SHOPWARE_HTTP_CACHE_ENABLED=1
+#   SHOPWARE_HTTP_DEFAULT_TTL=7200
+
 shopware:
     http_cache:
-        # Cache aktivieren (WICHTIG!)
-        enabled: true
-
-        # Standard TTL in Sekunden (2 Stunden)
-        default_ttl: 7200
-
         # Stale-While-Revalidate: Veralteten Cache ausliefern während Refresh
         # Verbessert User Experience massiv
         stale_while_revalidate: 3600
@@ -20,14 +18,10 @@ shopware:
         # Wichtig für Ausfallsicherheit
         stale_if_error: 86400
 
-        # Cache-Invalidierung bei Produkt-Updates
+    # Cache-Invalidierung bei Produkt-Updates
+    cache:
         invalidation:
-            product_indexer: true
-            product_detail_route: true
-            product_listing_route: true
-
-    # Cache für Storefront-Requests
-    storefront:
-        csrf:
-            # Bei aktivem HTTP-Cache: AJAX für CSRF-Token
-            mode: ajax
+            product_detail_route:
+                - '\Shopware\Core\Content\Product\SalesChannel\Detail\CachedProductDetailRoute'
+            product_listing_route:
+                - '\Shopware\Core\Content\Product\SalesChannel\Listing\CachedProductListingRoute'

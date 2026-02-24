@@ -20,14 +20,11 @@ framework:
                 default_lifetime: 7200  # 2 Stunden
 
 # Shopware HTTP-Cache
+# Hinweis: 'enabled' und 'default_ttl' werden über Umgebungsvariablen gesetzt:
+#   SHOPWARE_HTTP_CACHE_ENABLED=1
+#   SHOPWARE_HTTP_DEFAULT_TTL=7200
 shopware:
     http_cache:
-        # HTTP-Cache aktivieren
-        enabled: true
-
-        # Default TTL für Seiten ohne explizite Header
-        default_ttl: 7200  # 2 Stunden
-
         # Welche Seiten gecacht werden
         ignored_url_parameters:
             - 'pk_campaign'
@@ -49,7 +46,3 @@ shopware:
     cache:
         invalidation:
             delay: 0
-            count: 150
-
-        # Redis für Shopware-Cache
-        redis_url: '%env(REDIS_URL)%'

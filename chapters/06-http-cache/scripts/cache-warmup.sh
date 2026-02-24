@@ -198,7 +198,7 @@ echo ""
 # Shopware CLI Warmup wenn verfügbar
 if [[ -f "bin/console" ]]; then
     echo -e "${BLUE}🚀 Starte Shopware HTTP-Cache Warmup...${NC}"
-    bin/console http:cache:warm:up --no-debug 2>/dev/null || true
+    bin/console cache:warmup --no-debug 2>/dev/null || true
     echo ""
 fi
 

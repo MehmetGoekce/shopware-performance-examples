@@ -25,7 +25,8 @@ elasticsearch:
 
     # Request timeout in seconds
     # Increase for large catalogs (100k+ products)
-    timeout: 30
+    search:
+        timeout: 30
 
     # ============================================
     # Index Settings
@@ -129,33 +130,18 @@ elasticsearch:
                         - 'fernseher, tv, television'
 
 # ============================================
-# Shopware Search Configuration
+# Shopware Configuration
 # ============================================
+# Hinweis: Elasticsearch ist ein separates Bundle mit Root-Key 'elasticsearch',
+# NICHT unter 'shopware.elasticsearch'.
+# Search-Boost-Werte werden über die Admin-Oberfläche konfiguriert
+# (Einstellungen > Suche > Suchverhalten).
 shopware:
-    elasticsearch:
-        # Enable for product search
-        product:
-            enabled: true
-
-        # Search field boost values
-        # Higher = more important for relevance
-        product_search_fields:
-            name:
-                boost: 100
-            productNumber:
-                boost: 80
-            manufacturerName:
-                boost: 50
-            description:
-                boost: 20
-            customSearchKeywords:
-                boost: 150
-
-        # Admin worker (DISABLE in production!)
-        # Use CLI workers instead
-        admin_worker:
-            enable_admin_worker: false
-            poll_interval: 30000
+    # Admin worker (DISABLE in production!)
+    # Use CLI workers instead
+    admin_worker:
+        enable_admin_worker: false
+        poll_interval: 30000
 
 # ============================================
 # Environment Variables

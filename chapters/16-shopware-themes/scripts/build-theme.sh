@@ -139,9 +139,9 @@ if [[ "${SKIP_CACHE}" = false ]]; then
 
     # HTTP-Cache leeren
     if [[ "${VERBOSE}" = true ]]; then
-        bin/console http:cache:clear
+        bin/console cache:clear
     else
-        bin/console http:cache:clear > /dev/null 2>&1
+        bin/console cache:clear > /dev/null 2>&1
     fi
 
     # Theme-Cache leeren

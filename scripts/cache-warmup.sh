@@ -26,7 +26,7 @@ $CONSOLE cache:clear
 
 echo ""
 echo -e "${YELLOW}2. Warming HTTP cache...${NC}"
-$CONSOLE http:cache:warm:up
+$CONSOLE cache:warmup
 
 echo ""
 echo -e "${YELLOW}3. Warming theme cache...${NC}"

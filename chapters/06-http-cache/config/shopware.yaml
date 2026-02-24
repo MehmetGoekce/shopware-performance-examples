@@ -6,18 +6,15 @@
 #
 # @see https://github.com/MehmetGoekce/shopware-performance-examples
 
+# Hinweis: HTTP-Cache wird über Umgebungsvariablen aktiviert:
+#   SHOPWARE_HTTP_CACHE_ENABLED=1
+#   SHOPWARE_HTTP_DEFAULT_TTL=7200
+
 shopware:
     # ============================================================
     # HTTP-Cache Konfiguration
     # ============================================================
     http_cache:
-        # Cache aktivieren (WICHTIG: Standard ist deaktiviert!)
-        enabled: true
-
-        # Standard-TTL: 2 Stunden
-        # Gilt wenn Response keinen eigenen Cache-Control Header setzt
-        default_ttl: 7200
-
         # Stale-While-Revalidate: 4 Stunden
         # Erlaubt Auslieferung von "veraltetem" Cache während Refresh
         # Browser-Support: Chrome 75+, Firefox 68+ (seit 2019/2020)
@@ -51,17 +48,18 @@ shopware:
             - 'mc_cid'     # Mailchimp
             - 'mc_eid'     # Mailchimp
 
-        # Query-Parameter die private Cache erzwingen
-        # Regex-Pattern für Parameter die Session-spezifisch sind
-        private_allowed_query_pattern: '/^(currency|language|preview)$/'
-
-        # Automatische Cache-Invalidierung
-        cache_invalidation:
-            product_listing: true      # Kategorieseiten bei Produktänderung
-            product_detail: true       # Produktseiten bei Änderung
-            cms_page: true             # CMS-Seiten bei Änderung
-            category: true             # Kategorien bei Änderung
-            landing_page: true         # Landingpages bei Änderung
+    # Cache-Invalidierung (unter shopware.cache, nicht http_cache)
+    cache:
+        invalidation:
+            delay: 0
+            product_listing_route:
+                - '\Shopware\Core\Content\Product\SalesChannel\Listing\CachedProductListingRoute'
+            product_detail_route:
+                - '\Shopware\Core\Content\Product\SalesChannel\Detail\CachedProductDetailRoute'
+            category_route:
+                - '\Shopware\Core\Content\Category\SalesChannel\CachedCategoryRoute'
+            landing_page_route:
+                - '\Shopware\Core\Content\LandingPage\SalesChannel\CachedLandingPageRoute'
 
     # ============================================================
     # Reverse Proxy (Varnish) Konfiguration

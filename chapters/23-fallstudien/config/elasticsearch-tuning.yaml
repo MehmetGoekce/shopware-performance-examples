@@ -4,21 +4,20 @@
 # Optimierte ES-Konfiguration für B2B-Shop mit 450.000 Produkten.
 # Ergebnis: Suche von 12 Sekunden auf 180ms
 
-# Shopware Elasticsearch-Konfiguration
-shopware:
-    es:
-        enabled: true
-        indexing_enabled: true
-        index_prefix: 'sw'
+# Elasticsearch-Konfiguration (separates Bundle, Root-Key: 'elasticsearch')
+elasticsearch:
+    enabled: true
+    indexing_enabled: true
+    index_prefix: 'sw'
 
-        # Hosts (Cluster für Production)
-        hosts:
-            - 'elasticsearch:9200'
-            # - 'elasticsearch-2:9200'
-            # - 'elasticsearch-3:9200'
+    # Hosts (Cluster für Production)
+    hosts: 'elasticsearch:9200'
 
-        # Index-Einstellungen
-        index_settings:
+    # Indexing batch size für große Kataloge
+    indexing_batch_size: 500
+
+    # Index-Einstellungen
+    index_settings:
             # Mehr Shards für große Kataloge
             number_of_shards: 3
             number_of_replicas: 1
@@ -42,28 +41,12 @@ shopware:
                         type: stemmer
                         language: light_german
 
-        # Produkt-Index Optimierung
-        product:
-            # Nur relevante Felder indizieren
-            mapping:
-                properties:
-                    productNumber:
-                        type: keyword
-                    name:
-                        type: text
-                        analyzer: german_product
-                    description:
-                        type: text
-                        analyzer: german_product
-                    customFields.technical_specs:
-                        type: text
-                    manufacturer.name:
-                        type: keyword
-                    categories.name:
-                        type: keyword
-
-            # Batch-Größe für Indexierung
-            batch_size: 500
+    # Produkt-Index: Custom Fields Mapping
+    # Für erweiterte Mappings: ElasticsearchCustomFieldsMappingEvent verwenden
+    product:
+        custom_fields_mapping:
+            technical_specs:
+                type: text
 
 # Elasticsearch Server-Settings (elasticsearch.yml)
 # Diese Werte im ES-Container/Server setzen:

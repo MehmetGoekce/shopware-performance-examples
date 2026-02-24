@@ -59,25 +59,11 @@ framework:
         # Failure-Transport
         failure_transport: failed
 
-# Shopware Queue-Einstellungen
-shopware:
-    messenger:
-        consume:
-            # Parallel Worker pro Transport
-            high_priority:
-                workers: 4
-                memory_limit: 512M
-                time_limit: 60
-
-            default:
-                workers: 2
-                memory_limit: 256M
-                time_limit: 120
-
-            low_priority:
-                workers: 1
-                memory_limit: 128M
-                time_limit: 300
+# Worker-Konfiguration (via CLI-Argumente, nicht YAML)
+# Die Anzahl Worker und Limits werden beim Start konfiguriert:
+#   messenger:consume high_priority --time-limit=60 --memory-limit=512M
+#   messenger:consume default --time-limit=120 --memory-limit=256M
+#   messenger:consume low_priority --time-limit=300 --memory-limit=128M
 
 # Supervisor-Konfiguration (supervisor.conf)
 # Für Production-Deployment:

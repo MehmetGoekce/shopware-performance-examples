@@ -32,15 +32,7 @@ framework:
 shopware:
     cache:
         # Tenant-spezifischer Cache-Prefix
-        prefix: "sw_%env(TENANT_ID)%_"
-
-        # Redis-Cluster für High-Availability
-        redis_cluster:
-            enabled: false  # Bei Bedarf aktivieren
-            hosts:
-                - 'redis-node-1:6379'
-                - 'redis-node-2:6379'
-                - 'redis-node-3:6379'
+        redis_prefix: "sw_%env(TENANT_ID)%_"
 
     # HTTP-Cache pro Mandant
     http_cache:
@@ -50,8 +42,9 @@ shopware:
                 - 'x-cache-tags'
                 - 'x-tenant-id'  # Tenant-Header für Invalidierung
 
-# Session-Handler
-session:
+# Session-Handler (Symfony Framework)
+framework:
+    session:
     handler_id: 'redis://localhost:6379/2'
     cookie_secure: true
     cookie_samesite: 'lax'

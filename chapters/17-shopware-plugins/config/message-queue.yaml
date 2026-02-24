@@ -26,26 +26,6 @@ shopware:
         # Empty = all transports
         transports: []
 
-    # ============================================
-    # Message Routing
-    # ============================================
-    messenger:
-        # Route specific messages to different transports
-        routing_overwrite:
-            # Heavy indexing tasks -> low priority queue
-            'Shopware\Core\Content\Product\DataAbstractionLayer\ProductIndexingMessage': low_priority
-
-            # Product export -> low priority
-            'Shopware\Core\Content\ProductExport\ScheduledTask\ProductExportGenerateTask': low_priority
-
-            # Sitemap generation -> low priority
-            'Shopware\Core\Content\Sitemap\ScheduledTask\SitemapGenerateTaskHandler': low_priority
-
-            # Newsletter sync -> low priority
-            'Shopware\Core\Content\Newsletter\ScheduledTask\NewsletterRecipientTask': low_priority
-
-            # Custom import messages -> low priority
-            'App\MessageQueue\ProductImportMessage': low_priority
 
 # ============================================
 # Framework Messenger Configuration
@@ -88,6 +68,13 @@ framework:
 
         # Default bus configuration
         default_bus: messenger.bus.shopware
+
+        # Message routing (heavy tasks -> low priority queue)
+        routing:
+            'Shopware\Core\Content\Product\DataAbstractionLayer\ProductIndexingMessage': low_priority
+            'Shopware\Core\Content\ProductExport\ScheduledTask\ProductExportGenerateTask': low_priority
+            'Shopware\Core\Content\Sitemap\ScheduledTask\SitemapGenerateTaskHandler': low_priority
+            'App\MessageQueue\ProductImportMessage': low_priority
 
 # ============================================
 # Notes
