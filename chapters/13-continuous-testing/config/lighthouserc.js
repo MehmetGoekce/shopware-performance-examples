@@ -25,8 +25,8 @@ module.exports = {
       ],
 
       // Shopware Storefront starten (falls lokal)
-      // startServerCommand: 'bin/console server:start',
-      // startServerReadyPattern: 'Server running',
+      // startServerCommand: 'php -S localhost:8000 -t public/',
+      // startServerReadyPattern: 'Development Server',
 
       // Chrome-Einstellungen
       settings: {

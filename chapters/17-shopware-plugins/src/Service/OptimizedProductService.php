@@ -81,9 +81,8 @@ class OptimizedProductService
         $criteria->addAssociation('manufacturer');
 
         // First price only - not all price rules
-        $priceCriteria = new Criteria();
-        $priceCriteria->setLimit(1);
-        $criteria->getAssociation('prices')->addCriteria($priceCriteria);
+        $criteria->getAssociation('prices')
+            ->setLimit(1);
 
         // Total count for pagination (optional, only if needed)
         // $criteria->setTotalCountMode(Criteria::TOTAL_COUNT_MODE_EXACT);
@@ -116,13 +115,11 @@ class OptimizedProductService
         $criteria->addAssociation('prices');
 
         // Reviews (limited)
-        $reviewCriteria = new Criteria();
-        $reviewCriteria->setLimit(10);
-        $reviewCriteria->addSorting(
-            new FieldSorting('createdAt', FieldSorting::DESCENDING)
-        );
         $criteria->getAssociation('productReviews')
-            ->addCriteria($reviewCriteria);
+            ->setLimit(10)
+            ->addSorting(
+                new FieldSorting('createdAt', FieldSorting::DESCENDING)
+            );
 
         // Cross-selling (if configured)
         $criteria->addAssociation('crossSellings');

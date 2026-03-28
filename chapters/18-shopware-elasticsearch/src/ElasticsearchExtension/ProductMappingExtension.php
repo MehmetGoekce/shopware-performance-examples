@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\ElasticsearchExtension;
 
-use Shopware\Elasticsearch\Framework\ElasticsearchHelper;
+use Shopware\Elasticsearch\Event\ElasticsearchCustomFieldsMappingEvent;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
 /**
@@ -26,7 +26,7 @@ class ProductMappingExtension implements EventSubscriberInterface
     public static function getSubscribedEvents(): array
     {
         return [
-            'elasticsearch.product.mapping' => 'onProductMapping',
+            ElasticsearchCustomFieldsMappingEvent::class => 'onProductMapping',
         ];
     }
 
@@ -35,82 +35,33 @@ class ProductMappingExtension implements EventSubscriberInterface
      *
      * Performance Tips:
      * - Use 'keyword' type for exact matches (faster than 'text')
-     * - Use 'integer' for numeric sorting (faster than 'float')
-     * - Avoid 'nested' type if possible (expensive queries)
-     * - Set 'doc_values: true' for aggregation fields
+     * - Use 'int' for numeric sorting (faster than 'float')
+     * - setMapping() accepts (string $field, string $type)
      */
-    public function onProductMapping(array &$mapping): void
+    public function onProductMapping(ElasticsearchCustomFieldsMappingEvent $event): void
     {
+        if ($event->getEntity() !== 'product') {
+            return;
+        }
+
         // Custom sort value for manual product ordering
-        // Use integer for fastest comparison
-        $mapping['properties']['customSortValue'] = [
-            'type' => 'integer',
-            'doc_values' => true,
-        ];
+        $event->setMapping('customSortValue', 'int');
 
         // Exact match field for product numbers
         // Keyword type is 10x faster than text for exact matches
-        $mapping['properties']['productNumberExact'] = [
-            'type' => 'keyword',
-            'normalizer' => 'lowercase',
-        ];
+        $event->setMapping('productNumberExact', 'keyword');
 
         // EAN/GTIN field for barcode searches
-        $mapping['properties']['ean'] = [
-            'type' => 'keyword',
-        ];
+        $event->setMapping('ean', 'keyword');
 
         // Manufacturer product number
-        $mapping['properties']['manufacturerNumber'] = [
-            'type' => 'keyword',
-        ];
+        $event->setMapping('manufacturerNumber', 'keyword');
 
-        // Autocomplete field with edge n-grams
-        // Enables search-as-you-type functionality
-        $mapping['properties']['nameAutocomplete'] = [
-            'type' => 'text',
-            'analyzer' => 'autocomplete_analyzer',
-            'search_analyzer' => 'standard',
-        ];
+        // Search keywords (for exact matching)
+        $event->setMapping('searchKeywords', 'keyword');
 
-        // Nested custom attributes for complex filtering
-        // WARNING: Nested queries are expensive - use sparingly!
-        $mapping['properties']['customAttributes'] = [
-            'type' => 'nested',
-            'properties' => [
-                'key' => ['type' => 'keyword'],
-                'value' => [
-                    'type' => 'text',
-                    'fields' => [
-                        'keyword' => ['type' => 'keyword'],
-                    ],
-                ],
-            ],
-        ];
-
-        // Price range field for fast faceting
-        $mapping['properties']['priceRange'] = [
-            'type' => 'keyword',
-            'doc_values' => true,
-        ];
-
-        // Availability score for sorting
-        // Combines stock and delivery time
-        $mapping['properties']['availabilityScore'] = [
-            'type' => 'integer',
-            'doc_values' => true,
-        ];
-
-        // Search keywords as keyword array (for exact matching)
-        $mapping['properties']['searchKeywords'] = [
-            'type' => 'keyword',
-        ];
-
-        // Rating as scaled integer (0-500 for 0.0-5.0)
+        // Rating as integer (0-500 for 0.0-5.0)
         // Integer operations are faster than float
-        $mapping['properties']['ratingScaled'] = [
-            'type' => 'integer',
-            'doc_values' => true,
-        ];
+        $event->setMapping('ratingScaled', 'int');
     }
 }

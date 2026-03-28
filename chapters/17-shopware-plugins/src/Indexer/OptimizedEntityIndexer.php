@@ -136,9 +136,8 @@ class OptimizedEntityIndexer extends EntityIndexer
             'count' => count($ids),
         ]);
 
-        // Third parameter = forceQueue (true = async processing)
-        // Use true for heavy operations to not block the request
-        return new EntityIndexingMessage($ids, null, true);
+        // Use forceQueue for heavy operations to not block the request
+        return new EntityIndexingMessage($ids, null, forceQueue: true);
     }
 
     /**
