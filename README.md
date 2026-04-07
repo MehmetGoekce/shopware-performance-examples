@@ -138,7 +138,7 @@ docker-compose -f docker-compose.redis.yml logs -f sentinel1
 ## Buch kaufen
 
 - **Leanpub:** [leanpub.com/shopware-performance](https://leanpub.com/shopware-performance)
-- **Gumroad:** [memotech.gumroad.com/shopware-performance](https://memotech.gumroad.com/shopware-performance)
+
 
 ## Support
 
