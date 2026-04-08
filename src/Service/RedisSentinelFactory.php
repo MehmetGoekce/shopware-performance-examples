@@ -52,7 +52,7 @@ class RedisSentinelFactory
 
         $redis = new \Redis();
 
-        $connected = $redis->connect(
+        $connected = @$redis->connect(
             $host,
             (int) $port,
             self::DEFAULT_TIMEOUT
@@ -115,7 +115,7 @@ class RedisSentinelFactory
 
         for ($attempt = 1; $attempt <= self::MAX_RETRIES; $attempt++) {
             try {
-                $connected = $sentinel->connect(
+                $connected = @$sentinel->connect(
                     $host,
                     (int) $port,
                     self::DEFAULT_TIMEOUT
@@ -184,7 +184,7 @@ class RedisSentinelFactory
 
             try {
                 $sentinel = new \Redis();
-                $connected = $sentinel->connect($host, (int) $port, self::DEFAULT_TIMEOUT);
+                $connected = @$sentinel->connect($host, (int) $port, self::DEFAULT_TIMEOUT);
                 $sentinel->close();
 
                 $status[$sentinelHost] = [
