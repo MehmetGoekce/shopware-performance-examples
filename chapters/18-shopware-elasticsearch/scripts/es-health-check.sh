@@ -15,6 +15,20 @@
 
 set -euo pipefail
 
+# Parse arguments
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    echo "Usage: $0 [options]"
+    echo ""
+    echo "Elasticsearch/OpenSearch cluster health check."
+    echo ""
+    echo "Options:"
+    echo "  -h, --help    Show this help"
+    echo ""
+    echo "Environment:"
+    echo "  ES_URL        Elasticsearch URL (default: http://localhost:9200)"
+    exit 0
+fi
+
 # Configuration
 ES_URL="${ES_URL:-http://localhost:9200}"
 WARNING_HEAP_PERCENT=75

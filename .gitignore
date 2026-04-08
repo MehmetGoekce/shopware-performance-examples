@@ -43,7 +43,6 @@ coverage/
 playwright-report/
 test-results/
 
-# Package locks (use composer.lock and package-lock.json)
+# Package locks
 composer.lock
-package-lock.json
 .twig-cs-fixer.cache

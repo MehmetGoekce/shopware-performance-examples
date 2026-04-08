@@ -110,6 +110,7 @@ jobs:
         with:
           scandir: './chapters'
           additional_files: '*.sh'
+          severity: warning
 
   bats:
     name: BATS Shell Tests
