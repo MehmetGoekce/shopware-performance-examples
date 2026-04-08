@@ -397,16 +397,18 @@ class StatisticalAnalyzer
      */
     private function getZValue(float $probability): float
     {
-        // Lookup Table für häufige Werte
+        // String keys to avoid PHP float-to-int array key truncation
         $lookup = [
-            0.90 => 1.282,
-            0.95 => 1.645,
-            0.975 => 1.960,
-            0.99 => 2.326,
-            0.995 => 2.576,
+            '0.8' => 0.842,
+            '0.9' => 1.282,
+            '0.95' => 1.645,
+            '0.975' => 1.960,
+            '0.99' => 2.326,
+            '0.995' => 2.576,
         ];
 
-        return $lookup[$probability] ?? 1.96; // Default: 95%
+        $key = (string) round($probability, 3);
+        return $lookup[$key] ?? 1.96; // Default: 95%
     }
 
     /**

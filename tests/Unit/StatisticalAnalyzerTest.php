@@ -28,6 +28,7 @@ class StatisticalAnalyzerTest extends TestCase
 
     protected function setUp(): void
     {
+        mt_srand(42);
         $this->analyzer = new StatisticalAnalyzer();
     }
 
