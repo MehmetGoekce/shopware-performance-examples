@@ -13,12 +13,14 @@ Dieses Verzeichnis enthaelt alle Redis-Konfigurationen und Scripts aus Kapitel 1
 - `redis-auth.example.conf` - Skeleton fuer Secrets-Datei (requirepass + masterauth)
 - `sentinel-auth.example.conf` - Skeleton fuer Sentinel-Secrets (sentinel auth-pass)
 - `users.acl.example` - Skeleton fuer Redis 7.x ACL-Persistenz (default off + shopware-User + sentinel-watcher)
+- `redis-tls.example.conf` - Skeleton fuer TLS-Direktiven (tls-port, cert-files, mutual TLS, TLS 1.2+1.3)
 - `shopware-redis.yaml` - Shopware/Symfony Sentinel-Integration
 
 ### scripts/
 - `redis-impact-test.sh` - Misst Auswirkung eines Redis-Ausfalls
 - `test-failover.sh` - Testet automatisches Sentinel-Failover
 - `redis-monitor.sh` - Health-Check und Monitoring Script (erwartet REDIS_AUTH_PASSWORD in der Env)
+- `generate-tls-certs.example.sh` - Test-CA + Server-/Client-Cert fuer TLS-Setup (NICHT fuer Production)
 
 ### Root
 - `.env.example` - Shopware/Symfony Env-Vars (REDIS_AUTH_PASSWORD, Sentinel-Hosts, Service-Name)
