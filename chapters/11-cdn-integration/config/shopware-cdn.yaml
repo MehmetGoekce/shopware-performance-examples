@@ -108,9 +108,15 @@ shopware:
 #         # Default TTL für gecachte Responses
 #         default_ttl: 7200  # 2 Stunden
 #
-#         # Cache-Tags für selektives Purging
+#         # Cache-Tags fuer selektives Purging am CDN-Edge.
+#         # Cloudflare nutzt "Cache-Tag" (komma-separiert) — seit 2026 auf
+#         # ALLEN Plans (Free, Pro, Business, Enterprise) verfuegbar.
+#         # Fastly nutzt "Surrogate-Key" (space-separiert).
+#         # Varnish liest "Surrogate-Key" via xkey VMOD.
 #         tag_headers:
-#             - 'X-Cache-Tags'
+#             - 'Cache-Tag'        # Cloudflare-Konvention
+#             - 'Surrogate-Key'    # Fastly-Konvention
+#             - 'X-Cache-Tags'     # Legacy/Custom
 
 # ============================================================================
 # Vary-Header & Cookie-Whitelist gegen Session/Cart-Leaks
