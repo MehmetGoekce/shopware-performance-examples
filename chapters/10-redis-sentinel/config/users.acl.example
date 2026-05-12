@@ -1,0 +1,27 @@
+# /etc/redis/users.acl  (chmod 640, root:redis)
+#
+# Skeleton fuer Redis 7.x ACL-Persistenz. Diese Datei wird per
+# `aclfile /etc/redis/users.acl`-Direktive in redis.conf aktiviert.
+#
+# Generierungs-Workflow (siehe Buch Kap 10, Subsection "Redis 7.x ACLs"):
+#   1. Im laufenden Redis Users via `redis-cli ACL SETUSER ...` anlegen
+#   2. `redis-cli ACL SAVE` schreibt diese Datei
+#   3. chown redis:redis + chmod 640
+#
+# Diese .example-Datei ist NICHT lauffaehig — Hashes muessen frisch
+# generiert werden (Redis ersetzt Klartext-Passwoerter beim SAVE durch
+# SHA256-Hashes, daher hier nur Platzhalter).
+#
+# Format (ACL LIST-Output): user <name> [on|off] >hash...|nopass ~pattern +cmd -cmd
+#
+# Quelle: https://redis.io/docs/latest/operate/oss_and_stack/management/security/acl/
+
+# Default-User deaktivieren (statt nopass +@all aus dem Default zu erben):
+user default off nopass ~* &* -@all
+
+# Shopware-Account: alle Datentyp-Operationen, kein FLUSH/CONFIG/DEBUG.
+# Hash beim ersten ACL SAVE durch Redis ersetzt.
+user shopware on >REPLACED-BY-ACL-SAVE-SHA256 ~* &* +@read +@write +@hash +@set +@list +@string +@sortedset +@scripting +@connection +@transaction +@keyspace +@pubsub -@dangerous
+
+# Read-only Watcher fuer Monitoring-Scripts (INFO, PING, REPLCONF).
+user sentinel-watcher on >REPLACED-BY-ACL-SAVE-SHA256 ~* &* +ping +info +client|setname +replconf -@all

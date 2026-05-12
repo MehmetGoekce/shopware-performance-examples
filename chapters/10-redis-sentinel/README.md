@@ -12,6 +12,7 @@ Dieses Verzeichnis enthaelt alle Redis-Konfigurationen und Scripts aus Kapitel 1
 - `sentinel.conf` - Redis Sentinel Konfiguration (fuer alle 3 Nodes)
 - `redis-auth.example.conf` - Skeleton fuer Secrets-Datei (requirepass + masterauth)
 - `sentinel-auth.example.conf` - Skeleton fuer Sentinel-Secrets (sentinel auth-pass)
+- `users.acl.example` - Skeleton fuer Redis 7.x ACL-Persistenz (default off + shopware-User + sentinel-watcher)
 - `shopware-redis.yaml` - Shopware/Symfony Sentinel-Integration
 
 ### scripts/
