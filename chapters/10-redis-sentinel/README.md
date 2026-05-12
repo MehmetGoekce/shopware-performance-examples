@@ -156,8 +156,24 @@ source /etc/profile.d/redis-credentials.sh
 | Failover-Zeit | Manuell (Minuten) | Automatisch (5-30 Sek) |
 | Datenverlust-Risiko | Hoch | Minimal |
 
+## Predis vs phpredis — Kurz-Entscheidung
+
+| Kontext | Empfehlung | Grund |
+|---|---|---|
+| Sentinel-HA (dieses Setup) | Predis | Vollstaendiger Sentinel-Support seit v1.1.0; phpredis 5.3.2+ hat Symfony-Issue #63261 (Master-Credentials an Sentinel) |
+| Single-Redis + High-Throughput lokal | phpredis | 5-6x schneller bei localhost-Redis (~150k vs ~30k ops/sec) |
+| Shared-Hosting ohne ext-redis | Predis | Keine PHP-Extension noetig |
+
+Beide implementieren dasselbe Symfony-Cache-Adapter-Interface, also
+spaeterer Wechsel ohne YAML-Aenderungen moeglich.
+
+Details: Buch Kap 10, Subsection "Predis vs phpredis — Client-Wahl".
+
 ## Referenzen
 
 - [Redis Sentinel Documentation](https://redis.io/docs/latest/operate/oss_and_stack/management/sentinel/)
 - [Shopware Redis Configuration](https://developer.shopware.com/docs/guides/hosting/infrastructure/redis.html)
 - [Predis Sentinel Support](https://github.com/predis/predis)
+- [phpredis Sentinel](https://github.com/phpredis/phpredis/blob/develop/sentinel.markdown)
+- [Symfony Cache Redis Adapter](https://symfony.com/doc/current/components/cache/adapters/redis_adapter.html)
+- [Symfony Sentinel Bug #63261](https://github.com/symfony/symfony/issues/63261)
