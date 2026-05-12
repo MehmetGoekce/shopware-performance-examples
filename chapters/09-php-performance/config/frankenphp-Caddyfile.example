@@ -1,0 +1,57 @@
+# frankenphp-Caddyfile.example
+#
+# Begleitend zu Kap 9 ("Shop-Performance in 30 Tagen", 2nd Edition).
+# EXPERIMENTELL: FrankenPHP wird offiziell NICHT von Shopware unterstuetzt
+# (Stand 2026). Dieses Skeleton ist als Evaluierungs-Vorlage gedacht und
+# darf nicht ungetestet in Production deployed werden.
+#
+# Schritte:
+#   1. FrankenPHP installieren - siehe https://frankenphp.dev/docs/
+#   2. Caddyfile nach /etc/caddy/Caddyfile kopieren und anpassen
+#      (Domain, Pfade, optional zusaetzliche Sicherheits-Header).
+#   3. Test-Suite gegen Worker-Mode laufen lassen:
+#        php bin/phpunit
+#      (Achten Sie auf Plugin-bedingte Failures - Statics, persistente
+#       DB-Connections, nicht-idempotente Bootstrap-Logik.)
+#   4. Memory-Profiling pro Request mit Blackfire / Tideways.
+#   5. Auf Staging verifizieren - NIE direkt auf Production.
+#
+# Quelle: https://frankenphp.dev/docs/worker/
+
+{
+    # Globale Optionen
+    frankenphp {
+        # Worker-Modus: index.php wird einmal geladen und bedient viele
+        # Requests. Identisch zum Symfony-Runtime-Pattern.
+        worker /var/www/shopware/public/index.php
+    }
+
+    # Caddy 2 macht TLS automatisch via Let's Encrypt
+    auto_https on
+}
+
+# Storefront-Vhost
+shop.example.com {
+    root * /var/www/shopware/public
+
+    # Compression
+    encode gzip zstd
+
+    # PHP via FrankenPHP-Worker
+    php_server
+
+    # Security-Header (Beispiele - an Shopware-Setup anpassen)
+    header {
+        X-Frame-Options          "SAMEORIGIN"
+        X-Content-Type-Options   "nosniff"
+        Referrer-Policy          "strict-origin-when-cross-origin"
+        # HSTS erst aktivieren, wenn TLS stabil und alle Subdomains okay sind:
+        # Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    }
+
+    # Statische Assets mit langer Cache-Time
+    @static {
+        path *.css *.js *.png *.jpg *.jpeg *.webp *.avif *.svg *.woff *.woff2
+    }
+    header @static Cache-Control "public, max-age=31536000, immutable"
+}
