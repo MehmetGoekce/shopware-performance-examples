@@ -70,9 +70,11 @@ cp scripts/opcache-status.php /var/www/shopware/public/
 ## Voraussetzungen
 
 - Ubuntu 22.04/24.04 oder Debian 12
-- PHP 8.2+ mit FPM
+- PHP 8.3 (empfohlen, LTS-Stable) - PHP 8.2 lauffaehig, PHP 8.4 ab Jan 2026 GA und in Verbindung mit aktuellen Plugins einsetzbar
 - Root-Zugriff (fuer Konfigurationsaenderungen)
 - Apache Benchmark (`ab`) fuer JIT-Tests
+
+> Hinweis: Alle Pfade in diesem Verzeichnis verwenden `/etc/php/8.3/...`. Fuer PHP 8.4 sind die Pfade analog (`/etc/php/8.4/...`); die Konfigurations-Direktiven sind identisch.
 
 ## Referenzen
 
