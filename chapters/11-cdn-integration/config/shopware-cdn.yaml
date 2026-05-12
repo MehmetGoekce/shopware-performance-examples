@@ -113,6 +113,25 @@ shopware:
 #             - 'X-Cache-Tags'
 
 # ============================================================================
+# Vary-Header & Cookie-Whitelist gegen Session/Cart-Leaks
+# ============================================================================
+#
+# Shopware sendet bereits Vary: sw-cache-hash + sw-language-id + sw-currency-id
+# automatisch (CacheResponseSubscriber). Verifikation:
+#   curl -I https://shop.example.com/ | grep -i ^vary
+#
+# Falscher Vary-Header (Vary: Cookie) fuehrt zu Cache-Explosion: jede
+# Variation einer Tracking-/Analytics-Cookie erzeugt einen neuen Cache-Entry,
+# Cache-Hit-Rate kippt auf wenige Prozent.
+#
+# Cookie-Whitelist am Edge (Cloudflare Worker oder Varnish vcl_recv) filtert
+# Tracking-Cookies wie _ga, _gid, _hjSessionUser, cf_clearance, ...
+# und reicht nur sw-cache-hash, sw-context-hash, session- an Origin durch.
+# Beispiel siehe Buch Kap 11.5 "Vary:Cookie ist gefaehrlich".
+#
+# Quelle: https://developer.shopware.com/docs/concepts/framework/http_cache.html
+
+# ============================================================================
 # Performance-Tipp: Preload für kritische Assets
 # ============================================================================
 
