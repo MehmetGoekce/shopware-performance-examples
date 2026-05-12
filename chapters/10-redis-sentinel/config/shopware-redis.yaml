@@ -14,11 +14,11 @@
 
 framework:
     cache:
-        # Sentinel-DSN Format fuer Symfony
-        # Alle 3 Sentinel-Hosts angeben!
+        # Sentinel-DSN: Master-Auth gehoert in Userinfo (redis://password@?host[...]).
+        # &auth= ist laut Symfony-Doku fuer SENTINEL-Auth, nicht Master.
         # Quelle: https://symfony.com/doc/current/components/cache/adapters/redis_adapter.html
         default_redis_provider: >-
-            redis:?host[%env(REDIS_SENTINEL_HOST1)%]&host[%env(REDIS_SENTINEL_HOST2)%]&host[%env(REDIS_SENTINEL_HOST3)%]&redis_sentinel=%env(REDIS_SENTINEL_SERVICE)%&auth=%env(REDIS_AUTH_PASSWORD)%
+            redis://%env(REDIS_AUTH_PASSWORD)%@?host[%env(REDIS_SENTINEL_HOST1)%]&host[%env(REDIS_SENTINEL_HOST2)%]&host[%env(REDIS_SENTINEL_HOST3)%]&redis_sentinel=%env(REDIS_SENTINEL_SERVICE)%
 
         pools:
             cache.object:
@@ -60,7 +60,7 @@ framework:
 # framework:
 #     session:
 #         handler_id: >-
-#             redis://%env(REDIS_AUTH_PASSWORD)%@%env(REDIS_SENTINEL_HOST1)%,%env(REDIS_SENTINEL_HOST2)%,%env(REDIS_SENTINEL_HOST3)%/2?redis_sentinel=%env(REDIS_SENTINEL_SERVICE)%
+#             redis://%env(REDIS_AUTH_PASSWORD)%@?host[%env(REDIS_SENTINEL_HOST1)%]&host[%env(REDIS_SENTINEL_HOST2)%]&host[%env(REDIS_SENTINEL_HOST3)%]&redis_sentinel=%env(REDIS_SENTINEL_SERVICE)%&dbindex=2
 #         cookie_secure: auto
 #         cookie_samesite: lax
 
