@@ -3,21 +3,19 @@
 # Redis Sentinel Health Check & Monitoring
 # Prueft Sentinel-Cluster und Redis-Metriken
 #
-# Verwendung: ./redis-monitor.sh [redis_password]
+# Verwendung: REDIS_AUTH_PASSWORD muss in der Env gesetzt sein.
+#   Beispiel: source /etc/profile.d/redis-credentials.sh && ./redis-monitor.sh
 #
-# Fuer Cron (alle 5 Minuten):
-#   */5 * * * * /opt/redis/redis-monitor.sh "passwort" >> /var/log/redis/health.log 2>&1
+# Fuer Cron (alle 5 Minuten) mit env-File:
+#   */5 * * * * . /etc/profile.d/redis-credentials.sh && /opt/redis/redis-monitor.sh >> /var/log/redis/health.log 2>&1
 
-REDIS_PASSWORD="${1:-}"
+# Fail fast wenn das Passwort nicht in der Env steht — niemals leer als Default.
+: "${REDIS_AUTH_PASSWORD:?REDIS_AUTH_PASSWORD muss gesetzt sein (siehe /etc/profile.d/redis-credentials.sh)}"
+
 SENTINEL_PORT=26379
 MASTER_NAME="shopware-master"
 
-# CLI-Befehle mit optionalem Passwort
-if [[ -n "${REDIS_PASSWORD}" ]]; then
-    REDIS_CLI="redis-cli -a ${REDIS_PASSWORD}"
-else
-    REDIS_CLI="redis-cli"
-fi
+REDIS_CLI="redis-cli -a ${REDIS_AUTH_PASSWORD}"
 SENTINEL_CLI="redis-cli -p ${SENTINEL_PORT}"
 
 # Farben fuer Output

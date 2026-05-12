@@ -10,12 +10,17 @@ Dieses Verzeichnis enthaelt alle Redis-Konfigurationen und Scripts aus Kapitel 1
 - `redis-master.conf` - Redis Master Konfiguration
 - `redis-replica.conf` - Redis Replica Konfiguration
 - `sentinel.conf` - Redis Sentinel Konfiguration (fuer alle 3 Nodes)
+- `redis-auth.example.conf` - Skeleton fuer Secrets-Datei (requirepass + masterauth)
+- `sentinel-auth.example.conf` - Skeleton fuer Sentinel-Secrets (sentinel auth-pass)
 - `shopware-redis.yaml` - Shopware/Symfony Sentinel-Integration
 
 ### scripts/
 - `redis-impact-test.sh` - Misst Auswirkung eines Redis-Ausfalls
 - `test-failover.sh` - Testet automatisches Sentinel-Failover
-- `redis-monitor.sh` - Health-Check und Monitoring Script
+- `redis-monitor.sh` - Health-Check und Monitoring Script (erwartet REDIS_AUTH_PASSWORD in der Env)
+
+### Root
+- `.env.example` - Shopware/Symfony Env-Vars (REDIS_AUTH_PASSWORD, Sentinel-Hosts, Service-Name)
 
 ## Architektur
 
@@ -57,16 +62,36 @@ sudo cp config/redis-replica.conf /etc/redis/redis.conf
 sudo cp config/sentinel.conf /etc/redis/sentinel.conf
 ```
 
-### 3. Passwort generieren und einsetzen
+### 3. Secrets Management — Passwort generieren und externalisieren
+
+Niemals Passwoerter direkt in `redis-master.conf` / `redis-replica.conf` /
+`sentinel.conf` eintragen oder committen. Stattdessen separate Secrets-Datei
+(`/etc/redis/redis-auth.conf` + `/etc/redis/sentinel-auth.conf`) anlegen und
+per `include`-Direktive einbinden — siehe Buch Kap 10, Subsection
+"Secrets Management".
 
 ```bash
-# Sicheres Passwort generieren
-openssl rand -base64 32
+# 1. Sicheres Passwort generieren
+REDIS_PWD=$(openssl rand -base64 32)
 
-# In allen Konfigurationsdateien ersetzen:
-# - redis-master.conf: requirepass + masterauth
-# - redis-replica.conf: requirepass + masterauth
-# - sentinel.conf: sentinel auth-pass
+# 2. Secrets-Dateien anlegen (auf jedem Node, gleiches Passwort!)
+sudo tee /etc/redis/redis-auth.conf > /dev/null <<EOF
+requirepass "${REDIS_PWD}"
+masterauth "${REDIS_PWD}"
+EOF
+sudo tee /etc/redis/sentinel-auth.conf > /dev/null <<EOF
+sentinel auth-pass shopware-master ${REDIS_PWD}
+EOF
+sudo chown root:redis /etc/redis/{redis,sentinel}-auth.conf
+sudo chmod 640 /etc/redis/{redis,sentinel}-auth.conf
+
+# 3. Fuer CLI-Aufrufe: REDIS_AUTH_PASSWORD in /etc/profile.d/redis-credentials.sh exportieren
+sudo tee /etc/profile.d/redis-credentials.sh > /dev/null <<'EOF'
+export REDIS_AUTH_PASSWORD=$(grep ^requirepass /etc/redis/redis-auth.conf | cut -d'"' -f2)
+EOF
+sudo chmod 600 /etc/profile.d/redis-credentials.sh
+
+# 4. Fuer Shopware: Passwort in .env.local setzen (siehe .env.example)
 ```
 
 ### 4. Dienste starten
@@ -80,8 +105,8 @@ sudo systemctl enable redis-sentinel
 ### 5. Status pruefen
 
 ```bash
-# Replikation pruefen (auf Master)
-redis-cli -a "IhrPasswort" INFO replication
+# Replikation pruefen (auf Master, REDIS_AUTH_PASSWORD aus Env)
+redis-cli -a "${REDIS_AUTH_PASSWORD}" INFO replication
 
 # Sentinel Quorum pruefen
 redis-cli -p 26379 SENTINEL ckquorum shopware-master
@@ -114,6 +139,10 @@ redis-cli -p 26379 SENTINEL failover shopware-master
 
 # Sentinel-Logs beobachten
 tail -f /var/log/redis/sentinel.log
+
+# Health-Check (erwartet REDIS_AUTH_PASSWORD in der Env)
+source /etc/profile.d/redis-credentials.sh
+./scripts/redis-monitor.sh
 ```
 
 ## Erwartete Ergebnisse
