@@ -132,3 +132,33 @@ SELECT
         AND table_name = 'order'
         AND index_name = 'idx_order_state_created'
     ) THEN 'VORHANDEN' ELSE 'FEHLT' END;
+
+-- ==============================================================================
+-- 7. MYSQL 8.0: sys-SCHEMA (moderne Variante zu Abschnitt 1, nur MySQL 8.0)
+-- ==============================================================================
+-- sys-Schema ist in MySQL 8.0 standardmaessig installiert. MariaDB hat ein
+-- abweichendes Pendant - dieser Abschnitt nur auf MySQL 8.0 ausfuehren.
+
+SELECT '=== Nie genutzte Indizes (sys-Schema) ===' AS '';
+
+SELECT * FROM sys.schema_unused_indexes
+WHERE object_schema = DATABASE();
+
+SELECT '=== Redundante Indizes (sys-Schema) ===' AS '';
+
+SELECT * FROM sys.schema_redundant_indexes
+WHERE table_schema = DATABASE();
+
+SELECT '=== Statements mit Full-Table-Scan (Top 20) ===' AS '';
+
+SELECT query, db, exec_count, no_index_used_count
+FROM sys.statements_with_full_table_scans
+WHERE db = DATABASE()
+ORDER BY no_index_used_count DESC
+LIMIT 20;
+
+-- Invisible-Index-Pattern (Index risikofrei testen statt droppen):
+--   ALTER TABLE product ALTER INDEX idx_xy INVISIBLE;  -- soft-deaktivieren
+--   ALTER TABLE product ALTER INDEX idx_xy VISIBLE;    -- sofort zurueck
+-- Beobachtung ueber Slow-Log + sys.statements_with_full_table_scans.
+-- Primaerschluessel koennen nicht invisible werden.
