@@ -162,3 +162,8 @@ LIMIT 20;
 --   ALTER TABLE product ALTER INDEX idx_xy VISIBLE;    -- sofort zurueck
 -- Beobachtung ueber Slow-Log + sys.statements_with_full_table_scans.
 -- Primaerschluessel koennen nicht invisible werden.
+--
+-- MariaDB 10.6+ kennt dasselbe Konzept mit anderem Keyword (IGNORED statt INVISIBLE):
+--   ALTER TABLE product ALTER INDEX idx_xy IGNORED;      -- soft-deaktivieren
+--   ALTER TABLE product ALTER INDEX idx_xy NOT IGNORED;  -- sofort zurueck
+-- Quelle: mariadb.com/kb/en/ignored-indexes/ (Feature seit MariaDB 10.6).
