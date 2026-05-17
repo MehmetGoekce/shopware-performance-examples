@@ -337,15 +337,17 @@ class StatisticalAnalyzer
     {
         // Sehr vereinfachte Lookup Table
         // In Production: Verwende scipy oder R für präzise Werte
+        // String-Keys: PHP würde Float-Array-Keys zu int trunkieren
+        // (1.645/1.960/2.576/3.291 → 1/1/2/3), siehe getZValue()
         $lookup = [
-            1.645 => 0.10,
-            1.960 => 0.05,
-            2.576 => 0.01,
-            3.291 => 0.001,
+            '1.645' => 0.10,
+            '1.960' => 0.05,
+            '2.576' => 0.01,
+            '3.291' => 0.001,
         ];
 
         foreach ($lookup as $critical => $p) {
-            if ($t < $critical) {
+            if ($t < (float) $critical) {
                 return $p;
             }
         }
