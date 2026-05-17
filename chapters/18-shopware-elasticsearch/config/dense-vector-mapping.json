@@ -1,0 +1,11 @@
+{
+  "_comment": "Section 18.12 — additive dense_vector field on the EXISTING sw_product index. Runs as a mapping update WITHOUT a re-index; Shopware's indexer is unaware of the field and is not disturbed. dims/similarity verified against Elastic dense-vector docs (ES 8.x): index:true is the 8.x default, HNSW defaults m=16 / ef_construction=100, default similarity cosine for float. Apply with: PUT /sw_product/_mapping",
+  "properties": {
+    "description_embedding": {
+      "type": "dense_vector",
+      "dims": 384,
+      "index": true,
+      "similarity": "cosine"
+    }
+  }
+}

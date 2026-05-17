@@ -19,20 +19,27 @@ This chapter covers Elasticsearch/OpenSearch configuration and optimization for 
 ```
 chapters/18-shopware-elasticsearch/
 ├── config/
-│   ├── elasticsearch.yaml     # Shopware ES configuration
-│   ├── elasticsearch.yml      # ES server configuration
-│   └── jvm.options            # Heap and JVM settings
+│   ├── elasticsearch.yaml             # Shopware ES configuration
+│   ├── elasticsearch.yml              # ES server configuration
+│   ├── jvm.options                    # Heap and JVM settings
+│   ├── dictionary-decompounder-analyzer.yaml  # 18.5 compound split
+│   ├── de_dictionary.sample.txt       # 18.5 sample word list
+│   ├── dense-vector-mapping.json      # 18.12 additive vector field
+│   └── hybrid-rrf-query.json          # 18.12 ES 8.x hybrid query
 ├── scripts/
-│   ├── es-health-check.sh     # Cluster health monitoring
-│   ├── es-reindex.sh          # Optimized reindexing
-│   ├── es-index-stats.sh      # Index statistics
-│   └── es-benchmark.sh        # Performance benchmarks
+│   ├── es-health-check.sh             # Cluster health monitoring
+│   ├── es-reindex.sh                  # Optimized reindexing
+│   ├── es-index-stats.sh              # Index statistics
+│   ├── es-benchmark.sh                # Performance benchmarks
+│   ├── extract-dictionary.sh          # 18.5 build de_dictionary.txt
+│   └── opensearch-hybrid-pipeline.sh  # 18.12 OpenSearch counterpart
 ├── src/
 │   └── ElasticsearchExtension/
-│       ├── ProductMappingExtension.php   # Custom field mapping
-│       ├── CustomAnalyzerDefinition.php  # German analyzers
-│       ├── SearchBoostSubscriber.php     # Relevance tuning
-│       └── IndexingOptimizer.php         # Bulk indexing
+│       ├── ProductMappingExtension.php    # Custom field mapping
+│       ├── ProductEmbeddingSubscriber.php # 18.12 vector path skeleton
+│       ├── CustomAnalyzerDefinition.php   # German analyzers
+│       ├── SearchBoostSubscriber.php      # Relevance tuning
+│       └── IndexingOptimizer.php          # Bulk indexing
 └── README.md
 ```
 
@@ -202,8 +209,44 @@ Enable slow log:
 index.search.slowlog.threshold.query.warn: 1s
 ```
 
+## Advanced (18.5 / 18.12)
+
+### Compound-word splitting (18.5)
+
+German shoppers type "Schuhe" but the product is a "Kinderschuhe". The
+`dictionary_decompounder` splits compounds against a word list.
+
+```bash
+./scripts/extract-dictionary.sh        # build de_dictionary.txt
+# merge config/dictionary-decompounder-analyzer.yaml into elasticsearch.yaml
+# then a full reindex (see 18.11) so the analyzer takes effect
+```
+
+`config/de_dictionary.sample.txt` is a runnable mini word list; the script
+produces the real one from the LibreOffice dictionary.
+
+### Vector & hybrid search (18.12, forward section)
+
+Shopware core (incl. 6.7.x) has no vector search. These artifacts build
+the path **additively**, leaving the standard lexical index untouched:
+
+- `config/dense-vector-mapping.json` — additive `dense_vector` field on
+  the existing `sw_product` index (mapping update, no re-index)
+- `src/ElasticsearchExtension/ProductEmbeddingSubscriber.php` — keeps the
+  vector field in sync on `product.written` (skeleton; embedding backend
+  is an injected seam)
+- `config/hybrid-rrf-query.json` — ES 8.x lexical + kNN via RRF
+- `scripts/opensearch-hybrid-pipeline.sh` — the OpenSearch counterpart
+  (normalization-processor search pipeline; no RRF in OpenSearch)
+
+Hybrid beats pure-vector in practice: exact SKU lookups stay in the
+lexical retriever. See chapter 18.12 for thresholds and DSGVO caveats.
+
 ## Resources
 
 - [Shopware ES Docs](https://developer.shopware.com/docs/guides/plugins/plugins/elasticsearch/)
 - [OpenSearch Documentation](https://opensearch.org/docs/latest/)
 - [Elastic Heap Sizing](https://www.elastic.co/guide/en/elasticsearch/reference/current/heap-size.html)
+- [Elastic dense_vector](https://www.elastic.co/guide/en/elasticsearch/reference/current/dense-vector.html)
+- [Elastic RRF](https://www.elastic.co/guide/en/elasticsearch/reference/current/rrf.html)
+- [OpenSearch Hybrid Search](https://opensearch.org/docs/latest/search-plugins/hybrid-search/)

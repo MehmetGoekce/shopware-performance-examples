@@ -1,0 +1,49 @@
+# Section 18.5 — German compound-word splitting (Decompounder)
+#
+# Why: lexical search misses "Kinderschuhe" when the customer types
+# "Schuhe". The dictionary_decompounder splits compounds against a word
+# list ("Kinderschuhe" -> "Kinder" + "Schuhe" because both stems are in
+# the dictionary). Pragmatic default for ~80% of shops: only ONE file
+# (the word list), simpler deployment than hyphenation_decompounder.
+#
+# Drop this analysis block into config/packages/elasticsearch.yaml under
+# elasticsearch.index_settings.analysis (merge with the existing one).
+#
+# word_list_path is relative to the ES `config` dir, NO leading slash.
+# Place the file on the ES host (see scripts/extract-dictionary.sh):
+#   /etc/elasticsearch/analysis/de_dictionary.txt   (ES)
+#   /etc/opensearch/analysis/de_dictionary.txt      (OpenSearch)
+
+elasticsearch:
+    index_settings:
+        analysis:
+            analyzer:
+                german_decompound_analyzer:
+                    type: 'custom'
+                    tokenizer: 'standard'
+                    filter:
+                        - 'lowercase'
+                        - 'german_decompounder'
+                        - 'german_normalization'
+                        - 'german_stemmer'
+
+            filter:
+                # Default: dictionary-only split (one file, simple deploy)
+                german_decompounder:
+                    type: 'dictionary_decompounder'
+                    word_list_path: 'analysis/de_dictionary.txt'
+                    min_word_size: 5
+                    min_subword_size: 3
+
+                # Advanced alternative — better recall on rare/long
+                # compounds, but TWO files and a HARD FOP v1.2 pin:
+                # Elastic supports only FOP v1.2-compatible hyphenation
+                # patterns; v2.0+ fails at index start. Get de.xml from
+                # OFFO v1.2 (sourceforge.net/projects/offo).
+                #
+                # german_decompounder:
+                #     type: 'hyphenation_decompounder'
+                #     word_list_path: 'analysis/de_dictionary.txt'
+                #     hyphenation_patterns_path: 'analysis/de.xml'
+                #     min_word_size: 5
+                #     min_subword_size: 3

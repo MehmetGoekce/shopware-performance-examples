@@ -1,0 +1,29 @@
+{
+  "_comment": "Section 18.12 — Hybrid query: lexical (multi_match) + kNN combined via Reciprocal Rank Fusion. RRF needs no score normalisation: per doc, 1/(rank_constant + rank) is summed across both result lists, so score magnitude is irrelevant — only rank order. retriever.rrf is the ES 8.x top-level retrievers API (verified against Elastic RRF docs). query_vector must be produced by the SAME embedding service as the indexing pipeline, otherwise both sides operate in different vector spaces. POST /sw_product/_search",
+  "retriever": {
+    "rrf": {
+      "retrievers": [
+        {
+          "standard": {
+            "query": {
+              "multi_match": {
+                "query": "bluetooth kopfhoerer",
+                "fields": ["name^3", "description"]
+              }
+            }
+          }
+        },
+        {
+          "knn": {
+            "field": "description_embedding",
+            "query_vector": [0.012, -0.043, 0.182, 0.0],
+            "k": 50,
+            "num_candidates": 200
+          }
+        }
+      ],
+      "rank_window_size": 50,
+      "rank_constant": 60
+    }
+  }
+}
