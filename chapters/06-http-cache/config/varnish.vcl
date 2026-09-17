@@ -2,8 +2,8 @@
 # Kapitel 6: HTTP-Caching — Shop-Performance in 30 Tagen
 #
 # Voraussetzungen:
-#   - Varnish 7.x oder 8.x mit den varnish-modules "xkey" und "cookie"
-#     (beide enthalten im Image ghcr.io/shopware/varnish)
+#   - Varnish 7.x oder 8.x mit den vmods "xkey" (varnish-modules) und
+#     "cookie" (Teil von Varnish Cache), beide im Image ghcr.io/shopware/varnish
 #   - Shopware-Konfiguration: config/varnish.yaml aus diesem Ordner
 #
 # Installation:
@@ -40,6 +40,12 @@ acl purgers {
 }
 
 sub vcl_recv {
+    # Interne Hilfs-Header nie vom Client übernehmen (sonst könnte ein Client
+    # über eigene X-Sw-*-Header beliebig viele Cache-Varianten erzeugen)
+    unset req.http.X-Sw-Cache-Hash;
+    unset req.http.X-Sw-Currency;
+    unset req.http.X-Sw-States;
+
     # --------------------------------------------------------
     # Invalidierung durch Shopware
     # --------------------------------------------------------
@@ -100,9 +106,11 @@ sub vcl_recv {
     # Cache-Eintrag erzeugt. Kurze Liste — die vollständige steht im
     # offiziellen VCL. shopware.http_cache.ignored_url_parameters wirkt hinter
     # Varnish NICHT, eigene Parameter hier ergänzen.
-    if (req.url ~ "(\?|&)(utm_[a-z_]+|gclid|gbraid|wbraid|fbclid|msclkid|mc_cid|mc_eid|pk_[a-z_]+|mtm_[a-z_]+|srsltid|_gl)=") {
-        set req.url = regsuball(req.url, "(utm_[a-z_]+|gclid|gbraid|wbraid|fbclid|msclkid|mc_cid|mc_eid|pk_[a-z_]+|mtm_[a-z_]+|srsltid|_gl)=[A-Za-z0-9\-\_\.\~%]+&?", "");
-        set req.url = regsub(req.url, "(\?|\?&|&)$", "");
+    # (?<=[?&]) prüft nur den Namensanfang, ohne das Zeichen zu verbrauchen:
+    # ?foo_gl=1 bleibt stehen, mehrere Parameter hintereinander werden entfernt.
+    if (req.url ~ "[?&](utm_[a-z_]+|gclid|gbraid|wbraid|fbclid|msclkid|mc_cid|mc_eid|pk_[a-z_]+|mtm_[a-z_]+|srsltid|_gl)=") {
+        set req.url = regsuball(req.url, "(?<=[?&])(utm_[a-z_]+|gclid|gbraid|wbraid|fbclid|msclkid|mc_cid|mc_eid|pk_[a-z_]+|mtm_[a-z_]+|srsltid|_gl)=[^&]*(&|$)", "");
+        set req.url = regsub(req.url, "[?&]$", "");
     }
     set req.url = std.querysort(req.url);
 
