@@ -12,7 +12,10 @@
  *   2. Shopware rendert render_esi() als <esi:include src="..."> und setzt
  *      "Surrogate-Control: content=\"ESI/1.0\""
  *   3. Varnish holt das Fragment separat (eigener Cache-Eintrag) und setzt die Seite zusammen
- *   Ohne ESI-fähigen Proxy rendert Shopware das Fragment direkt in die Seite.
+ *   Ohne Varnish übernimmt der eingebaute Cache (Symfony HttpCache) dieselbe Rolle:
+ *   Er fordert ESI selbst an, löst <esi:include> in PHP auf und speichert das
+ *   Fragment ebenfalls als eigenen Eintrag mit eigener TTL. Direkt in die Seite
+ *   gerendert wird es nur, wenn kein Cache aktiv ist (SHOPWARE_HTTP_CACHE_ENABLED=0).
  *
  * Twig-Einbindung (z. B. in der Produktseite):
  *   {{ render_esi(url('frontend.widget.stock', { productId: page.product.id })) }}
@@ -28,17 +31,20 @@
  * das Fragment erst nach Ablauf der TTL erneuern. Deshalb hängt stockWidget()
  * das Tag per AddCacheTagEvent an (verfügbar ab Shopware 6.6.6.0).
  *
- * Installation (in einem eigenen Plugin):
+ * Installation (in einem eigenen Plugin, Namespace "YourPlugin" anpassen):
  *   1. Kopieren nach src/Controller/EsiWidgetController.php
- *   2. Als Service registrieren, Argumente: sales_channel.product.repository, event_dispatcher
- *   3. Cache leeren: bin/console cache:clear
+ *   2. Service und Routen: src/Resources/config/services.xml und routes.xml
+ *      aus diesem Ordner (Argumente plus setContainer/setTwig, sonst
+ *      funktioniert renderStorefront() nicht)
+ *   3. Templates unter src/Resources/views/storefront/widget/ anlegen
+ *   4. Cache leeren: bin/console cache:clear
  *
  * @see https://github.com/MehmetGoekce/shopware-performance-examples
  */
 
 declare(strict_types=1);
 
-namespace App\Controller;
+namespace YourPlugin\Controller;
 
 use Shopware\Core\Framework\Adapter\Cache\Event\AddCacheTagEvent;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria;

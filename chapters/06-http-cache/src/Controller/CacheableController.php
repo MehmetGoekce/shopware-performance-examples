@@ -17,11 +17,13 @@
  * Ein eigenes "states" in _httpCache ergänzt diese Liste nur; ausnehmen lässt
  * sich eine Route davon nicht.
  *
- * Installation (in einem eigenen Plugin):
+ * Installation (in einem eigenen Plugin, Namespace "YourPlugin" anpassen):
  *   1. Kopieren nach src/Controller/CacheableController.php
- *   2. Als Service registrieren (Resources/config/services.xml) und
- *      Routen laden (Resources/config/routes.xml)
- *   3. Cache leeren: bin/console cache:clear
+ *   2. Service und Routen: src/Resources/config/services.xml und routes.xml
+ *      aus diesem Ordner (setContainer/setTwig, sonst funktioniert
+ *      renderStorefront() nicht)
+ *   3. Templates unter src/Resources/views/storefront/page/ anlegen
+ *   4. Cache leeren: bin/console cache:clear
  *
  * Prüfen:
  *   ../../scripts/cache-debug.sh https://ihr-shop.ch /custom-page
@@ -31,7 +33,7 @@
 
 declare(strict_types=1);
 
-namespace App\Controller;
+namespace YourPlugin\Controller;
 
 use Shopware\Core\System\SalesChannel\SalesChannelContext;
 use Shopware\Storefront\Controller\StorefrontController;

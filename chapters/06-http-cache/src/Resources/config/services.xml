@@ -1,0 +1,27 @@
+<?xml version="1.0" ?>
+<!--
+    Services für die Controller aus Kapitel 6 (Shopware 6.6)
+    Namespace "YourPlugin" an das eigene Plugin anpassen.
+
+    setContainer und setTwig sind nötig, damit renderStorefront() in einem
+    StorefrontController funktioniert.
+
+    @see https://github.com/MehmetGoekce/shopware-performance-examples
+-->
+<container xmlns="http://symfony.com/schema/dic/services"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xsi:schemaLocation="http://symfony.com/schema/dic/services http://symfony.com/schema/dic/services/services-1.0.xsd">
+    <services>
+        <service id="YourPlugin\Controller\CacheableController" public="true">
+            <call method="setContainer"><argument type="service" id="service_container"/></call>
+            <call method="setTwig"><argument type="service" id="twig"/></call>
+        </service>
+
+        <service id="YourPlugin\Controller\EsiWidgetController" public="true">
+            <argument type="service" id="sales_channel.product.repository"/>
+            <argument type="service" id="event_dispatcher"/>
+            <call method="setContainer"><argument type="service" id="service_container"/></call>
+            <call method="setTwig"><argument type="service" id="twig"/></call>
+        </service>
+    </services>
+</container>

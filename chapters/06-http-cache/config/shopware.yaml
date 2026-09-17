@@ -2,6 +2,7 @@
 # Kapitel 6: HTTP-Caching
 #
 # Kopieren nach: config/packages/http_cache.yaml (oder in bestehende Datei mergen)
+# Abschnittsnummern (6.4, 6.5) beziehen sich auf Kapitel 6 des Buchs.
 # Danach: bin/console cache:clear
 #
 # Der HTTP-Cache ist ab Werk AKTIV. Ein- und Ausschalten sowie die Standard-TTL
@@ -20,9 +21,12 @@
 
 shopware:
     http_cache:
-        # Werden als Cache-Control-Direktiven an jede cachebare Antwort gehängt.
-        # Wirkung hat das beim Reverse Proxy (Varnish/CDN). Der Browser sieht
-        # ohne Reverse Proxy immer "no-cache, private".
+        # Ab Werk nicht gesetzt (null). Gesetzt hängt Shopware sie als
+        # Cache-Control-Direktiven an jede cachebare Antwort.
+        # Wirkung: im eingebauten Cache und bei CDNs, die sie auswerten.
+        # Varnish kennt stale-if-error nicht; die VCL in 6.5 setzt Grace selbst (6.4).
+        # Der Browser sieht für HTML "no-cache, private" bzw. hinter Varnish "no-store".
+        # Mit dem Feature-Flag CACHE_REWORK (ab 6.7.6) wirkungslos, Entfernung in 6.8.
         stale_while_revalidate: 14400   # 4 Stunden
         stale_if_error: 86400           # 24 Stunden
 
@@ -38,7 +42,8 @@ shopware:
     cache:
         invalidation:
             # 0 = sofort invalidieren (Default). Ein Wert > 0 sammelt Invalidierungen
-            # und verarbeitet sie per Scheduled Task (cache:clear:delayed).
+            # und verarbeitet sie per Scheduled Task "shopware.invalidate_cache"
+            # (manuell: bin/console cache:clear:delayed).
             delay: 0
 
             # Zustände, in denen Besucher am HTTP-Cache vorbeigehen (Default).
@@ -47,7 +52,9 @@ shopware:
 
             # Die *_route-Keys (product_detail_route, product_listing_route ...)
             # sind ebenfalls Zustandslisten (Default: leer), KEINE Klassennamen.
-            # Beispiel: Produktseiten für eingeloggte Kunden nicht aus dem Store-API-Cache:
+            # Sie steuern den Objekt-Cache der Cached*Route-Klassen, den Store-API
+            # und Storefront-Seiten nutzen (6.6; die Klassen entfallen mit 6.7).
+            # Beispiel: Produktdaten für eingeloggte Kunden nicht aus diesem Cache:
             # product_detail_route: ['logged-in']
 
 # Kein framework.cache.pools.cache.http-Override nötig: Shopware legt den Pool
