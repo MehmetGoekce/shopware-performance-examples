@@ -1,36 +1,58 @@
-# Shopware Cache-Invalidierung Konfiguration
-# Kopieren nach: config/packages/shopware.yaml
-
-# Hinweis: default_ttl wird über Umgebungsvariable gesetzt:
-#   SHOPWARE_HTTP_DEFAULT_TTL=1800
+# Redis-Connection für Warenkörbe und verzögerte Invalidierung
+# Kapitel 7: Shopwares Application Cache meistern
+#
+# Kopieren nach: config/packages/shopware.yaml (in den bestehenden "shopware:"-Block)
+# Benötigt: Shopware 6.6.8.0 oder neuer (shopware.redis.connections)
+# Getestet mit: Shopware 6.6.10.6, Redis 7.4
+#
+# .env / .env.local:
+#   REDIS_CRITICAL_URL=redis://redis-critical:6379   # Instanz mit Persistenz (volatile-lru)
+#
+# Wichtig: Eine Connection unter "redis.connections" bewirkt allein nichts.
+# Shopware benutzt sie erst, wenn ein Subsystem sie per "connection:" referenziert.
+#
+# Umstellung eines laufenden Shops (Warenkörbe liegen vorher in MySQL):
+#   Datei einspielen, bin/console cache:clear, dann
+#   bin/console cart:migrate sql              # Warenkörbe MySQL -> Redis
+#
+# @see https://developer.shopware.com/docs/guides/hosting/infrastructure/redis.html
+# @see https://github.com/MehmetGoekce/shopware-performance-examples
 
 shopware:
+    redis:
+        connections:
+            critical:
+                dsn: '%env(REDIS_CRITICAL_URL)%/0'
+
+    cart:
+        storage:
+            type: 'redis'
+            config:
+                connection: 'critical'
+
+    # Nummernkreise NICHT ohne Übernahme der Zählerstände umstellen:
+    # Redis beginnt ohne vorhandenen Key wieder beim Startwert des Nummernkreises
+    # (doppelte Bestell- und Rechnungsnummern). "number-range:migrate mysql redis"
+    # bricht in 6.6.10.6 ab, weil Shopware nur den konfigurierten Storage lädt.
+    # Für neue Shops:
+    # number_range:
+    #     increment_storage: 'redis'
+    #     config:
+    #         connection: 'critical'
+
     cache:
-        # Granulare Invalidierung (empfohlen)
-        # Werte sind Arrays von Listener-Klassen (nicht boolean)
-        # Leeres Array [] = Route wird nicht invalidiert
         invalidation:
-            # Nur spezifische Produkte invalidieren
-            product_detail_route:
-                - '\Shopware\Core\Content\Product\SalesChannel\Detail\CachedProductDetailRoute'
+            # Verzögerte Invalidierung (Default 0 = sofort im schreibenden Request).
+            # Mit einem Wert > 0 sammelt Shopware die Tags und invalidiert sie
+            # gebündelt über den Scheduled Task "shopware.invalidate_cache"
+            # (alle 20 s, braucht einen laufenden Worker/Scheduler) oder
+            # manuell per "bin/console cache:clear:delayed".
+            # Sinnvoll bei grossen Importen: ohne Verzögerung löst jedes
+            # gespeicherte Produkt sofort eine Invalidierung aus.
+            # Trade-off: Änderungen erscheinen erst nach dem nächsten Lauf.
+            # delay: 1
 
-            # Listings NICHT bei jeder Produktaenderung invalidieren
-            # (Kuerzere TTLs stattdessen verwenden)
-            product_listing_route: []
-
-            # Weitere Routen
-            product_review_route:
-                - '\Shopware\Core\Content\Product\SalesChannel\Review\CachedProductReviewRoute'
-            product_search_route: []  # Kuerzere TTL verwenden
-
-    http_cache:
-        # Stale-While-Revalidate: Alte Version zeigen waehrend neu geladen wird
-        stale_while_revalidate: 3600  # 1 Stunde
-
-        # Stale-If-Error: Bei Fehlern alte Version zeigen
-        stale_if_error: 86400  # 24 Stunden
-
-# Optimierung fuer grosse Kataloge:
-# - product_listing_route: [] + TTL von 30 Min
-# - Vermeidet Cache-Stampede bei Massenimporten
-# - Trade-off: Aenderungen erscheinen mit bis zu 30 Min Verzoegerung
+            # Die Schlüssel product_listing_route, product_detail_route usw.
+            # erwarten Zustände wie ['logged-in'] (Default: leer), KEINE
+            # Klassennamen. Sie steuern in 6.6 den Objekt-Cache der
+            # Cached*Route-Klassen und entfallen mit 6.7.

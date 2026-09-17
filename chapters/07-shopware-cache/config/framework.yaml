@@ -1,55 +1,44 @@
-# Shopware 6 Application Cache mit Redis
-# Kopieren nach: config/packages/framework.yaml
+# Application Cache und Sessions in Redis
+# Kapitel 7: Shopwares Application Cache meistern
 #
-# Voraussetzung: Redis installiert und gestartet
-# .env: REDIS_URL=redis://localhost:6379
+# Kopieren nach: config/packages/cache.yaml (oder in die eigene framework.yaml)
+# Getestet mit: Shopware 6.6.10.6, Redis 7.4, PHP 8.3 mit redis-Extension
+#
+# .env / .env.local:
+#   REDIS_URL=redis://redis-cache:6379/0          # Instanz für Caches (volatile-lru)
+#   REDIS_SESSION_URL=redis://redis-session:6379/0  # Instanz für Sessions (allkeys-lru)
+#
+# Was diese Datei bewirkt:
+# - "app" auf redis_tag_aware: cache.object und cache.http nutzen "cache.app"
+#   und werden damit selbst zum RedisTagAwareAdapter. Die Tags liegen als Sets
+#   direkt in Redis; der Pool "cache.tags" aus Shopwares Default wird dann
+#   nicht mehr als Wrapper benutzt.
+# - "system" auf Redis: Symfony-Metadaten (Validator, Serializer ...) liegen
+#   für alle App-Server an einer Stelle. So empfiehlt es die Shopware-Doku.
+# - Die Lebensdauer der Pools bleibt Shopwares Default (172800 s = 48 h).
+#   Die TTL gecachter Seiten steuert der HTTP-Cache selbst (Kapitel 6).
+#
+# Voraussetzungen (sonst schreibt der Cache nichts - ohne Fehlermeldung):
+# - maxmemory-policy der Cache-Instanz ist "volatile-lru" (oder "noeviction").
+#   Mit "allkeys-lru" verweigert RedisTagAwareAdapter jedes Speichern.
+#   Siehe redis/redis-cache.conf
+#
+# Achtung bei Redis: "bin/console cache:clear" leert Object- und HTTP-Cache
+# NICHT (die liegen nicht mehr unter var/cache/). Dafür:
+#   bin/console cache:clear:all    # alle Shopware-Pools
+#   bin/console cache:clear:http   # nur HTTP-Cache (ab 6.6.10.0)
+#
+# @see https://developer.shopware.com/docs/guides/hosting/performance/caches.html
+# @see https://developer.shopware.com/docs/guides/hosting/performance/session.html
+# @see https://github.com/MehmetGoekce/shopware-performance-examples
 
 framework:
     cache:
-        # Standard-Adapter fuer alle Pools
-        app: cache.adapter.redis
-        system: cache.adapter.system
-
-        # Redis-Verbindung definieren
+        app: cache.adapter.redis_tag_aware
+        system: cache.adapter.redis_tag_aware
         default_redis_provider: '%env(REDIS_URL)%'
 
-        pools:
-            # Object Cache fuer Entities und DAL
-            cache.object:
-                adapter: cache.adapter.redis
-                default_lifetime: 3600  # 1 Stunde
-
-            # HTTP Cache Daten
-            cache.http:
-                adapter: cache.adapter.redis
-                default_lifetime: 7200  # 2 Stunden
-
-            # Tag-basierte Invalidierung
-            cache.tags:
-                adapter: cache.adapter.redis
-
-            # Anwendungsdaten (API-Responses, etc.)
-            cache.app:
-                adapter: cache.adapter.redis
-                default_lifetime: 3600
-
-    # Sessions in Redis (optional, aber empfohlen)
     session:
+        # Redis-DSN statt Service-ID: Symfony baut daraus den RedisSessionHandler
+        # (Keys "sf_s<id>", TTL = session.gc_maxlifetime). Kein Session-Locking.
         handler_id: '%env(REDIS_SESSION_URL)%'
-        cookie_secure: auto
-        cookie_samesite: lax
-
-# Fuer Multi-Redis-Setup (Fortgeschritten):
-#
-# pools:
-#     cache.session:
-#         adapter: cache.adapter.redis
-#         provider: 'redis://localhost:6379/0'
-#
-#     cache.object:
-#         adapter: cache.adapter.redis
-#         provider: 'redis://localhost:6379/1'
-#
-#     cache.http:
-#         adapter: cache.adapter.redis
-#         provider: 'redis://redis-cache:6379/0'  # Separater Server
