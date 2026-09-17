@@ -1,86 +1,99 @@
 #!/bin/bash
+# Redis Hit-Rate
+# Kapitel 7: Shopwares Application Cache meistern
 #
-# Cache-Hit-Rate aus Redis auslesen
-# Verwendung: ./cache-hit-rate.sh [redis-host] [redis-port]
+# Liest keyspace_hits und keyspace_misses einer Redis-Instanz und berechnet
+# die Trefferquote. Die Zähler gelten für die ganze Instanz seit dem Start
+# (oder seit "CONFIG RESETSTAT") - liegen Sessions auf derselben Instanz,
+# zählen sie mit.
 #
-# Zielwerte:
-#   - E-Commerce optimal: >95%
-#   - Guter Wert: 80-95%
-#   - Minimum akzeptabel: >70%
+# Verwendung:
+#   ./cache-hit-rate.sh                          # redis://127.0.0.1:6379
+#   ./cache-hit-rate.sh redis://redis-cache:6379
+#
+# Messen ohne Altlasten:
+#   redis-cli -u <url> CONFIG RESETSTAT  →  Traffic laufen lassen  →  Skript
+#
+# Redis im Container:
+#   REDIS_CLI="docker exec redis redis-cli" ./cache-hit-rate.sh redis://127.0.0.1:6379
+#
+# @see https://github.com/MehmetGoekce/shopware-performance-examples
 
-REDIS_HOST="${1:-localhost}"
-REDIS_PORT="${2:-6379}"
+set -euo pipefail
 
-echo "=== Redis Cache Statistics ==="
-echo "Host: ${REDIS_HOST}:${REDIS_PORT}"
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+REDIS_CLI="${REDIS_CLI:-redis-cli}"
+
+show_usage() {
+    echo "Usage: $0 [redis-url]"
+    echo ""
+    echo "Argumente:"
+    echo "  redis-url  Redis-Instanz (Default: redis://127.0.0.1:6379)"
+    echo ""
+    echo "Umgebungsvariablen:"
+    echo "  REDIS_CLI  Befehl für redis-cli (Default: redis-cli)"
+}
+
+# Wert eines Feldes aus "INFO <section>" (Format "name:wert", CRLF)
+info_field() {
+    echo "$1" | tr -d '\r' | awk -F: -v k="$2" '$1 == k { print $2 }'
+}
+
+case "${1:-}" in
+    --help|-h)
+        show_usage
+        exit 0
+        ;;
+    -*)
+        echo "Unbekannte Option: $1"
+        show_usage
+        exit 1
+        ;;
+esac
+
+URL="${1:-redis://127.0.0.1:6379}"
+
+echo -e "${BLUE}Redis Hit-Rate: ${URL}${NC}"
 echo ""
 
-# Redis INFO abrufen
-INFO=$(redis-cli -h "${REDIS_HOST}" -p "${REDIS_PORT}" INFO stats 2>/dev/null)
-
-if [[ $? -ne 0 ]]; then
-    echo "FEHLER: Kann nicht zu Redis verbinden"
-    echo "Pruefen Sie:"
-    echo "  1. Redis laeuft: sudo systemctl status redis-server"
-    echo "  2. Host/Port korrekt: redis-cli -h ${REDIS_HOST} -p ${REDIS_PORT} ping"
+if ! stats=$(${REDIS_CLI} -u "${URL}" INFO stats 2>/dev/null) || [[ -z "$(info_field "${stats}" keyspace_hits)" ]]; then
+    echo -e "${RED}Redis nicht erreichbar: ${URL}${NC}"
+    echo "Prüfen: ${REDIS_CLI} -u ${URL} ping"
     exit 1
 fi
 
-# Hits und Misses extrahieren
-HITS=$(echo "${INFO}" | grep "keyspace_hits:" | cut -d: -f2 | tr -d '\r')
-MISSES=$(echo "${INFO}" | grep "keyspace_misses:" | cut -d: -f2 | tr -d '\r')
+hits=$(info_field "${stats}" keyspace_hits)
+misses=$(info_field "${stats}" keyspace_misses)
+total=$((hits + misses))
 
-if [[ -z "${HITS}" ]] || [[ -z "${MISSES}" ]]; then
-    echo "Keine Cache-Statistiken gefunden"
-    exit 1
-fi
+printf "  keyspace_hits:   %12d\n" "${hits}"
+printf "  keyspace_misses: %12d\n" "${misses}"
+echo ""
 
-# Hit-Rate berechnen
-TOTAL=$((HITS + MISSES))
-
-if [[ ${TOTAL} -eq 0 ]]; then
-    echo "Noch keine Cache-Operationen (kein Traffic)"
+if [[ "${total}" -eq 0 ]]; then
+    echo -e "${YELLOW}Noch keine Lesezugriffe seit Start oder RESETSTAT${NC}"
     exit 0
 fi
 
-# Bash Integer-Division, dann Dezimal berechnen
-HIT_RATE_INT=$((HITS * 100 / TOTAL))
-HIT_RATE_DECIMAL=$((HITS * 10000 / TOTAL % 100))
+rate=$(awk -v h="${hits}" -v t="${total}" 'BEGIN { printf "%.2f", h * 100 / t }')
 
-echo "Cache Hits:     ${HITS}"
-echo "Cache Misses:   ${MISSES}"
-echo "Total Requests: ${TOTAL}"
-echo ""
-printf "Hit-Rate:       %d.%02d%%\n" ${HIT_RATE_INT} ${HIT_RATE_DECIMAL}
-
-# Bewertung
-echo ""
-echo "=== Bewertung ==="
-
-if [[ ${HIT_RATE_INT} -ge 95 ]]; then
-    echo "EXCELLENT - Optimale Cache-Nutzung"
-elif [[ ${HIT_RATE_INT} -ge 80 ]]; then
-    echo "GUT - Cache arbeitet effektiv"
-elif [[ ${HIT_RATE_INT} -ge 70 ]]; then
-    echo "OK - Verbesserungspotential vorhanden"
+# Schwelle 80 % ist eine Einschätzung, kein Shopware- oder Redis-Richtwert:
+# Im Testshop (Kapitel 7) lag die Quote direkt nach dem Leeren bei 82 %,
+# mit warmem Cache bei 91 %.
+echo -n "Hit-Rate: "
+if awk -v r="${rate}" 'BEGIN { exit !(r >= 80) }'; then
+    echo -e "${GREEN}${rate}%${NC}"
 else
-    echo "WARNUNG - Cache-Effizienz zu niedrig"
+    echo -e "${YELLOW}${rate}% (niedrig)${NC}"
     echo ""
-    echo "Moegliche Ursachen:"
-    echo "  - Zu kurze TTLs"
-    echo "  - Zu aggressive Cache-Invalidierung"
-    echo "  - Viele eingeloggte User (kein HTTP-Cache)"
-    echo "  - Cache-Warmup nach Deployment fehlt"
+    echo "Mögliche Ursachen:"
+    echo "  - Cache wurde gerade geleert (Deployment, cache:clear:all) - später erneut messen"
+    echo "  - maxmemory-policy allkeys-* mit redis_tag_aware: Cache speichert nichts"
+    echo "    (./redis-diagnostics.sh --role cache ${URL})"
+    echo "  - maxmemory zu klein: viele evicted_keys"
 fi
-
-# Weitere nuetzliche Stats
-echo ""
-echo "=== Weitere Redis-Metriken ==="
-
-MEMORY=$(redis-cli -h "${REDIS_HOST}" -p "${REDIS_PORT}" INFO memory 2>/dev/null | grep "used_memory_human:" | cut -d: -f2 | tr -d '\r')
-KEYS=$(redis-cli -h "${REDIS_HOST}" -p "${REDIS_PORT}" DBSIZE 2>/dev/null | awk '{print $2}')
-UPTIME=$(redis-cli -h "${REDIS_HOST}" -p "${REDIS_PORT}" INFO server 2>/dev/null | grep "uptime_in_days:" | cut -d: -f2 | tr -d '\r')
-
-echo "Speicherverbrauch: ${MEMORY}"
-echo "Anzahl Keys:       ${KEYS}"
-echo "Uptime:            ${UPTIME} Tage"

@@ -1,160 +1,218 @@
 #!/bin/bash
+# Redis-Diagnose für Shopware
+# Kapitel 7: Shopwares Application Cache meistern
 #
-# Redis Diagnostik-Script fuer Shopware
-# Verwendung: ./redis-diagnostics.sh [redis-host] [redis-port]
+# Prüft eine Redis-Instanz passend zu ihrer Rolle (Datenkategorie laut
+# Shopware-Doku) und liest nur INFO/CONFIG - kein KEYS, kein SCAN, keine
+# Änderungen. Sicher im Produktivbetrieb.
 #
-# Prueft haeufige Probleme und gibt Loesungsvorschlaege
+#   cache     Object-/HTTP-Cache  → volatile-lru, ohne Persistenz
+#   session   Sessions            → allkeys-lru, mit Persistenz
+#   critical  Warenkörbe          → volatile-lru, mit Persistenz
+#
+# Verwendung:
+#   ./redis-diagnostics.sh --role cache redis://redis-cache:6379
+#   ./redis-diagnostics.sh --role session redis://redis-session:6380
+#
+# Redis im Container:
+#   REDIS_CLI="docker exec redis redis-cli" ./redis-diagnostics.sh --role cache redis://127.0.0.1:6379
+#
+# Exit-Code: 0 = keine FAIL-Befunde, 1 = mindestens ein FAIL oder nicht erreichbar
+#
+# @see https://developer.shopware.com/docs/guides/hosting/infrastructure/redis.html
+# @see https://github.com/MehmetGoekce/shopware-performance-examples
 
-REDIS_HOST="${1:-localhost}"
-REDIS_PORT="${2:-6379}"
+set -euo pipefail
 
-echo "=========================================="
-echo "Redis Diagnostik fuer Shopware"
-echo "=========================================="
-echo "Host: ${REDIS_HOST}:${REDIS_PORT}"
-echo "Zeit: $(date)"
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+REDIS_CLI="${REDIS_CLI:-redis-cli}"
+ROLE="cache"
+URL="redis://127.0.0.1:6379"
+FAILS=0
+
+show_usage() {
+    echo "Usage: $0 [--role cache|session|critical] [redis-url]"
+    echo ""
+    echo "Optionen:"
+    echo "  --role   Rolle der Instanz (Default: cache)"
+    echo "  redis-url  Redis-Instanz (Default: redis://127.0.0.1:6379)"
+    echo ""
+    echo "Umgebungsvariablen:"
+    echo "  REDIS_CLI  Befehl für redis-cli (Default: redis-cli)"
+}
+
+ok()   { echo -e "  ${GREEN}[OK]${NC}   $1"; }
+warn() { echo -e "  ${YELLOW}[WARN]${NC} $1"; }
+fail() { echo -e "  ${RED}[FAIL]${NC} $1"; FAILS=$((FAILS + 1)); }
+info() { echo -e "  [INFO] $1"; }
+
+# Fehlende Abschnitte (z. B. errorstats vor Redis 6.2) liefern leer statt abzubrechen
+rcli() {
+    { ${REDIS_CLI} -u "${URL}" "$@" 2>/dev/null || true; } | tr -d '\r'
+}
+
+# Wert eines Feldes aus INFO-Ausgabe (Format "name:wert")
+info_field() {
+    echo "$1" | awk -F: -v k="$2" '$1 == k { print $2 }'
+}
+
+# Wert aus "CONFIG GET <name>" (zweite Zeile)
+config_get() {
+    rcli CONFIG GET "$1" | sed -n '2p'
+}
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --help|-h)
+            show_usage
+            exit 0
+            ;;
+        --role)
+            ROLE="${2:-}"
+            shift 2 || { show_usage; exit 1; }
+            ;;
+        -*)
+            echo "Unbekannte Option: $1"
+            show_usage
+            exit 1
+            ;;
+        *)
+            URL="$1"
+            shift
+            ;;
+    esac
+done
+
+case "${ROLE}" in
+    cache|session|critical) ;;
+    *)
+        echo "Unbekannte Rolle: ${ROLE}"
+        show_usage
+        exit 1
+        ;;
+esac
+
+echo -e "${BLUE}Redis-Diagnose: ${URL} (Rolle: ${ROLE})${NC}"
 echo ""
 
-# Funktion fuer Status-Ausgabe
-status_ok() { echo -e "\e[32m[OK]\e[0m $1"; }
-status_warn() { echo -e "\e[33m[WARN]\e[0m $1"; }
-status_fail() { echo -e "\e[31m[FAIL]\e[0m $1"; }
-
-# 1. Verbindungstest
-echo "=== 1. Verbindung ==="
-if redis-cli -h "${REDIS_HOST}" -p "${REDIS_PORT}" ping > /dev/null 2>&1; then
-    status_ok "Redis erreichbar"
-else
-    status_fail "Redis nicht erreichbar"
-    echo ""
-    echo "Loesungen:"
-    echo "  1. Redis starten: sudo systemctl start redis-server"
-    echo "  2. Port pruefen: netstat -tlnp | grep 6379"
-    echo "  3. Firewall: sudo ufw allow 6379/tcp"
+# 1. Verbindung
+echo "1. Verbindung"
+if [[ "$(rcli PING)" != "PONG" ]]; then
+    fail "Redis nicht erreichbar"
+    echo "       Prüfen: Dienst läuft, Host/Port/Passwort in der URL, Firewall"
     exit 1
 fi
+server=$(rcli INFO server)
+ok "Redis $(info_field "${server}" redis_version) erreichbar"
 echo ""
 
-# 2. Speicher-Check
-echo "=== 2. Speicher ==="
-MEMORY_INFO=$(redis-cli -h "${REDIS_HOST}" -p "${REDIS_PORT}" INFO memory)
-USED_MEMORY=$(echo "${MEMORY_INFO}" | grep "used_memory_human:" | cut -d: -f2 | tr -d '\r')
-MAX_MEMORY=$(echo "${MEMORY_INFO}" | grep "maxmemory_human:" | cut -d: -f2 | tr -d '\r')
-EVICTION=$(redis-cli -h "${REDIS_HOST}" -p "${REDIS_PORT}" CONFIG GET maxmemory-policy | tail -1)
+# 2. Speicher und Eviction
+echo "2. Speicher und Eviction"
+memory=$(rcli INFO memory)
+used=$(info_field "${memory}" used_memory)
+maxmemory=$(info_field "${memory}" maxmemory)
+policy=$(config_get maxmemory-policy)
 
-echo "Verwendet: ${USED_MEMORY}"
-echo "Maximum:   ${MAX_MEMORY}"
-echo "Eviction:  ${EVICTION}"
-
-if [[ "${MAX_MEMORY}" = "0B" ]]; then
-    status_warn "Kein Speicher-Limit gesetzt (kann RAM fuellen!)"
-    echo "  Empfehlung: maxmemory 2gb in redis.conf"
+if [[ "${maxmemory:-0}" -eq 0 ]]; then
+    warn "Kein maxmemory gesetzt - Redis wächst bis der Server-RAM voll ist"
+    usage_pct=0
 else
-    status_ok "Speicher-Limit konfiguriert"
+    usage_pct=$(awk -v u="${used}" -v m="${maxmemory}" 'BEGIN { printf "%d", u * 100 / m }')
+    ok "maxmemory $(info_field "${memory}" maxmemory_human), belegt ${usage_pct} %"
 fi
 
-if [[ "${EVICTION}" = "noeviction" ]]; then
-    status_warn "Eviction-Policy ist 'noeviction' - Fehler bei vollem Speicher"
-    echo "  Empfehlung: maxmemory-policy allkeys-lru"
-elif [[ "${EVICTION}" = "allkeys-lru" ]] || [[ "${EVICTION}" = "volatile-lru" ]]; then
-    status_ok "Eviction-Policy korrekt: ${EVICTION}"
-fi
+case "${ROLE}:${policy}" in
+    cache:volatile-*|cache:noeviction|critical:volatile-*|critical:noeviction)
+        ok "maxmemory-policy ${policy}"
+        ;;
+    cache:allkeys-*)
+        fail "maxmemory-policy ${policy}: cache.adapter.redis_tag_aware speichert damit nichts (ohne Fehlermeldung) - volatile-lru setzen"
+        ;;
+    critical:allkeys-*)
+        fail "maxmemory-policy ${policy}: kann Warenkörbe und Zähler ohne TTL verdrängen - volatile-lru setzen"
+        ;;
+    session:allkeys-lru)
+        ok "maxmemory-policy ${policy}"
+        ;;
+    *)
+        warn "maxmemory-policy ${policy} - empfohlen für ${ROLE}: $([[ "${ROLE}" == session ]] && echo allkeys-lru || echo volatile-lru)"
+        ;;
+esac
 echo ""
 
-# 3. Persistenz-Check
-echo "=== 3. Persistenz ==="
-PERSISTENCE=$(redis-cli -h "${REDIS_HOST}" -p "${REDIS_PORT}" CONFIG GET save | tail -1)
-AOF=$(redis-cli -h "${REDIS_HOST}" -p "${REDIS_PORT}" CONFIG GET appendonly | tail -1)
-
-if [[ -z "${PERSISTENCE}" ]] || [[ "${PERSISTENCE}" = "" ]]; then
-    status_ok "RDB Persistenz deaktiviert (empfohlen fuer Cache)"
-else
-    status_warn "RDB Persistenz aktiv: ${PERSISTENCE}"
-    echo "  Fuer reinen Cache: save \"\" in redis.conf"
-fi
-
-if [[ "${AOF}" = "no" ]]; then
-    status_ok "AOF deaktiviert (empfohlen fuer Cache)"
-else
-    status_warn "AOF aktiv - verlangsamt Schreiboperationen"
-fi
-echo ""
-
-# 4. Shopware-spezifische Keys
-echo "=== 4. Shopware Cache-Keys ==="
-SHOPWARE_KEYS=$(redis-cli -h "${REDIS_HOST}" -p "${REDIS_PORT}" KEYS "shopware*" 2>/dev/null | wc -l)
-SESSION_KEYS=$(redis-cli -h "${REDIS_HOST}" -p "${REDIS_PORT}" KEYS "sf_s*" 2>/dev/null | wc -l)
-
-echo "Shopware Cache-Keys: ${SHOPWARE_KEYS}"
-echo "Session-Keys:        ${SESSION_KEYS}"
-
-if [[ "${SHOPWARE_KEYS}" -eq 0 ]]; then
-    status_warn "Keine Shopware-Keys gefunden"
-    echo "  Moegliche Ursachen:"
-    echo "  - Shopware nutzt Filesystem-Cache (framework.yaml pruefen)"
-    echo "  - REDIS_URL in .env nicht gesetzt"
-    echo "  - Cache wurde gerade geleert"
-else
-    status_ok "Shopware nutzt Redis als Cache-Backend"
-fi
-echo ""
-
-# 5. Performance-Metriken
-echo "=== 5. Performance ==="
-STATS=$(redis-cli -h "${REDIS_HOST}" -p "${REDIS_PORT}" INFO stats)
-HITS=$(echo "${STATS}" | grep "keyspace_hits:" | cut -d: -f2 | tr -d '\r')
-MISSES=$(echo "${STATS}" | grep "keyspace_misses:" | cut -d: -f2 | tr -d '\r')
-TOTAL=$((HITS + MISSES))
-
-if [[ ${TOTAL} -gt 0 ]]; then
-    HIT_RATE=$((HITS * 100 / TOTAL))
-    echo "Cache-Hit-Rate: ${HIT_RATE}%"
-
-    if [[ ${HIT_RATE} -ge 90 ]]; then
-        status_ok "Ausgezeichnete Hit-Rate"
-    elif [[ ${HIT_RATE} -ge 70 ]]; then
-        status_warn "Hit-Rate koennte besser sein"
+# 3. Persistenz
+echo "3. Persistenz"
+save=$(config_get save)
+aof=$(config_get appendonly)
+if [[ "${ROLE}" == "cache" ]]; then
+    if [[ -z "${save}" && "${aof}" == "no" ]]; then
+        ok "Keine Persistenz (Cache lässt sich neu erzeugen)"
     else
-        status_fail "Niedrige Hit-Rate - Cache-Effizienz pruefen"
+        info "Persistenz aktiv (save \"${save}\", appendonly ${aof}) - für reinen Cache nicht nötig"
     fi
 else
-    echo "Noch keine Cache-Statistiken (kein Traffic)"
-fi
-
-# Latenz-Check
-LATENCY=$(redis-cli -h "${REDIS_HOST}" -p "${REDIS_PORT}" --latency -c 10 2>&1 | grep "avg" | awk '{print $3}')
-if [[ -n "${LATENCY}" ]]; then
-    echo "Durchschnittliche Latenz: ${LATENCY}ms"
-    # Latenz ist in ms, als Integer vergleichen
-    LATENCY_INT=${LATENCY%.*}
-    if [[ "${LATENCY_INT:-0}" -le 1 ]]; then
-        status_ok "Latenz im optimalen Bereich"
+    if [[ -z "${save}" && "${aof}" == "no" ]]; then
+        warn "Keine Persistenz - ein Neustart löscht alle ${ROLE}-Daten"
     else
-        status_warn "Latenz erhoet - Netzwerk oder Last pruefen"
+        ok "Persistenz aktiv (save \"${save}\", appendonly ${aof})"
     fi
 fi
 echo ""
 
-# 6. Grosse Keys finden
-echo "=== 6. Grosse Keys (potentielle Probleme) ==="
-redis-cli -h "${REDIS_HOST}" -p "${REDIS_PORT}" --bigkeys 2>/dev/null | grep -A1 "Biggest" | head -10
-echo ""
-
-# 7. Client-Verbindungen
-echo "=== 7. Clients ==="
-CLIENTS=$(redis-cli -h "${REDIS_HOST}" -p "${REDIS_PORT}" INFO clients)
-CONNECTED=$(echo "${CLIENTS}" | grep "connected_clients:" | cut -d: -f2 | tr -d '\r')
-BLOCKED=$(echo "${CLIENTS}" | grep "blocked_clients:" | cut -d: -f2 | tr -d '\r')
-
-echo "Verbundene Clients: ${CONNECTED}"
-echo "Blockierte Clients: ${BLOCKED}"
-
-if [[ "${BLOCKED:-0}" -gt 0 ]]; then
-    status_warn "Es gibt blockierte Clients - potentielles Locking-Problem"
+# 4. Keys ohne TTL (INFO keyspace: keys - expires)
+echo "4. Keys ohne TTL (alle Datenbanken der Instanz)"
+keyspace=$(rcli INFO keyspace)
+read -r keys expires < <(echo "${keyspace}" | awk -F'[:=,]' '/^db[0-9]+:/ { k += $3; e += $5 } END { printf "%d %d\n", k, e }')
+if [[ "${keys}" -eq 0 ]]; then
+    info "Keine Keys"
+else
+    no_ttl=$((keys - expires))
+    no_ttl_pct=$((no_ttl * 100 / keys))
+    info "${keys} Keys, davon ${no_ttl} ohne TTL (${no_ttl_pct} %)"
+    # Tag-Listen des Tag-Aware-Adapters haben keine TTL und können nicht
+    # verdrängt werden. Kritisch erst, wenn der Speicher fast voll ist.
+    if [[ "${ROLE}" == "cache" && "${usage_pct}" -ge 90 && "${no_ttl_pct}" -ge 50 ]]; then
+        warn "Speicher fast voll und mehr als die Hälfte der Keys ohne TTL - verwaiste Cache-Tags aufräumen (FroshTools: bin/console frosh:redis-tag:cleanup)"
+    fi
 fi
 echo ""
 
-# Zusammenfassung
-echo "=========================================="
-echo "Diagnose abgeschlossen"
-echo "=========================================="
+# 5. Zugriffe
+echo "5. Zugriffe seit Start/RESETSTAT"
+stats=$(rcli INFO stats)
+hits=$(info_field "${stats}" keyspace_hits)
+misses=$(info_field "${stats}" keyspace_misses)
+evicted=$(info_field "${stats}" evicted_keys)
+total=$((hits + misses))
+if [[ "${total}" -gt 0 ]]; then
+    info "Hit-Rate $(awk -v h="${hits}" -v t="${total}" 'BEGIN { printf "%.2f", h * 100 / t }') % (${hits} Hits, ${misses} Misses)"
+else
+    info "Noch keine Lesezugriffe"
+fi
+if [[ "${evicted:-0}" -gt 0 ]]; then
+    warn "${evicted} Keys verdrängt (evicted_keys) - maxmemory prüfen"
+else
+    ok "Keine verdrängten Keys"
+fi
+oom=$(rcli INFO errorstats | awk -F'[:=,]' '$1 == "errorstat_OOM" { print $3 }')
+if [[ -n "${oom}" ]]; then
+    fail "${oom} OOM-Fehler (errorstat_OOM) - Redis hat Schreibzugriffe abgelehnt"
+fi
+echo ""
+
+# 6. Clients
+echo "6. Clients"
+clients=$(rcli INFO clients)
+info "Verbunden: $(info_field "${clients}" connected_clients), blockiert: $(info_field "${clients}" blocked_clients)"
+echo ""
+
+if [[ "${FAILS}" -gt 0 ]]; then
+    echo -e "${RED}${FAILS} FAIL-Befund(e)${NC}"
+    exit 1
+fi
+echo -e "${GREEN}Keine FAIL-Befunde${NC}"
