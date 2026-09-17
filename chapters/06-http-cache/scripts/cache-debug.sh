@@ -2,194 +2,136 @@
 # Cache Debug Script
 # Kapitel 6: HTTP-Caching
 #
-# Analysiert HTTP-Cache-Header einer URL
+# Ruft jede URL zweimal ohne Cookies ab und zeigt, ob die zweite Antwort aus
+# dem Cache kommt. Erkennt drei Fälle:
+#   1. Varnish mit config/varnish.vcl  -> Header "X-Cache: HIT/MISS"
+#   2. Anderer Reverse Proxy / CDN     -> "Cache-Control: public, s-maxage=..." vom Backend
+#   3. Eingebauter Shopware-Cache      -> Browser sieht immer "no-cache, private";
+#                                         Treffer nur an Age und TTFB erkennbar
 #
 # Verwendung:
 #   ./cache-debug.sh https://ihr-shop.ch
-#   ./cache-debug.sh https://ihr-shop.ch /kategorie /produkt/test
+#   ./cache-debug.sh https://ihr-shop.ch / /kategorie/ /produkt/SW10001
 #
 # @see https://github.com/MehmetGoekce/shopware-performance-examples
 
-set -e
+set -euo pipefail
 
-# Farben für Output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-# ============================================================
-# Funktionen
-# ============================================================
-
-print_header() {
+show_usage() {
+    echo "Usage: $0 <base-url> [pfade...]"
     echo ""
-    echo -e "${BLUE}═══════════════════════════════════════════════════════${NC}"
-    echo -e "${BLUE}  HTTP-Cache Debug Tool${NC}"
-    echo -e "${BLUE}═══════════════════════════════════════════════════════${NC}"
+    echo "Ruft jeden Pfad zweimal ohne Cookies ab und bewertet die Cache-Header."
+    echo "Ohne Pfade wird nur / geprüft."
+    echo ""
+    echo "Beispiele:"
+    echo "  $0 https://ihr-shop.ch"
+    echo "  $0 https://ihr-shop.ch / /kategorie/ /produkt/SW10001"
+}
+
+# Wert eines Headers (case-insensitive) aus einem Header-Block
+header_value() {
+    local headers=$1
+    local name=$2
+    echo "${headers}" | grep -i "^${name}:" | head -1 | cut -d: -f2- | tr -d '\r' | sed 's/^ *//' || true
+}
+
+fetch() {
+    # Gibt Header-Block aus, danach eine Zeile "TTFB=<sekunden>"
+    curl -s -o /dev/null -D - -w 'TTFB=%{time_starttransfer}\n' \
+        -H "Accept-Encoding: gzip" "$1"
 }
 
 analyze_url() {
     local url=$1
+    local first second
+
     echo ""
-    echo -e "${YELLOW}🔍 Analysiere: ${url}${NC}"
-    echo "───────────────────────────────────────────────────────"
+    echo -e "${BLUE}Analysiere: ${url}${NC}"
+    echo "-------------------------------------------------------"
 
-    # HTTP-Header abrufen
-    headers=$(curl -sI -H "Accept-Encoding: gzip" "${url}" 2>/dev/null)
-
-    if [[ -z "${headers}" ]]; then
-        echo -e "${RED}❌ Fehler: URL nicht erreichbar${NC}"
+    if ! first=$(fetch "${url}") || ! echo "${first}" | grep -q "^HTTP"; then
+        echo -e "${RED}Fehler: URL nicht erreichbar${NC}"
         return 1
     fi
+    second=$(fetch "${url}")
 
-    # Status Code
-    status=$(echo "${headers}" | grep -i "^HTTP" | head -1 | awk '{print $2}')
-    echo -e "HTTP Status: ${status}"
+    local status cache_control x_cache age set_cookie ttfb1 ttfb2
+    status=$(echo "${second}" | grep -i "^HTTP" | tail -1 | awk '{print $2}')
+    cache_control=$(header_value "${second}" "cache-control")
+    x_cache=$(header_value "${second}" "x-cache")
+    age=$(header_value "${second}" "age")
+    set_cookie=$(echo "${first}" | grep -ci "^set-cookie:" || true)
+    ttfb1=$(echo "${first}" | sed -n 's/^TTFB=//p')
+    ttfb2=$(echo "${second}" | sed -n 's/^TTFB=//p')
 
-    # Cache-Control Header
-    cache_control=$(echo "${headers}" | grep -i "^cache-control:" | cut -d: -f2- | tr -d '\r')
-    if [[ -n "${cache_control}" ]]; then
-        echo -e "${GREEN}Cache-Control:${NC}${cache_control}"
+    echo "HTTP Status:    ${status}"
+    echo "Cache-Control:  ${cache_control:-(nicht gesetzt)}"
+    [[ -n "${x_cache}" ]] && echo "X-Cache:        ${x_cache}"
+    [[ -n "${age}" ]] && echo "Age:            ${age}s"
+    awk -v a="${ttfb1}" -v b="${ttfb2}" 'BEGIN { printf "TTFB:           1. Aufruf %.0f ms, 2. Aufruf %.0f ms\n", a * 1000, b * 1000 }'
+    [[ "${set_cookie}" -gt 0 ]] && echo "Set-Cookie:     ${set_cookie}x beim 1. Aufruf"
 
-        # max-age extrahieren
-        if [[ "${cache_control}" =~ max-age=([0-9]+) ]]; then
-            max_age="${BASH_REMATCH[1]}"
-            hours=$((max_age / 3600))
-            mins=$(((max_age % 3600) / 60))
-            echo -e "  └─ TTL: ${max_age}s (${hours}h ${mins}m)"
+    echo -n "Bewertung:      "
+    if [[ "${status}" =~ ^3 ]]; then
+        echo -e "${YELLOW}Weiterleitung - Ziel-URL prüfen${NC}"
+    elif [[ -n "${x_cache}" ]]; then
+        if [[ "${x_cache}" == *HIT* ]]; then
+            echo -e "${GREEN}Varnish: 2. Aufruf aus dem Cache${NC}"
+        else
+            echo -e "${YELLOW}Varnish: auch der 2. Aufruf kam vom Backend (Route ohne _httpCache, Pass-Regel oder Set-Cookie?)${NC}"
         fi
-
-        # stale-while-revalidate
-        if [[ "${cache_control}" =~ stale-while-revalidate=([0-9]+) ]]; then
-            swr="${BASH_REMATCH[1]}"
-            echo -e "  └─ SWR: ${swr}s"
-        fi
-
-        # public/private
-        if [[ "${cache_control}" =~ "public" ]]; then
-            echo -e "  └─ Scope: ${GREEN}public${NC} (cacheable)"
-        elif [[ "${cache_control}" =~ "private" ]]; then
-            echo -e "  └─ Scope: ${YELLOW}private${NC} (nur Browser-Cache)"
-        fi
-
-        # no-cache/no-store
-        if [[ "${cache_control}" =~ "no-store" ]]; then
-            echo -e "  └─ ${RED}no-store${NC} (nicht gecacht!)"
-        elif [[ "${cache_control}" =~ "no-cache" ]]; then
-            echo -e "  └─ ${YELLOW}no-cache${NC} (Revalidierung erforderlich)"
+    elif [[ "${cache_control}" == *public* && "${cache_control}" == *s-maxage* ]]; then
+        echo -e "${GREEN}Backend liefert cachebar für Reverse Proxy/CDN${NC} (Cache-Status beim Proxy prüfen)"
+    elif [[ "${cache_control}" == *private* ]]; then
+        if [[ "${age}" =~ ^[0-9]+$ ]] || awk -v a="${ttfb1}" -v b="${ttfb2}" 'BEGIN { exit !(b * 3 < a) }'; then
+            echo -e "${GREEN}Vermutlich eingebauter Shopware-Cache${NC} (Age-Header bzw. deutlich schnellerer 2. Aufruf)"
+        else
+            echo -e "${YELLOW}Nicht gecacht oder nicht erkennbar${NC} (Route mit _httpCache? APP_ENV=prod?)"
         fi
     else
-        echo -e "${RED}Cache-Control: nicht gesetzt!${NC}"
+        echo -e "${YELLOW}Nicht eindeutig - Header oben prüfen${NC}"
     fi
-
-    # X-Cache Header (Varnish/CDN)
-    x_cache=$(echo "${headers}" | grep -i "^x-cache:" | cut -d: -f2- | tr -d '\r')
-    if [[ -n "${x_cache}" ]]; then
-        if [[ "${x_cache}" =~ "HIT" ]]; then
-            echo -e "${GREEN}X-Cache:${NC}${x_cache} ✅"
-        else
-            echo -e "${YELLOW}X-Cache:${NC}${x_cache}"
-        fi
-    fi
-
-    # X-Cache-Hits (Varnish)
-    x_cache_hits=$(echo "${headers}" | grep -i "^x-cache-hits:" | cut -d: -f2- | tr -d '\r')
-    if [[ -n "${x_cache_hits}" ]]; then
-        echo -e "X-Cache-Hits:${x_cache_hits}"
-    fi
-
-    # Age Header
-    age=$(echo "${headers}" | grep -i "^age:" | cut -d: -f2- | tr -d '\r')
-    if [[ -n "${age}" ]]; then
-        echo -e "Age:${age}s (Zeit im Cache)"
-    fi
-
-    # ETag
-    etag=$(echo "${headers}" | grep -i "^etag:" | cut -d: -f2- | tr -d '\r')
-    if [[ -n "${etag}" ]]; then
-        echo -e "ETag: vorhanden ✅"
-    fi
-
-    # Shopware-spezifische Header
-    sw_cache_id=$(echo "${headers}" | grep -i "^x-shopware-cache-id:" | cut -d: -f2- | tr -d '\r')
-    if [[ -n "${sw_cache_id}" ]]; then
-        echo -e "Shopware-Cache-ID: vorhanden"
-    fi
-
-    # Vary Header
-    vary=$(echo "${headers}" | grep -i "^vary:" | cut -d: -f2- | tr -d '\r')
-    if [[ -n "${vary}" ]]; then
-        echo -e "Vary:${vary}"
-    fi
-
-    # Set-Cookie (verhindert Caching!)
-    set_cookie=$(echo "${headers}" | grep -i "^set-cookie:")
-    if [[ -n "${set_cookie}" ]]; then
-        echo -e "${RED}⚠️  Set-Cookie Header gefunden - verhindert Caching!${NC}"
-    fi
-
-    echo ""
 }
-
-print_summary() {
-    echo -e "${BLUE}═══════════════════════════════════════════════════════${NC}"
-    echo -e "${BLUE}  Legende${NC}"
-    echo -e "${BLUE}═══════════════════════════════════════════════════════${NC}"
-    echo ""
-    echo "Cache-Control Direktiven:"
-    echo "  public        = Darf von jedem Cache gespeichert werden"
-    echo "  private       = Nur Browser-Cache, kein CDN/Proxy"
-    echo "  max-age       = Gültigkeitsdauer in Sekunden"
-    echo "  s-maxage      = Gültigkeitsdauer für Shared Caches"
-    echo "  no-cache      = Muss revalidiert werden"
-    echo "  no-store      = Wirklich nicht cachen"
-    echo "  stale-while-revalidate = Stale Content während Refresh"
-    echo ""
-    echo "X-Cache Werte:"
-    echo "  HIT           = Aus Cache geliefert"
-    echo "  MISS          = Vom Backend geholt"
-    echo ""
-    echo "Ziel-Werte:"
-    echo "  TTFB          = < 100ms (mit Cache)"
-    echo "  Cache-Hit-Rate = > 80% (Ziel), > 95% (exzellent)"
-    echo ""
-}
-
-# ============================================================
-# Main
-# ============================================================
 
 if [[ $# -lt 1 ]]; then
-    echo "Verwendung: $0 <base-url> [pfade...]"
-    echo ""
-    echo "Beispiele:"
-    echo "  $0 https://ihr-shop.ch"
-    echo "  $0 https://ihr-shop.ch / /kategorie /produkt/test"
+    show_usage
     exit 1
 fi
 
-BASE_URL="${1%/}"  # Trailing slash entfernen
+case $1 in
+    -h|--help)
+        show_usage
+        exit 0
+        ;;
+esac
+
+BASE_URL="${1%/}"
 shift
 
-print_header
-
-# Wenn keine Pfade angegeben, Standard-Pfade testen
 if [[ $# -eq 0 ]]; then
-    PATHS=("/" "/navigation" "/search")
+    PATHS=("/")
 else
     PATHS=("$@")
 fi
 
+echo -e "${BLUE}HTTP-Cache Debug${NC}"
+
+failed=0
 for path in "${PATHS[@]}"; do
-    if [[ "${path}" == /* ]]; then
-        analyze_url "${BASE_URL}${path}"
-    else
-        analyze_url "${BASE_URL}/${path}"
-    fi
+    [[ "${path}" == /* ]] || path="/${path}"
+    analyze_url "${BASE_URL}${path}" || failed=1
 done
 
-print_summary
+echo ""
+echo "Hinweise:"
+echo "  - Getestet wird als Gast ohne Cookies. Eingeloggte Kunden und Besucher"
+echo "    mit Warenkorb gehen immer am Cache vorbei."
+echo "  - Hinter Varnish sieht der Browser für HTML bewusst 'no-store'."
 
-echo -e "${GREEN}✅ Analyse abgeschlossen${NC}"
+exit "${failed}"

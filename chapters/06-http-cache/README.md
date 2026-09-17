@@ -2,94 +2,104 @@
 
 Code-Beispiele und Konfigurationen aus Kapitel 6 des Buches "Shop-Performance in 30 Tagen".
 
+Gilt für **Shopware 6.6** (getestet mit 6.6.10.6) und im Wesentlichen für 6.7. Mit 6.8 kommt
+eine neue Cache-Architektur (in 6.7.6 bereits experimentell hinter `CACHE_REWORK`).
+
 ## Inhalt
 
 ```
 06-http-cache/
 ├── README.md                           # Diese Datei
 ├── config/
-│   ├── shopware.yaml                   # HTTP-Cache Konfiguration
-│   └── varnish.vcl                     # Varnish VCL für Shopware 6
+│   ├── shopware.yaml                   # Globale HTTP-Cache-Optionen (stale-*, Tracking-Parameter, Invalidierung)
+│   ├── varnish.yaml                    # Shopware hinter Varnish mit xkey (6.6 und 6.7)
+│   └── varnish.vcl                     # Kommentierte Lern-VCL mit xkey, Währungs-Cookie, ESI
 ├── scripts/
-│   ├── cache-debug.sh                  # Cache-Header analysieren
-│   ├── cache-warmup.sh                 # Cache aufwärmen
-│   └── cache-hit-rate.sh               # Hit-Rate aus Logs berechnen
+│   ├── cache-debug.sh                  # Prüft, ob eine URL aus dem Cache kommt
+│   ├── cache-warmup.sh                 # Wärmt den Cache aus der Sitemap auf
+│   └── cache-hit-rate.sh               # Hit-Rate aus varnishstat oder Access-Log
 └── src/Controller/
-    ├── CacheableController.php         # Controller mit Cache-Headers
-    └── EsiWidgetController.php         # ESI-Widget Beispiel
+    ├── CacheableController.php         # Routen mit _httpCache und eigener TTL
+    └── EsiWidgetController.php         # ESI-Fragment mit eigener TTL und Cache-Tag
 ```
 
-## Schnellstart
+## Wie der HTTP-Cache in Shopware 6.6 funktioniert
 
-### 1. HTTP-Cache aktivieren
+- **Ab Werk aktiv** (`SHOPWARE_HTTP_CACHE_ENABLED=1`, `SHOPWARE_HTTP_DEFAULT_TTL=7200`).
+- **Nur in `APP_ENV=prod`.** In `dev` liegt der Cache nur im Arbeitsspeicher des Requests, es gibt nie einen Treffer.
+- **Die Route entscheidet.** Gecacht wird nur, was den Routen-Default `_httpCache` hat
+  (`true` oder `['maxAge' => 300]`). `$response->setSharedMaxAge()` allein reicht nicht.
+- **Eingeloggte Kunden und Besucher mit Warenkorb** gehen am Cache vorbei (Cookie `sw-states`).
+- **Cache-Key:** URL plus Cookie `sw-cache-hash` (Kundengruppe, Regeln, Währung ...) bzw. `sw-currency`.
+- **Ohne Reverse Proxy** sieht der Browser immer `Cache-Control: no-cache, private`. Der eingebaute
+  Cache arbeitet trotzdem, erkennbar nur an `Age` und an der Antwortzeit.
+
+## Schnellstart: eingebauter Cache
 
 ```bash
-# In .env
-HTTP_CACHE_ENABLED=1
+# .env bzw. Umgebung des Webservers (nicht nur der CLI!)
 APP_ENV=prod
 
-# Cache leeren und aufwärmen
 bin/console cache:clear
-bin/console http:cache:warm:up
+
+# Prüfen: zweiter Aufruf deutlich schneller?
+./scripts/cache-debug.sh https://ihr-shop.ch / /kategorie/
 ```
 
-### 2. Cache-Status prüfen
+## Varnish
+
+1. `config/varnish.vcl` anpassen (Backend, ACL `purgers`) und laden,
+   oder das offizielle Image [ghcr.io/shopware/varnish](https://github.com/shopware/varnish-shopware) nutzen
+2. `config/varnish.yaml` nach `config/packages/varnish.yaml` kopieren, `hosts` eintragen
+3. `bin/console cache:clear`
 
 ```bash
-# Cache-Header inspizieren
-./scripts/cache-debug.sh https://ihr-shop.ch
-
-# Erwartete Ausgabe:
-# X-Cache: HIT
-# Age: 1234
-# Cache-Control: public, max-age=7200
+./scripts/cache-debug.sh https://ihr-shop.ch /
+# X-Cache: HIT, Cache-Control für HTML: no-store (gewollt: der Browser soll HTML nicht selbst cachen)
 ```
 
-### 3. Hit-Rate messen
+Invalidierung: Speichert jemand ein Produkt, schickt Shopware einen `PURGE` mit Header
+`xkey: product-<id> ...` an Varnish. `bin/console cache:clear:http` (ab 6.6.10.0) und
+`cache:clear` schicken einen `BAN` für den ganzen Cache.
+
+### VCL-Syntax prüfen
 
 ```bash
-# Aus Nginx-Logs
-./scripts/cache-hit-rate.sh /var/log/nginx/access.log
-
-# Ziel: > 80%, Exzellent: > 95%
+docker run --rm --entrypoint varnishd \
+  -v "$PWD/config/varnish.vcl:/etc/varnish/default.vcl:ro" \
+  ghcr.io/shopware/varnish:6.7 -C -f /etc/varnish/default.vcl > /dev/null
 ```
 
-## Konfiguration
+Das Image ersetzt beim normalen Start Platzhalter per `sed -i` in `/etc/varnish/default.vcl`.
+Eigene VCL deshalb per eigenem Image oder `docker cp` einbringen, nicht als einzelne Datei mounten.
 
-### Shopware HTTP-Cache (shopware.yaml)
+## Hit-Rate messen
 
-```yaml
-shopware:
-    http_cache:
-        enabled: true
-        default_ttl: 7200                    # 2 Stunden
-        stale_while_revalidate: 14400        # 4 Stunden
-        stale_if_error: 86400                # 24 Stunden
+```bash
+# Varnish-Zähler (im Container: VARNISHSTAT_CMD="docker exec varnish varnishstat")
+./scripts/cache-hit-rate.sh --varnishstat
+
+# Genauer: Log mit Handling (hit/miss/pass) als letztem Feld
+varnishncsa -F '%h %t "%r" %s %b %{Varnish:handling}x' -w /var/log/varnish/cache.log
+./scripts/cache-hit-rate.sh /var/log/varnish/cache.log
 ```
 
-### Varnish (varnish.vcl)
+`varnishstat` zählt Besucher mit Login oder Warenkorb, die die VCL in `vcl_hit` auf Pass schickt,
+als `cache_hit` mit. Die Quote aus den Zählern ist dann zu hoch.
 
-Die mitgelieferte VCL enthält:
-- Shopware 6 kompatible Konfiguration
-- Statische Assets mit 7d TTL
-- Grace Mode für Ausfallsicherheit
-- Debug-Header für Entwicklung
+## Getestet
 
-## Erwartete Verbesserungen
-
-| Metrik | Vorher | Nachher | Verbesserung |
-|--------|--------|---------|--------------|
-| TTFB | 800-2.000ms | 20-100ms | -90% bis -98% |
-| Server-CPU | 60-90% | 10-30% | -60% bis -80% |
-| Requests/s | 50-100 | 2.000-5.000 | +2.000% |
+Alle Dateien wurden gegen `dockware/dev:6.6.10.6` mit `ghcr.io/shopware/varnish:6.7` (Varnish 8.0.2) geprüft:
+HIT/MISS, xkey-PURGE nach Preis- und Bestandsänderung, BAN bei `cache:clear:http`,
+Währungs-Cookie, Pass bei Login und Warenkorb, ESI-Fragment mit eigener TTL,
+Tracking-Parameter, Sitemap-Warmup. Die VCL-Syntax prüft die CI bei jedem Push.
 
 ## Weiterführende Links
 
-- [Web Almanac 2024 - Performance](https://almanac.httparchive.org/en/2024/performance)
-- [web.dev - TTFB](https://web.dev/articles/ttfb)
+- [Shopware Docs: HTTP Cache](https://developer.shopware.com/docs/concepts/framework/http_cache.html)
+- [Shopware Varnish Docker Image](https://github.com/shopware/varnish-shopware)
+- [Varnish xkey vmod](https://github.com/varnish/varnish-modules/blob/master/src/vmod_xkey.vcc)
 - [web.dev - stale-while-revalidate](https://web.dev/articles/stale-while-revalidate)
-- [Shopware HTTP Cache Docs](https://developer.shopware.com/docs/guides/hosting/performance/caches.html)
-- [Varnish Documentation](https://varnish-cache.org/docs/)
 
 ## Lizenz
 

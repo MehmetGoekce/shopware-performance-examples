@@ -2,210 +2,149 @@
 # Cache Hit-Rate Calculator
 # Kapitel 6: HTTP-Caching
 #
-# Berechnet die Cache-Hit-Rate aus Nginx/Varnish Logs.
+# Berechnet die Cache-Hit-Rate aus Varnish-Zählern oder aus einem Access-Log,
+# dessen LETZTES Feld der Cache-Status ist.
 #
 # Verwendung:
-#   ./cache-hit-rate.sh /var/log/nginx/access.log
-#   ./cache-hit-rate.sh /var/log/varnish/varnishncsa.log
 #   ./cache-hit-rate.sh --varnishstat
+#   ./cache-hit-rate.sh /var/log/varnish/varnishncsa.log
+#   ./cache-hit-rate.sh /var/log/nginx/access.log
 #
-# Voraussetzung für Nginx:
-#   Log-Format muss X-Cache Header enthalten:
-#   log_format cache '${remote_addr} - ${upstream_cache_status} ...';
+# Log-Formate mit Cache-Status als letztem Feld:
+#   Varnish:  varnishncsa -F '%h %t "%r" %s %b %{Varnish:handling}x'
+#             (letztes Feld: hit, miss, pass, hitmiss, hitpass, pipe oder synth;
+#              hitmiss/hitpass = nicht cachebare Antwort, die Varnish sich gemerkt hat)
+#   Nginx mit proxy_cache statt Varnish:
+#             log_format cache '$remote_addr [$time_local] "$request" $status $upstream_cache_status';
+#
+# Varnish im Container:
+#   VARNISHSTAT_CMD="docker exec varnish varnishstat" ./cache-hit-rate.sh --varnishstat
 #
 # @see https://github.com/MehmetGoekce/shopware-performance-examples
 
-set -e
+set -euo pipefail
 
-# Farben
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-# ============================================================
-# Funktionen
-# ============================================================
+VARNISHSTAT_CMD="${VARNISHSTAT_CMD:-varnishstat}"
 
-print_header() {
+show_usage() {
+    echo "Usage: $0 <logfile> | --varnishstat"
     echo ""
-    echo -e "${BLUE}═══════════════════════════════════════════════════════${NC}"
-    echo -e "${BLUE}  Cache Hit-Rate Calculator${NC}"
-    echo -e "${BLUE}═══════════════════════════════════════════════════════${NC}"
+    echo "Optionen:"
+    echo "  <logfile>      Access-Log, letztes Feld = Cache-Status (hit, miss, pass ...)"
+    echo "  --varnishstat  Zähler direkt von Varnish lesen (MAIN.cache_hit / MAIN.cache_miss)"
+    echo ""
+    echo "Umgebungsvariablen:"
+    echo "  VARNISHSTAT_CMD  Befehl für varnishstat (Default: varnishstat)"
 }
 
-analyze_nginx_log() {
+# Hit-Rate in Prozent mit zwei Nachkommastellen
+percent() {
+    awk -v h="$1" -v t="$2" 'BEGIN { printf "%.2f", (t > 0) ? h * 100 / t : 0 }'
+}
+
+rate_verdict() {
+    local rate=$1
+    echo -n "Cache Hit-Rate: "
+    if awk -v r="${rate}" 'BEGIN { exit !(r >= 95) }'; then
+        echo -e "${GREEN}${rate}% (exzellent)${NC}"
+    elif awk -v r="${rate}" 'BEGIN { exit !(r >= 80) }'; then
+        echo -e "${GREEN}${rate}% (gut)${NC}"
+    elif awk -v r="${rate}" 'BEGIN { exit !(r >= 60) }'; then
+        echo -e "${YELLOW}${rate}% (verbesserungswürdig)${NC}"
+    else
+        echo -e "${RED}${rate}% (schlecht)${NC}"
+    fi
+}
+
+analyze_log() {
     local logfile=$1
 
-    echo ""
-    echo -e "${BLUE}📊 Analysiere Nginx Log: ${logfile}${NC}"
-    echo ""
-
     if [[ ! -f "${logfile}" ]]; then
-        echo -e "${RED}❌ Datei nicht gefunden: ${logfile}${NC}"
+        echo -e "${RED}Datei nicht gefunden: ${logfile}${NC}"
         exit 1
     fi
 
-    # Verschiedene Log-Formate versuchen
-    # Format 1: X-Cache Header am Ende
-    hits=$(grep -c "HIT" "${logfile}" 2>/dev/null || echo "0")
-    misses=$(grep -c "MISS" "${logfile}" 2>/dev/null || echo "0")
-    bypasses=$(grep -c "BYPASS" "${logfile}" 2>/dev/null || echo "0")
-    expired=$(grep -c "EXPIRED" "${logfile}" 2>/dev/null || echo "0")
+    echo -e "${BLUE}Analysiere Log: ${logfile}${NC}"
+    echo ""
 
-    total=$((hits + misses + bypasses + expired))
+    # Letztes Feld jeder Zeile, nur bekannte Cache-Status zählen
+    local counts
+    counts=$(awk '
+        { s = toupper($NF) }
+        s ~ /^(HIT|MISS|PASS|HITMISS|HITPASS|PIPE|SYNTH|BYPASS|EXPIRED|STALE|UPDATING|REVALIDATED)$/ { n[s]++; total++ }
+        END {
+            printf "HIT=%d MISS=%d OTHER=%d TOTAL=%d\n", n["HIT"], n["MISS"], total - n["HIT"] - n["MISS"], total
+        }' "${logfile}")
+
+    local hits misses other total
+    hits=$(echo "${counts}" | sed -n 's/.*HIT=\([0-9]*\).*/\1/p')
+    misses=$(echo "${counts}" | sed -n 's/.*MISS=\([0-9]*\).*/\1/p')
+    other=$(echo "${counts}" | sed -n 's/.*OTHER=\([0-9]*\).*/\1/p')
+    total=$(echo "${counts}" | sed -n 's/.*TOTAL=\([0-9]*\).*/\1/p')
 
     if [[ "${total}" -eq 0 ]]; then
-        echo -e "${YELLOW}⚠ Keine Cache-Status gefunden im Log.${NC}"
-        echo ""
-        echo "Stelle sicher, dass dein Nginx Log-Format den Cache-Status enthält:"
-        echo ""
-        echo '  log_format cache '"'"'${remote_addr} - ${remote_user} [${time_local}] "${request}" '
-        echo '                   ${status} ${body_bytes_sent} "${http_referer}" '
-        echo '                   "${http_user_agent}" ${upstream_cache_status}'"'"';'
-        echo ""
-        echo '  access_log /var/log/nginx/access.log cache;'
+        echo -e "${YELLOW}Kein Cache-Status im letzten Feld gefunden.${NC}"
+        echo "Log-Format prüfen (siehe Kopf dieses Skripts)."
         return 1
     fi
 
-    # Berechnung
-    hit_rate=$(echo "scale=2; ${hits} * 100 / ${total}" | bc)
-
-    echo "Cache Status Verteilung:"
-    echo "───────────────────────────────────────"
     printf "  HIT:     %8d\n" "${hits}"
     printf "  MISS:    %8d\n" "${misses}"
-    printf "  BYPASS:  %8d\n" "${bypasses}"
-    printf "  EXPIRED: %8d\n" "${expired}"
-    echo "───────────────────────────────────────"
-    printf "  TOTAL:   %8d\n" "${total}"
+    printf "  Andere:  %8d  (PASS, HITMISS, BYPASS ...)\n" "${other}"
+    printf "  Gesamt:  %8d\n" "${total}"
     echo ""
-
-    # Hit-Rate mit Bewertung
-    echo -n "Cache Hit-Rate: "
-    if (( $(echo "${hit_rate} >= 95" | bc -l) )); then
-        echo -e "${GREEN}${hit_rate}% ✅ Exzellent${NC}"
-    elif (( $(echo "${hit_rate} >= 80" | bc -l) )); then
-        echo -e "${GREEN}${hit_rate}% ✅ Gut${NC}"
-    elif (( $(echo "${hit_rate} >= 60" | bc -l) )); then
-        echo -e "${YELLOW}${hit_rate}% ⚠ Verbesserungswürdig${NC}"
-    else
-        echo -e "${RED}${hit_rate}% ❌ Schlecht${NC}"
-    fi
+    rate_verdict "$(percent "${hits}" "$((hits + misses))")"
+    echo "(Basis: HIT / (HIT + MISS). Anteil aller Requests aus dem Cache: $(percent "${hits}" "${total}")%)"
 }
 
 analyze_varnishstat() {
-    echo ""
-    echo -e "${BLUE}📊 Analysiere Varnish Statistiken${NC}"
+    echo -e "${BLUE}Analysiere Varnish-Zähler${NC}"
     echo ""
 
-    if ! command -v varnishstat &> /dev/null; then
-        echo -e "${RED}❌ varnishstat nicht gefunden${NC}"
+    local stats
+    if ! stats=$(${VARNISHSTAT_CMD} -1 2>/dev/null); then
+        echo -e "${RED}varnishstat nicht ausführbar: ${VARNISHSTAT_CMD}${NC}"
         exit 1
     fi
 
-    # Varnish Statistiken abrufen
-    stats=$(varnishstat -1 2>/dev/null)
-
-    hits=$(echo "${stats}" | grep "MAIN.cache_hit " | awk '{print $2}')
-    misses=$(echo "${stats}" | grep "MAIN.cache_miss " | awk '{print $2}')
-    hitpass=$(echo "${stats}" | grep "MAIN.cache_hitpass " | awk '{print $2}')
-
+    local hits misses hitpass passes n_object
+    hits=$(echo "${stats}" | awk '$1 == "MAIN.cache_hit" { print $2 }')
+    misses=$(echo "${stats}" | awk '$1 == "MAIN.cache_miss" { print $2 }')
+    hitpass=$(echo "${stats}" | awk '$1 == "MAIN.cache_hitpass" { print $2 }')
+    passes=$(echo "${stats}" | awk '$1 == "MAIN.s_pass" { print $2 }')
+    n_object=$(echo "${stats}" | awk '$1 == "MAIN.n_object" { print $2 }')
     hits=${hits:-0}
     misses=${misses:-0}
     hitpass=${hitpass:-0}
 
-    total=$((hits + misses))
-
+    local total=$((hits + misses))
     if [[ "${total}" -eq 0 ]]; then
-        echo -e "${YELLOW}⚠ Keine Requests seit Varnish-Start${NC}"
+        echo -e "${YELLOW}Noch keine cachebaren Requests seit dem Varnish-Start${NC}"
         return 1
     fi
 
-    hit_rate=$(echo "scale=2; ${hits} * 100 / ${total}" | bc)
-
-    echo "Varnish Cache Statistiken:"
-    echo "───────────────────────────────────────"
     printf "  cache_hit:     %12d\n" "${hits}"
     printf "  cache_miss:    %12d\n" "${misses}"
-    printf "  cache_hitpass: %12d\n" "${hitpass}"
-    echo "───────────────────────────────────────"
-    printf "  Total:         %12d\n" "${total}"
+    printf "  cache_hitpass: %12d  (Hit-for-Pass-Objekte)\n" "${hitpass}"
+    printf "  s_pass:        %12d  (Requests am Cache vorbei)\n" "${passes:-0}"
+    printf "  Objekte:       %12d\n" "${n_object:-0}"
     echo ""
-
-    echo -n "Cache Hit-Rate: "
-    if (( $(echo "${hit_rate} >= 95" | bc -l) )); then
-        echo -e "${GREEN}${hit_rate}% ✅ Exzellent${NC}"
-    elif (( $(echo "${hit_rate} >= 80" | bc -l) )); then
-        echo -e "${GREEN}${hit_rate}% ✅ Gut${NC}"
-    elif (( $(echo "${hit_rate} >= 60" | bc -l) )); then
-        echo -e "${YELLOW}${hit_rate}% ⚠ Verbesserungswürdig${NC}"
-    else
-        echo -e "${RED}${hit_rate}% ❌ Schlecht${NC}"
-    fi
-
-    # Zusätzliche Varnish-Metriken
-    echo ""
-    echo "Weitere Metriken:"
-    echo "───────────────────────────────────────"
-
-    n_object=$(echo "${stats}" | grep "MAIN.n_object " | awk '{print $2}')
-    printf "  Objekte im Cache: %d\n" "${n_object:-0}"
-
-    backend_conn=$(echo "${stats}" | grep "MAIN.backend_conn " | awk '{print $2}')
-    printf "  Backend Verbindungen: %d\n" "${backend_conn:-0}"
-
-    backend_fail=$(echo "${stats}" | grep "MAIN.backend_fail " | awk '{print $2}')
-    if [[ "${backend_fail:-0}" -gt 0 ]]; then
-        echo -e "  ${RED}Backend Fehler: ${backend_fail}${NC}"
-    fi
+    rate_verdict "$(percent "${hits}" "${total}")"
+    echo "(Basis: cache_hit / (cache_hit + cache_miss). Achtung: Besucher mit Login oder Warenkorb,"
+    echo " die config/varnish.vcl in vcl_hit auf Pass schickt, zählt Varnish als cache_hit UND s_pass."
+    echo " Die Quote ist dann zu hoch - genauer ist das Log mit %{Varnish:handling}x.)"
 }
-
-print_recommendations() {
-    echo ""
-    echo -e "${BLUE}═══════════════════════════════════════════════════════${NC}"
-    echo -e "${BLUE}  Empfehlungen${NC}"
-    echo -e "${BLUE}═══════════════════════════════════════════════════════${NC}"
-    echo ""
-    echo "Ziel-Werte:"
-    echo "  > 95%  = Exzellent (überwiegend statischer Content)"
-    echo "  > 80%  = Gut (typischer E-Commerce Shop)"
-    echo "  > 60%  = Verbesserungswürdig"
-    echo "  < 60%  = Schlecht - Optimierung dringend nötig"
-    echo ""
-    echo "Verbesserungsmöglichkeiten:"
-    echo "  1. TTL erhöhen (stale-while-revalidate nutzen)"
-    echo "  2. Query-Parameter normalisieren (UTM etc.)"
-    echo "  3. Set-Cookie Header entfernen wo möglich"
-    echo "  4. Session-Cookies nur bei Bedarf setzen"
-    echo "  5. ESI für dynamische Teile nutzen"
-    echo ""
-}
-
-show_usage() {
-    echo "Verwendung: $0 <logfile> | --varnishstat"
-    echo ""
-    echo "Optionen:"
-    echo "  <logfile>      Nginx/Apache Access Log mit Cache-Status"
-    echo "  --varnishstat  Statistiken direkt von Varnish abrufen"
-    echo ""
-    echo "Beispiele:"
-    echo "  $0 /var/log/nginx/access.log"
-    echo "  $0 /var/log/varnish/varnishncsa.log"
-    echo "  $0 --varnishstat"
-}
-
-# ============================================================
-# Main
-# ============================================================
 
 if [[ $# -lt 1 ]]; then
     show_usage
     exit 1
 fi
-
-print_header
 
 case $1 in
     --varnishstat|-v)
@@ -215,11 +154,12 @@ case $1 in
         show_usage
         exit 0
         ;;
+    -*)
+        echo "Unbekannte Option: $1"
+        show_usage
+        exit 1
+        ;;
     *)
-        analyze_nginx_log "$1"
+        analyze_log "$1"
         ;;
 esac
-
-print_recommendations
-
-echo -e "${GREEN}✅ Analyse abgeschlossen${NC}"
