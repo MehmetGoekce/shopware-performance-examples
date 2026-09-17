@@ -127,6 +127,14 @@ teardown() {
     [[ "$output" == *"Keine FAIL-Befunde"* ]]
 }
 
+@test "redis-diagnostics.sh warns when CONFIG GET is blocked" {
+    printf '' > "$FIX/CONFIG_GET_maxmemory-policy"
+    run "$DIR/redis-diagnostics.sh" --role cache
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"CONFIG GET liefert nichts"* ]]
+    [[ "$output" != *"empfohlen für cache"* ]]
+}
+
 @test "redis-diagnostics.sh warns when maxmemory is not set" {
     printf 'used_memory:1000\r\nmaxmemory:0\r\nmaxmemory_human:0B\r\n' > "$FIX/INFO_memory"
     run "$DIR/redis-diagnostics.sh" --role cache

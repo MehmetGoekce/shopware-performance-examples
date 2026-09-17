@@ -2,7 +2,7 @@
 
 Konfigurationen, Service und Skripte für den Application Cache (Object-Cache, HTTP-Cache-Speicher) und Sessions in Redis.
 
-Getestet mit Shopware 6.6.10.6 (Dockware), Redis 7.4 und PHP 8.3 mit `redis`-Extension.
+Getestet mit Shopware 6.6.10.6 (Dockware), Redis 7.4 und PHP 8.3 mit `redis`-Extension. Die Redis-Configs laufen ab Redis 6.0, `INFO errorstats` im Diagnose-Skript braucht 6.2.
 
 ## Dateien
 
@@ -19,6 +19,8 @@ Getestet mit Shopware 6.6.10.6 (Dockware), Redis 7.4 und PHP 8.3 mit `redis`-Ext
 │   ├── cache-hit-rate.sh         # Trefferquote einer Redis-Instanz
 │   └── redis-diagnostics.sh      # Policy, Persistenz, Keys ohne TTL, OOM je Rolle
 └── src/
+    ├── Example/
+    │   └── CacheTagExample.php   # Cache-Tags nach dem Symfony-Prinzip (Kapitel 7.5)
     ├── Resources/config/services.xml
     └── Service/
         └── ProductUpdateService.php  # Invalidierung nach direkten SQL-Updates
@@ -74,14 +76,14 @@ bin/console cache:clear:http   # nur HTTP-Cache (ab 6.6.10.0)
 ./scripts/cache-hit-rate.sh redis://127.0.0.1:6379
 
 # Keys ansehen (SCAN statt KEYS, blockiert Redis nicht)
-redis-cli -n 0 --scan --count 1000 | head -20
+redis-cli -n 0 --scan | head -20
 ```
 
-Tests: `bats tests/Shell/redis-cache-scripts.bats`
+Tests (aus dem Repo-Root ausführen): `bats tests/Shell/redis-cache-scripts.bats`
 
 ## Weiterführende Ressourcen
 
 - [Shopware: Redis](https://developer.shopware.com/docs/guides/hosting/infrastructure/redis.html)
 - [Shopware: Caches](https://developer.shopware.com/docs/guides/hosting/performance/caches.html)
 - [Shopware: Session](https://developer.shopware.com/docs/guides/hosting/performance/session.html)
-- [Symfony: Redis Cache Adapter](https://symfony.com/doc/current/components/cache/adapters/redis_adapter.html)
+- [Symfony: Redis Cache Adapter](https://symfony.com/doc/current/cache/adapters/redis_adapter.html)

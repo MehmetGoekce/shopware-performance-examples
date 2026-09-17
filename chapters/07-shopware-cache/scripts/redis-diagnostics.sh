@@ -2,6 +2,7 @@
 # Redis-Diagnose für Shopware
 # Kapitel 7: Shopwares Application Cache meistern
 #
+# Getestet mit Redis 7.4; INFO errorstats braucht Redis 6.2 oder neuer.
 # Prüft eine Redis-Instanz passend zu ihrer Rolle (Datenkategorie laut
 # Shopware-Doku) und liest nur INFO/CONFIG - kein KEYS, kein SCAN, keine
 # Änderungen. Sicher im Produktivbetrieb.
@@ -118,6 +119,10 @@ used=$(info_field "${memory}" used_memory)
 maxmemory=$(info_field "${memory}" maxmemory)
 policy=$(config_get maxmemory-policy)
 
+if [[ -z "${policy}" ]]; then
+    warn "CONFIG GET liefert nichts - bei Managed Redis oft gesperrt oder umbenannt; Policy und Persistenz bitte beim Anbieter prüfen"
+fi
+
 if [[ "${maxmemory:-0}" -eq 0 ]]; then
     warn "Kein maxmemory gesetzt - Redis wächst bis der Server-RAM voll ist"
     usage_pct=0
@@ -138,6 +143,8 @@ case "${ROLE}:${policy}" in
         ;;
     session:allkeys-lru)
         ok "maxmemory-policy ${policy}"
+        ;;
+    *:)
         ;;
     *)
         warn "maxmemory-policy ${policy} - empfohlen für ${ROLE}: $([[ "${ROLE}" == session ]] && echo allkeys-lru || echo volatile-lru)"

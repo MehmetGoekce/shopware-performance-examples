@@ -44,19 +44,25 @@ info_field() {
     echo "$1" | tr -d '\r' | awk -F: -v k="$2" '$1 == k { print $2 }'
 }
 
-case "${1:-}" in
-    --help|-h)
-        show_usage
-        exit 0
-        ;;
-    -*)
-        echo "Unbekannte Option: $1"
-        show_usage
-        exit 1
-        ;;
-esac
+URL="redis://127.0.0.1:6379"
 
-URL="${1:-redis://127.0.0.1:6379}"
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --help|-h)
+            show_usage
+            exit 0
+            ;;
+        -*)
+            echo "Unbekannte Option: $1"
+            show_usage
+            exit 1
+            ;;
+        *)
+            URL="$1"
+            shift
+            ;;
+    esac
+done
 
 echo -e "${BLUE}Redis Hit-Rate: ${URL}${NC}"
 echo ""

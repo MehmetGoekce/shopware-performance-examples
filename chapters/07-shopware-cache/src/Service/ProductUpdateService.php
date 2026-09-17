@@ -25,6 +25,13 @@ declare(strict_types=1);
  *      product-search-route, product-suggest-route
  *    Tags wie "product-listing", "price" oder "stock" gibt es nicht.
  *
+ * ACHTUNG beim SQL-Weg: Er schreibt nur stock und available_stock. Shopwares
+ * StockStorage pflegt zusätzlich product.available (aus is_closeout und
+ * min_purchase) und löst ProductStockAlteredEvent / ProductNoLongerAvailableEvent
+ * aus - davon hängen die Verfügbarkeitsanzeige bei Closeout-Artikeln und der
+ * Elasticsearch-Index ab. Für Shops mit Closeout-Artikeln oder ES entweder
+ * product.available mitschreiben oder über den DAL bzw. StockStorage gehen.
+ *
  * CacheInvalidator leert cache.object und cache.http und schickt die Tags an
  * einen konfigurierten Reverse Proxy (Varnish, Kapitel 6).
  * Mit shopware.cache.invalidation.delay > 0 werden die Tags nur gesammelt;

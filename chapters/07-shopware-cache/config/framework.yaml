@@ -5,8 +5,8 @@
 # Getestet mit: Shopware 6.6.10.6, Redis 7.4, PHP 8.3 mit redis-Extension
 #
 # .env / .env.local:
-#   REDIS_URL=redis://redis-cache:6379/0          # Instanz für Caches (volatile-lru)
-#   REDIS_SESSION_URL=redis://redis-session:6379/0  # Instanz für Sessions (allkeys-lru)
+#   REDIS_URL=redis://127.0.0.1:6379/0            # Instanz für Caches (volatile-lru)
+#   REDIS_SESSION_URL=redis://127.0.0.1:6380/0    # Instanz für Sessions (allkeys-lru)
 #
 # Was diese Datei bewirkt:
 # - "app" auf redis_tag_aware: cache.object und cache.http nutzen "cache.app"
@@ -20,7 +20,9 @@
 #
 # Voraussetzungen (sonst schreibt der Cache nichts - ohne Fehlermeldung):
 # - maxmemory-policy der Cache-Instanz ist "volatile-lru" (oder "noeviction").
-#   Mit "allkeys-lru" verweigert RedisTagAwareAdapter jedes Speichern.
+#   Mit "allkeys-lru" verweigert RedisTagAwareAdapter jedes Speichern. Symfony
+#   loggt das als Warnung, die Shopwares prod-Logging (fingers_crossed ab Level
+#   error) verschluckt - der Shop läuft dann einfach ohne Cache.
 #   Siehe redis/redis-cache.conf
 #
 # Achtung bei Redis: "bin/console cache:clear" leert Object- und HTTP-Cache

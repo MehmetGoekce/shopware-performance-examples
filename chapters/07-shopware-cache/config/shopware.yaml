@@ -6,7 +6,7 @@
 # Getestet mit: Shopware 6.6.10.6, Redis 7.4
 #
 # .env / .env.local:
-#   REDIS_CRITICAL_URL=redis://redis-critical:6379   # Instanz mit Persistenz (volatile-lru)
+#   REDIS_CRITICAL_URL=redis://127.0.0.1:6381        # Instanz mit Persistenz (volatile-lru)
 #
 # Wichtig: Eine Connection unter "redis.connections" bewirkt allein nichts.
 # Shopware benutzt sie erst, wenn ein Subsystem sie per "connection:" referenziert.

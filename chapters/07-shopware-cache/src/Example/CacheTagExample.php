@@ -8,8 +8,12 @@ declare(strict_types=1);
  *
  * Tags werden am Cache-Eintrag gesetzt ($item->tag()), nicht als drittes
  * Argument von get() - das ist $beta (Early Expiration).
- * get() schützt ab Werk vor Cache-Stampedes: Early Expiration mit $beta = 1.0
- * und eine Sperre pro Key auf dem jeweiligen Server.
+ * get() erneuert einen Eintrag mit einer gewissen Wahrscheinlichkeit schon vor
+ * Ablauf (Probabilistic Early Expiration, $beta = 1.0).
+ * Die zusätzliche Sperre von Symfony (LockRegistry, rund 20 Dateisperren, auf die
+ * die Keys per crc32 verteilt werden) greift nur bei undekorierten Symfony-Pools.
+ * Shopwares cache.object ist in 6.6 von CacheDecorator gewrappt, der den
+ * Contracts-CacheTrait ohne LockRegistry nutzt - dort sperrt niemand.
  *
  * Getestet mit RedisTagAwareAdapter (Shopware 6.6.10.6, Redis 7.4).
  *
