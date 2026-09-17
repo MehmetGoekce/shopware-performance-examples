@@ -18,10 +18,17 @@ eine neue Cache-Architektur (in 6.7.6 bereits experimentell hinter `CACHE_REWORK
 │   ├── cache-debug.sh                  # Prüft, ob eine URL aus dem Cache kommt
 │   ├── cache-warmup.sh                 # Wärmt den Cache aus der Sitemap auf
 │   └── cache-hit-rate.sh               # Hit-Rate aus varnishstat oder Access-Log
-└── src/Controller/
-    ├── CacheableController.php         # Routen mit _httpCache und eigener TTL
-    └── EsiWidgetController.php         # ESI-Fragment mit eigener TTL und Cache-Tag
+└── src/
+    ├── Controller/
+    │   ├── CacheableController.php     # Routen mit _httpCache und eigener TTL
+    │   └── EsiWidgetController.php     # ESI-Fragment mit eigener TTL und Cache-Tag
+    └── Resources/config/
+        ├── services.xml                # Controller-Services inkl. setContainer/setTwig
+        └── routes.xml                  # Lädt die Routen-Attribute
 ```
+
+Die Controller nutzen den Platzhalter-Namespace `YourPlugin` und Templates unter `@YourPlugin/storefront/...`.
+Beides beim Übernehmen in ein eigenes Plugin anpassen; die Twig-Templates selbst sind nicht enthalten.
 
 ## Wie der HTTP-Cache in Shopware 6.6 funktioniert
 
@@ -30,7 +37,12 @@ eine neue Cache-Architektur (in 6.7.6 bereits experimentell hinter `CACHE_REWORK
 - **Die Route entscheidet.** Gecacht wird nur, was den Routen-Default `_httpCache` hat
   (`true` oder `['maxAge' => 300]`). `$response->setSharedMaxAge()` allein reicht nicht.
 - **Eingeloggte Kunden und Besucher mit Warenkorb** gehen am Cache vorbei (Cookie `sw-states`).
-- **Cache-Key:** URL plus Cookie `sw-cache-hash` (Kundengruppe, Regeln, Währung ...) bzw. `sw-currency`.
+- **Cache-Key:** URL plus Cookie `sw-cache-hash` (nur für eingeloggte Kunden und Besucher mit Warenkorb;
+  enthält Regeln, Währung, Steuerstatus ...) bzw. `sw-currency` (Gast hat die Währung gewechselt).
+- **ESI** funktioniert auch ohne Varnish: Der eingebaute Cache löst `<esi:include>` selbst auf und
+  speichert Fragmente als eigene Einträge mit eigener TTL.
+- **`stale_while_revalidate`/`stale_if_error`** sind ab Werk nicht gesetzt. Sie wirken im eingebauten Cache;
+  Varnish kennt `stale-if-error` nicht, und `config/varnish.vcl` setzt Grace selbst.
 - **Ohne Reverse Proxy** sieht der Browser immer `Cache-Control: no-cache, private`. Der eingebaute
   Cache arbeitet trotzdem, erkennbar nur an `Age` und an der Antwortzeit.
 
@@ -59,8 +71,9 @@ bin/console cache:clear
 ```
 
 Invalidierung: Speichert jemand ein Produkt, schickt Shopware einen `PURGE` mit Header
-`xkey: product-<id> ...` an Varnish. `bin/console cache:clear:http` (ab 6.6.10.0) und
-`cache:clear` schicken einen `BAN` für den ganzen Cache.
+`xkey: product-<id> ...` an Varnish. `bin/console cache:clear:http` (ab 6.6.10.0) schickt einen
+`BAN` für den ganzen Cache. In 6.6 macht `cache:clear` das ebenfalls; ab 6.7 leert `cache:clear`
+den HTTP-Cache nicht mehr, im Deploy dann `cache:clear:http` explizit aufrufen.
 
 ### VCL-Syntax prüfen
 
@@ -91,8 +104,10 @@ als `cache_hit` mit. Die Quote aus den Zählern ist dann zu hoch.
 
 Alle Dateien wurden gegen `dockware/dev:6.6.10.6` mit `ghcr.io/shopware/varnish:6.7` (Varnish 8.0.2) geprüft:
 HIT/MISS, xkey-PURGE nach Preis- und Bestandsänderung, BAN bei `cache:clear:http`,
-Währungs-Cookie, Pass bei Login und Warenkorb, ESI-Fragment mit eigener TTL,
-Tracking-Parameter, Sitemap-Warmup. Die VCL-Syntax prüft die CI bei jedem Push.
+Währungs-Cookie, Pass bei Login und Warenkorb, ESI-Fragment mit eigener TTL (mit Varnish und im
+eingebauten Cache), Tracking-Parameter (auch Werte mit `+` und mehrere hintereinander),
+Sitemap-Warmup, `cache-debug.sh` gegen beide Betriebsarten. Die CI kompiliert die VCL und führt
+die BATS-Tests (`tests/Shell/http-cache-scripts.bats`) bei jedem Push aus.
 
 ## Weiterführende Links
 

@@ -2,12 +2,19 @@
 # Cache Debug Script
 # Kapitel 6: HTTP-Caching
 #
-# Ruft jede URL zweimal ohne Cookies ab und zeigt, ob die zweite Antwort aus
-# dem Cache kommt. Erkennt drei Fälle:
+# Ruft jede URL zweimal ohne Cookies ab (mit kurzer Pause dazwischen) und zeigt,
+# ob die zweite Antwort aus dem Cache kommt. Erkennt drei Fälle:
 #   1. Varnish mit config/varnish.vcl  -> Header "X-Cache: HIT/MISS"
 #   2. Anderer Reverse Proxy / CDN     -> "Cache-Control: public, s-maxage=..." vom Backend
 #   3. Eingebauter Shopware-Cache      -> Browser sieht immer "no-cache, private";
-#                                         Treffer nur an Age und TTFB erkennbar
+#                                         Treffer nur an Age > 0 (und TTFB) erkennbar.
+#                                         Age: 0 schickt Symfony auch beim MISS, der
+#                                         gerade gespeichert wurde (z. B. immer in APP_ENV=dev).
+#
+# Umgebungsvariablen:
+#   CACHE_DEBUG_WAIT  Pause zwischen den Aufrufen in Sekunden (Default: 2,
+#                     damit Age bei einem Treffer mindestens 1 ist)
+#   CURL_CMD          curl-Befehl (Default: curl, für Tests austauschbar)
 #
 # Verwendung:
 #   ./cache-debug.sh https://ihr-shop.ch
@@ -16,6 +23,9 @@
 # @see https://github.com/MehmetGoekce/shopware-performance-examples
 
 set -euo pipefail
+
+CACHE_DEBUG_WAIT="${CACHE_DEBUG_WAIT:-2}"
+CURL_CMD="${CURL_CMD:-curl}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -28,6 +38,10 @@ show_usage() {
     echo ""
     echo "Ruft jeden Pfad zweimal ohne Cookies ab und bewertet die Cache-Header."
     echo "Ohne Pfade wird nur / geprüft."
+    echo ""
+    echo "Umgebungsvariablen:"
+    echo "  CACHE_DEBUG_WAIT  Pause zwischen den Aufrufen in Sekunden (Default: 2)"
+    echo "  CURL_CMD          curl-Befehl (Default: curl)"
     echo ""
     echo "Beispiele:"
     echo "  $0 https://ihr-shop.ch"
@@ -43,7 +57,7 @@ header_value() {
 
 fetch() {
     # Gibt Header-Block aus, danach eine Zeile "TTFB=<sekunden>"
-    curl -s -o /dev/null -D - -w 'TTFB=%{time_starttransfer}\n' \
+    ${CURL_CMD} -s -o /dev/null -D - -w 'TTFB=%{time_starttransfer}\n' \
         -H "Accept-Encoding: gzip" "$1"
 }
 
@@ -59,6 +73,7 @@ analyze_url() {
         echo -e "${RED}Fehler: URL nicht erreichbar${NC}"
         return 1
     fi
+    sleep "${CACHE_DEBUG_WAIT}"
     second=$(fetch "${url}")
 
     local status cache_control x_cache age set_cookie ttfb1 ttfb2
@@ -89,8 +104,10 @@ analyze_url() {
     elif [[ "${cache_control}" == *public* && "${cache_control}" == *s-maxage* ]]; then
         echo -e "${GREEN}Backend liefert cachebar für Reverse Proxy/CDN${NC} (Cache-Status beim Proxy prüfen)"
     elif [[ "${cache_control}" == *private* ]]; then
-        if [[ "${age}" =~ ^[0-9]+$ ]] || awk -v a="${ttfb1}" -v b="${ttfb2}" 'BEGIN { exit !(b * 3 < a) }'; then
-            echo -e "${GREEN}Vermutlich eingebauter Shopware-Cache${NC} (Age-Header bzw. deutlich schnellerer 2. Aufruf)"
+        if [[ "${age}" =~ ^[0-9]+$ && "${age}" -gt 0 ]]; then
+            echo -e "${GREEN}Eingebauter Shopware-Cache: 2. Aufruf aus dem Cache${NC} (Age ${age}s)"
+        elif awk -v a="${ttfb1}" -v b="${ttfb2}" 'BEGIN { exit !(b * 3 < a) }'; then
+            echo -e "${YELLOW}2. Aufruf deutlich schneller, aber kein Age > 0${NC} (Warmlaufen statt Cache? APP_ENV=prod?)"
         else
             echo -e "${YELLOW}Nicht gecacht oder nicht erkennbar${NC} (Route mit _httpCache? APP_ENV=prod?)"
         fi

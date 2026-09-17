@@ -95,3 +95,83 @@ EOF
     [ "$status" -eq 1 ]
     [[ "$output" == *"nicht erreichbar"* ]]
 }
+
+# curl-Stub: Antworten kommen aus Dateien in $FIXTURES.
+# cache-debug.sh: Aufruf 1 -> first.headers, Aufruf 2 -> second.headers
+# cache-warmup.sh: URL -> Datei (Pfad mit / durch _ ersetzt), -w -> "200 0.010"
+make_curl_stub() {
+    cat > "$TMP/curl" <<'STUB'
+#!/bin/bash
+url="${!#}"
+for arg in "$@"; do
+    if [[ "$arg" == "%{http_code} %{time_starttransfer}" ]]; then
+        echo "200 0.010"
+        exit 0
+    fi
+done
+if [[ -f "$FIXTURES/first.headers" ]]; then
+    n=$(cat "$FIXTURES/count" 2>/dev/null || echo 0)
+    n=$((n + 1))
+    echo "$n" > "$FIXTURES/count"
+    if [[ "$n" -eq 1 ]]; then cat "$FIXTURES/first.headers"; else cat "$FIXTURES/second.headers"; fi
+    exit 0
+fi
+file="$FIXTURES/$(echo "${url#*://}" | tr '/:' '__')"
+[[ -f "$file" ]] && cat "$file"
+exit 0
+STUB
+    chmod +x "$TMP/curl"
+    export FIXTURES="$TMP/fixtures"
+    mkdir -p "$FIXTURES"
+}
+
+@test "cache-debug.sh does not report a hit for Age: 0 (MISS stored, e.g. APP_ENV=dev)" {
+    make_curl_stub
+    printf 'HTTP/1.1 200 OK\r\nCache-Control: no-cache, private\r\nAge: 0\r\nTTFB=0.120\n' > "$FIXTURES/first.headers"
+    printf 'HTTP/1.1 200 OK\r\nCache-Control: no-cache, private\r\nAge: 0\r\nTTFB=0.110\n' > "$FIXTURES/second.headers"
+    CURL_CMD="$TMP/curl" CACHE_DEBUG_WAIT=0 run "$DIR/cache-debug.sh" http://shop.test /
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"aus dem Cache"* ]]
+    [[ "$output" == *"Nicht gecacht"* ]]
+}
+
+@test "cache-debug.sh reports the built-in cache for Age > 0" {
+    make_curl_stub
+    printf 'HTTP/1.1 200 OK\r\nCache-Control: no-cache, private\r\nAge: 0\r\nTTFB=0.130\n' > "$FIXTURES/first.headers"
+    printf 'HTTP/1.1 200 OK\r\nCache-Control: no-cache, private\r\nAge: 2\r\nTTFB=0.010\n' > "$FIXTURES/second.headers"
+    CURL_CMD="$TMP/curl" CACHE_DEBUG_WAIT=0 run "$DIR/cache-debug.sh" http://shop.test /
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Eingebauter Shopware-Cache: 2. Aufruf aus dem Cache"* ]]
+}
+
+@test "cache-debug.sh does not trust a faster second call without Age" {
+    make_curl_stub
+    printf 'HTTP/1.1 200 OK\r\nCache-Control: no-cache, private\r\nTTFB=0.300\n' > "$FIXTURES/first.headers"
+    printf 'HTTP/1.1 200 OK\r\nCache-Control: no-cache, private\r\nTTFB=0.050\n' > "$FIXTURES/second.headers"
+    CURL_CMD="$TMP/curl" CACHE_DEBUG_WAIT=0 run "$DIR/cache-debug.sh" http://shop.test /
+    [[ "$output" == *"kein Age > 0"* ]]
+}
+
+@test "cache-debug.sh reports a Varnish HIT" {
+    make_curl_stub
+    printf 'HTTP/1.1 200 OK\r\nCache-Control: no-store\r\nX-Cache: MISS\r\nTTFB=0.080\n' > "$FIXTURES/first.headers"
+    printf 'HTTP/1.1 200 OK\r\nCache-Control: no-store\r\nX-Cache: HIT\r\nAge: 2\r\nTTFB=0.001\n' > "$FIXTURES/second.headers"
+    CURL_CMD="$TMP/curl" CACHE_DEBUG_WAIT=0 run "$DIR/cache-debug.sh" http://shop.test /
+    [[ "$output" == *"Varnish: 2. Aufruf aus dem Cache"* ]]
+}
+
+@test "cache-warmup.sh reads gzipped sitemap parts and warms only the requested domain" {
+    make_curl_stub
+    cat > "$FIXTURES/shop.test_sitemap.xml" <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<sitemapindex><sitemap><loc>http://shop.test/sitemap/a.xml.gz</loc></sitemap>
+<sitemap><loc>http://other.test/sitemap/b.xml.gz</loc></sitemap></sitemapindex>
+XML
+    printf '<urlset><url><loc>http://shop.test/p1</loc></url><url><loc>http://shop.test/p2</loc></url></urlset>' \
+        | gzip -c > "$FIXTURES/shop.test_sitemap_a.xml.gz"
+    CURL_CMD="$TMP/curl" run "$DIR/cache-warmup.sh" http://shop.test --sitemap --parallel 1
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"URLs: 2"* ]]
+    [[ "$output" == *"OK"*"http://shop.test/p1"* ]]
+    [[ "$output" != *"other.test"*"OK"* ]]
+}

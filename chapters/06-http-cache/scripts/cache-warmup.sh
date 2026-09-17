@@ -18,9 +18,14 @@
 #   ./cache-warmup.sh https://ihr-shop.ch --sitemap
 #   ./cache-warmup.sh https://ihr-shop.ch --sitemap --parallel 4 --limit 500
 #
+# Umgebungsvariablen:
+#   CURL_CMD  curl-Befehl (Default: curl, für Tests austauschbar)
+#
 # @see https://github.com/MehmetGoekce/shopware-performance-examples
 
 set -euo pipefail
+
+CURL_CMD="${CURL_CMD:-curl}"
 
 PARALLEL=2
 USE_SITEMAP=false
@@ -47,7 +52,7 @@ show_usage() {
 warmup_url() {
     local url=$1
     local result status ttfb
-    result=$(curl -s -o /dev/null -w "%{http_code} %{time_starttransfer}" \
+    result=$(${CURL_CMD} -s -o /dev/null -w "%{http_code} %{time_starttransfer}" \
         -H "Accept-Encoding: gzip" \
         -H "User-Agent: CacheWarmup/1.0" \
         "${url}" 2>/dev/null || echo "000 0")
@@ -72,13 +77,13 @@ sitemap_urls() {
 
     # Shopware liefert unter /sitemap.xml einen Index mit .xml.gz-Teildateien,
     # und zwar für alle Domains des Sales Channels. Nur die angefragte Domain wärmen.
-    curl -s "${base_url}/sitemap.xml" | extract_locs | while read -r loc; do
+    ${CURL_CMD} -s "${base_url}/sitemap.xml" | extract_locs | while read -r loc; do
         if [[ "${loc}" != "${base_url}/"* ]]; then
             continue
         elif [[ "${loc}" == *.xml.gz ]]; then
-            curl -s "${loc}" | gunzip -c 2>/dev/null | extract_locs
+            ${CURL_CMD} -s "${loc}" | gunzip -c 2>/dev/null | extract_locs
         elif [[ "${loc}" == *.xml ]]; then
-            curl -s "${loc}" | extract_locs
+            ${CURL_CMD} -s "${loc}" | extract_locs
         else
             echo "${loc}"
         fi
@@ -123,7 +128,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 export -f warmup_url
-export GREEN YELLOW NC
+export GREEN YELLOW NC CURL_CMD
 
 echo -e "${BLUE}Cache Warmup${NC}"
 echo "Base URL: ${BASE_URL}"

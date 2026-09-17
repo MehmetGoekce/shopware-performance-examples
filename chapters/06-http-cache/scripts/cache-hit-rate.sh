@@ -48,14 +48,16 @@ percent() {
     awk -v h="$1" -v t="$2" 'BEGIN { printf "%.2f", (t > 0) ? h * 100 / t : 0 }'
 }
 
+# Schwellen wie in Kapitel 6.9: 70-90 % ist ein realistischer Zielkorridor
+# für Gast-Traffic (Einschätzung, kein Shopware- oder Varnish-Richtwert).
 rate_verdict() {
     local rate=$1
     echo -n "Cache Hit-Rate: "
-    if awk -v r="${rate}" 'BEGIN { exit !(r >= 95) }'; then
-        echo -e "${GREEN}${rate}% (exzellent)${NC}"
-    elif awk -v r="${rate}" 'BEGIN { exit !(r >= 80) }'; then
-        echo -e "${GREEN}${rate}% (gut)${NC}"
-    elif awk -v r="${rate}" 'BEGIN { exit !(r >= 60) }'; then
+    if awk -v r="${rate}" 'BEGIN { exit !(r >= 90) }'; then
+        echo -e "${GREEN}${rate}% (über dem Zielkorridor)${NC}"
+    elif awk -v r="${rate}" 'BEGIN { exit !(r >= 70) }'; then
+        echo -e "${GREEN}${rate}% (im Zielkorridor 70-90 %)${NC}"
+    elif awk -v r="${rate}" 'BEGIN { exit !(r >= 50) }'; then
         echo -e "${YELLOW}${rate}% (verbesserungswürdig)${NC}"
     else
         echo -e "${RED}${rate}% (schlecht)${NC}"
