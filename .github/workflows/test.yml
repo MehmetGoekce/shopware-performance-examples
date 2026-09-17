@@ -98,6 +98,21 @@ jobs:
           path: playwright-report/
           retention-days: 30
 
+  varnish-vcl:
+    name: Varnish VCL Syntax
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compile chapter 6 VCL with the Shopware Varnish image
+        run: |
+          docker run --rm --entrypoint varnishd \
+            -v "$PWD/chapters/06-http-cache/config/varnish.vcl:/etc/varnish/default.vcl:ro" \
+            ghcr.io/shopware/varnish:6.7 \
+            -C -f /etc/varnish/default.vcl > vcc.out 2>&1 \
+            || { grep -A 8 "Message from VCC" vcc.out; exit 1; }
+
   shellcheck:
     name: ShellCheck
     runs-on: ubuntu-latest
