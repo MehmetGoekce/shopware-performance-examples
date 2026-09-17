@@ -4,8 +4,8 @@
  * Kapitel 6: HTTP-Caching
  *
  * Edge Side Includes (ESI): Die Seite wird gecacht, ein Fragment darin hat
- * eine eigene, kürzere TTL. Shopware 6.6 nutzt das selbst für Header und
- * Footer (render_esi in der Storefront).
+ * eine eigene, kürzere TTL. Shopware 6.6 bindet Header und Footer nur mit dem
+ * Feature-Flag CACHE_REWORK per render_esi ein, ab Werk rendert es sie direkt.
  *
  * Ablauf:
  *   1. Varnish schickt "Surrogate-Capability: shopware=ESI/1.0" (config/varnish.vcl)

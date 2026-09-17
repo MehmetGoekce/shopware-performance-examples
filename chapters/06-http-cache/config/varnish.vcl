@@ -174,7 +174,7 @@ sub vcl_deliver {
         set resp.http.X-Cache = "MISS";
     }
 
-    # Interne Header nicht nach außen geben
+    # Interne Header nicht nach aussen geben
     unset resp.http.sw-invalidation-states;
     unset resp.http.xkey;
     unset resp.http.Via;
