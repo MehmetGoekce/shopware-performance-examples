@@ -3,148 +3,150 @@
 declare(strict_types=1);
 
 /**
- * Beispiel: Programmatische Cache-Invalidierung in Shopware 6
+ * Cache-Invalidierung bei Produkt-Updates
+ * Kapitel 7: Shopwares Application Cache meistern
  *
- * Dieses Service demonstriert, wie man den Cache gezielt invalidiert,
- * wenn Produkte programmtisch aktualisiert werden (z.B. durch Import).
+ * Zwei Wege, Produkte zu ändern:
  *
- * @package App\Service
+ * 1. Über das Repository (Admin, API, Import über den DAL):
+ *    Shopware invalidiert selbst, synchron im schreibenden Request.
+ *    Eigene Tags sind nicht nötig.
+ *
+ * 2. Direkt per SQL (z. B. schneller Bestandsabgleich aus dem ERP):
+ *    Shopware bekommt davon nichts mit. Gecachte Seiten und Store-API-Antworten
+ *    zeigen den alten Stand, bis ihre Lebensdauer abläuft. Deshalb hier die
+ *    Tags selbst invalidieren - dieselben, die Shopware 6.6 bei einer
+ *    Produktänderung verwendet (CacheInvalidationSubscriber):
+ *      product-<id>                        Seiten/Routen, die das Produkt enthalten
+ *      product-detail-route-<id|parentId>  Produktdetail (Varianten: auch Parent)
+ *      product-review-route-<id>           Bewertungen
+ *      product-listing-route-<categoryId>  Listings aller zugeordneten Kategorien
+ *      product-stream-<streamId>           Listings/Cross-Selling aus Dynamischen Produktgruppen
+ *      product-search-route, product-suggest-route
+ *    Tags wie "product-listing", "price" oder "stock" gibt es nicht.
+ *
+ * CacheInvalidator leert cache.object und cache.http und schickt die Tags an
+ * einen konfigurierten Reverse Proxy (Varnish, Kapitel 6).
+ * Mit shopware.cache.invalidation.delay > 0 werden die Tags nur gesammelt;
+ * $force = true invalidiert trotzdem sofort.
+ *
+ * Gilt für Shopware 6.6. Mit 6.7 entfallen die Cached*Route-Klassen, dieser
+ * Code läuft dort nicht mehr. Shopware 6.7 invalidiert Produkte über das Event
+ * Shopware\Core\Content\Product\Events\InvalidateProductCache
+ * (CacheInvalidationSubscriber::invalidateProduct). In 6.6 deckt dieses Event
+ * ohne Feature-Flag CACHE_REWORK nur Listings, Detailseite und Streams ab.
+ *
+ * Installation (in einem eigenen Plugin, Namespace "YourPlugin" anpassen):
+ *   1. Kopieren nach src/Service/ProductUpdateService.php
+ *   2. Service registrieren: src/Resources/config/services.xml aus diesem Ordner
+ *
+ * @see https://github.com/MehmetGoekce/shopware-performance-examples
  */
 
-namespace App\Service;
+namespace YourPlugin\Service;
 
+use Doctrine\DBAL\ArrayParameterType;
+use Doctrine\DBAL\Connection;
+use Shopware\Core\Content\Product\SalesChannel\Detail\CachedProductDetailRoute;
+use Shopware\Core\Content\Product\SalesChannel\Listing\CachedProductListingRoute;
+use Shopware\Core\Content\Product\SalesChannel\Review\CachedProductReviewRoute;
+use Shopware\Core\Defaults;
 use Shopware\Core\Framework\Adapter\Cache\CacheInvalidator;
 use Shopware\Core\Framework\Context;
+use Shopware\Core\Framework\DataAbstractionLayer\Cache\EntityCacheKeyGenerator;
 use Shopware\Core\Framework\DataAbstractionLayer\EntityRepository;
-use Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria;
+use Shopware\Core\Framework\Uuid\Uuid;
 
 class ProductUpdateService
 {
     public function __construct(
         private readonly EntityRepository $productRepository,
+        private readonly Connection $connection,
         private readonly CacheInvalidator $cacheInvalidator
     ) {
     }
 
     /**
-     * Aktualisiert ein Produkt und invalidiert den zugehoerigen Cache.
-     *
-     * Wichtig: Shopware invalidiert bei normalen Repository-Updates automatisch.
-     * Diese manuelle Invalidierung ist nur noetig bei:
-     * - Direkten Datenbank-Updates (SQL)
-     * - Externen System-Updates
-     * - Batch-Importen mit verzoegerter Cache-Invalidierung
-     *
-     * @param string $productId Die Produkt-ID
-     * @param array<string, mixed> $data Die zu aktualisierenden Daten
-     * @param Context $context Der Shopware-Context
+     * Weg 1: Bestand über das Repository ändern.
+     * Shopware invalidiert die passenden Tags selbst.
      */
-    public function updateProduct(string $productId, array $data, Context $context): void
+    public function updateStock(string $productId, int $stock, Context $context): void
     {
-        // Produkt aktualisieren
         $this->productRepository->update([
-            array_merge(['id' => $productId], $data)
+            ['id' => $productId, 'stock' => $stock],
         ], $context);
-
-        // Cache gezielt invalidieren
-        // Nur noetig wenn automatische Invalidierung nicht greift
-        $this->invalidateProductCache($productId);
     }
 
     /**
-     * Aktualisiert mehrere Produkte mit optimierter Cache-Invalidierung.
+     * Weg 2: Bestand direkt per SQL ändern und danach selbst invalidieren.
      *
-     * Bei Massenimporten: Erst alle Produkte aktualisieren,
-     * dann Cache einmal invalidieren (nicht pro Produkt).
-     *
-     * @param array<array<string, mixed>> $products Array von Produktdaten mit 'id'
-     * @param Context $context Der Shopware-Context
+     * @param array<int|string, int> $stockByProductId Produkt-ID (hex) => neuer Bestand
+     *        (int|string: PHP macht rein numerische Keys zu int)
      */
-    public function bulkUpdateProducts(array $products, Context $context): void
+    public function updateStockViaSql(array $stockByProductId): void
     {
-        // Alle Produkt-IDs sammeln
-        $productIds = array_column($products, 'id');
+        foreach ($stockByProductId as $productId => $stock) {
+            $this->connection->executeStatement(
+                'UPDATE product SET stock = :stock, available_stock = :stock
+                 WHERE id = :id AND version_id = :version',
+                [
+                    'stock' => $stock,
+                    'id' => Uuid::fromHexToBytes((string) $productId),
+                    'version' => Uuid::fromHexToBytes(Defaults::LIVE_VERSION),
+                ]
+            );
+        }
 
-        // Batch-Update (ohne automatische Cache-Invalidierung pro Item)
-        $this->productRepository->update($products, $context);
-
-        // Einmalige Cache-Invalidierung fuer alle betroffenen Produkte
-        $this->invalidateBulkProductCache($productIds);
+        // Einmal für alle Produkte invalidieren, nicht pro Zeile
+        $this->invalidateProducts(array_map('strval', array_keys($stockByProductId)));
     }
 
     /**
-     * Invalidiert den Cache fuer ein einzelnes Produkt.
-     *
-     * Tags die invalidiert werden:
-     * - product-{id}: Produktdetailseite
-     * - product-listing: Kategorie-Listings (optional, siehe Kommentar)
+     * @param list<string> $productIds Produkt-IDs (hex)
      */
-    private function invalidateProductCache(string $productId): void
+    public function invalidateProducts(array $productIds, bool $force = false): void
     {
-        $tags = [
-            'product-' . $productId,
-        ];
-
-        // Optional: Listings nur invalidieren wenn sich Sortier-relevante
-        // Felder geaendert haben (Preis, Name, Verfuegbarkeit)
-        // $tags[] = 'product-listing';
-
-        $this->cacheInvalidator->invalidate($tags);
-    }
-
-    /**
-     * Invalidiert den Cache fuer mehrere Produkte effizient.
-     *
-     * Bei vielen Produkten (>100) kann es sinnvoller sein,
-     * nur 'product-listing' zu invalidieren statt einzelne Tags.
-     *
-     * @param array<string> $productIds Liste der Produkt-IDs
-     */
-    private function invalidateBulkProductCache(array $productIds): void
-    {
-        // Bei vielen Produkten: Nur Listing-Cache invalidieren
-        if (count($productIds) > 100) {
-            $this->cacheInvalidator->invalidate([
-                'product-listing',
-                'navigation',  // Falls Kategoriezaehler betroffen
-            ]);
+        if ($productIds === []) {
             return;
         }
 
-        // Bei wenigen Produkten: Gezielte Invalidierung
-        $tags = array_map(
-            static fn(string $id): string => 'product-' . $id,
-            $productIds
+        $ids = Uuid::fromHexToBytesList($productIds);
+        $version = Uuid::fromHexToBytes(Defaults::LIVE_VERSION);
+
+        /** @var list<string> $parentIds */
+        $parentIds = $this->connection->fetchFirstColumn(
+            'SELECT DISTINCT LOWER(HEX(parent_id)) FROM product
+             WHERE id IN (:ids) AND parent_id IS NOT NULL AND version_id = :version',
+            ['ids' => $ids, 'version' => $version],
+            ['ids' => ArrayParameterType::BINARY]
         );
 
-        $this->cacheInvalidator->invalidate($tags);
-    }
+        /** @var list<string> $categoryIds */
+        $categoryIds = $this->connection->fetchFirstColumn(
+            'SELECT DISTINCT LOWER(HEX(category_id)) FROM product_category_tree
+             WHERE product_id IN (:ids) AND product_version_id = :version AND category_version_id = :version',
+            ['ids' => $ids, 'version' => $version],
+            ['ids' => ArrayParameterType::BINARY]
+        );
 
-    /**
-     * Prueft ob ein Produkt im Cache ist.
-     *
-     * Nuetzlich fuer Debugging und Monitoring.
-     *
-     * @param string $productId Die Produkt-ID
-     * @param Context $context Der Shopware-Context
-     * @return bool True wenn gecacht, false wenn Cache-Miss
-     */
-    public function isProductCached(string $productId, Context $context): bool
-    {
-        // Simplified: Repository-Cache pruefen via Criteria
-        $criteria = new Criteria([$productId]);
+        /** @var list<string> $streamIds */
+        $streamIds = $this->connection->fetchFirstColumn(
+            'SELECT DISTINCT LOWER(HEX(product_stream_id)) FROM product_stream_mapping
+             WHERE product_id IN (:ids) AND product_version_id = :version',
+            ['ids' => $ids, 'version' => $version],
+            ['ids' => ArrayParameterType::BINARY]
+        );
 
-        // Erster Aufruf: Potentiell Cache-Miss
-        $start = microtime(true);
-        $this->productRepository->search($criteria, $context);
-        $firstCall = microtime(true) - $start;
+        $tags = [
+            ...array_map(EntityCacheKeyGenerator::buildProductTag(...), $productIds),
+            ...array_map(CachedProductDetailRoute::buildName(...), [...$parentIds, ...$productIds]),
+            ...array_map(CachedProductReviewRoute::buildName(...), $productIds),
+            ...array_map(CachedProductListingRoute::buildName(...), $categoryIds),
+            ...array_map(EntityCacheKeyGenerator::buildStreamTag(...), $streamIds),
+            'product-search-route',
+            'product-suggest-route',
+        ];
 
-        // Zweiter Aufruf: Sollte Cache-Hit sein
-        $start = microtime(true);
-        $this->productRepository->search($criteria, $context);
-        $secondCall = microtime(true) - $start;
-
-        // Wenn zweiter Aufruf deutlich schneller, war erster ein Cache-Miss
-        return $secondCall < ($firstCall * 0.5);
+        $this->cacheInvalidator->invalidate($tags, $force);
     }
 }

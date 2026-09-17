@@ -1,0 +1,18 @@
+<?xml version="1.0" ?>
+<!--
+    Service für ProductUpdateService aus Kapitel 7 (Shopware 6.6)
+    Namespace "YourPlugin" an das eigene Plugin anpassen.
+
+    @see https://github.com/MehmetGoekce/shopware-performance-examples
+-->
+<container xmlns="http://symfony.com/schema/dic/services"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xsi:schemaLocation="http://symfony.com/schema/dic/services http://symfony.com/schema/dic/services/services-1.0.xsd">
+    <services>
+        <service id="YourPlugin\Service\ProductUpdateService" public="true">
+            <argument type="service" id="product.repository"/>
+            <argument type="service" id="Doctrine\DBAL\Connection"/>
+            <argument type="service" id="Shopware\Core\Framework\Adapter\Cache\CacheInvalidator"/>
+        </service>
+    </services>
+</container>
