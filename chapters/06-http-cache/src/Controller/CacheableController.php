@@ -3,12 +3,28 @@
  * Cacheable Controller Example
  * Kapitel 6: HTTP-Caching
  *
- * Demonstriert wie man Cache-Header in Shopware 6 Controllern setzt.
+ * Zeigt, wie eine Storefront-Route in Shopware 6.6/6.7 in den HTTP-Cache kommt:
+ * über den Routen-Default "_httpCache". Shopware setzt daraufhin selbst
+ * "Cache-Control: public, s-maxage=<maxAge>", die Cache-Tags und den Header
+ * "sw-invalidation-states".
  *
- * Installation:
+ * Wichtig: $response->setSharedMaxAge() allein reicht NICHT. Ohne "_httpCache"
+ * kommt die Antwort als "private" beim Reverse Proxy an und wird weder vom
+ * eingebauten Cache noch von Varnish gespeichert.
+ *
+ * Eingeloggte Kunden und Besucher mit Warenkorb gehen automatisch am Cache
+ * vorbei (shopware.cache.invalidation.http_cache, Cookie "sw-states").
+ * Ein eigenes "states" in _httpCache ergänzt diese Liste nur; ausnehmen lässt
+ * sich eine Route davon nicht.
+ *
+ * Installation (in einem eigenen Plugin):
  *   1. Kopieren nach src/Controller/CacheableController.php
- *   2. Service registrieren in services.yaml
+ *   2. Als Service registrieren (Resources/config/services.xml) und
+ *      Routen laden (Resources/config/routes.xml)
  *   3. Cache leeren: bin/console cache:clear
+ *
+ * Prüfen:
+ *   ../../scripts/cache-debug.sh https://ihr-shop.ch /custom-page
  *
  * @see https://github.com/MehmetGoekce/shopware-performance-examples
  */
@@ -27,142 +43,80 @@ use Symfony\Component\Routing\Attribute\Route;
 class CacheableController extends StorefrontController
 {
     /**
-     * Standard cacheable Seite
+     * Standard: cachebar mit der globalen TTL
      *
-     * Cache-Strategie: 2 Stunden fresh, 4 Stunden stale-while-revalidate
+     * "_httpCache" => true nutzt SHOPWARE_HTTP_DEFAULT_TTL (Default 7200 s).
+     * stale-while-revalidate / stale-if-error kommen aus config/shopware.yaml.
      */
     #[Route(
         path: '/custom-page',
         name: 'frontend.custom.page',
+        defaults: ['_httpCache' => true],
         methods: ['GET']
     )]
     public function customPage(Request $request, SalesChannelContext $context): Response
     {
-        $response = $this->renderStorefront('@YourPlugin/storefront/page/custom.html.twig', [
+        return $this->renderStorefront('@YourPlugin/storefront/page/custom.html.twig', [
             'title' => 'Custom Page',
             'data' => $this->getPageData(),
         ]);
-
-        // ============================================================
-        // Cache-Header setzen
-        // ============================================================
-
-        // Public = darf von CDN/Proxy gecacht werden
-        // max-age = 2 Stunden (7200 Sekunden)
-        $response->setSharedMaxAge(7200);
-
-        // Stale-While-Revalidate: 4 Stunden
-        // Erlaubt Auslieferung von "veraltetem" Content während Refresh
-        $response->headers->addCacheControlDirective('stale-while-revalidate', '14400');
-
-        // Stale-If-Error: 24 Stunden
-        // Liefert veralteten Cache bei Backend-Fehlern
-        $response->headers->addCacheControlDirective('stale-if-error', '86400');
-
-        return $response;
     }
 
     /**
-     * Seite mit kurzer TTL (für häufig aktualisierte Inhalte)
+     * Kurze TTL für häufig geänderte Inhalte
      *
-     * Beispiel: Startseite mit Aktionen, Slider, etc.
+     * Beispiel: Aktionsseite. Änderungen an Produkten, Kategorien oder
+     * Erlebniswelten invalidiert Shopware ohnehin über Cache-Tags; die TTL ist
+     * die Obergrenze für alles, was nicht getaggt ist.
      */
     #[Route(
         path: '/promotions',
         name: 'frontend.promotions.page',
+        defaults: ['_httpCache' => ['maxAge' => 300]],
         methods: ['GET']
     )]
     public function promotionsPage(Request $request, SalesChannelContext $context): Response
     {
-        $response = $this->renderStorefront('@YourPlugin/storefront/page/promotions.html.twig', [
+        return $this->renderStorefront('@YourPlugin/storefront/page/promotions.html.twig', [
             'promotions' => $this->getPromotions(),
         ]);
-
-        // Kurze TTL für häufig aktualisierte Inhalte
-        $response->setSharedMaxAge(300); // 5 Minuten
-
-        // Aber längere SWR für Performance
-        $response->headers->addCacheControlDirective('stale-while-revalidate', '3600'); // 1 Stunde
-        $response->headers->addCacheControlDirective('stale-if-error', '86400');
-
-        return $response;
     }
 
     /**
-     * Statische Seite mit langer TTL
+     * Lange TTL für statische Inhalte
      *
-     * Beispiel: Impressum, AGB, Datenschutz
+     * Beispiel: Impressum, AGB, Datenschutz.
      */
     #[Route(
         path: '/legal/{page}',
         name: 'frontend.legal.page',
+        defaults: ['_httpCache' => ['maxAge' => 86400]],
         methods: ['GET']
     )]
     public function legalPage(string $page, SalesChannelContext $context): Response
     {
-        $response = $this->renderStorefront('@YourPlugin/storefront/page/legal.html.twig', [
+        return $this->renderStorefront('@YourPlugin/storefront/page/legal.html.twig', [
             'page' => $page,
             'content' => $this->getLegalContent($page),
         ]);
-
-        // Lange TTL für statischen Content
-        $response->setSharedMaxAge(86400); // 24 Stunden
-
-        $response->headers->addCacheControlDirective('stale-while-revalidate', '604800'); // 7 Tage
-        $response->headers->addCacheControlDirective('stale-if-error', '604800');
-
-        return $response;
     }
 
     /**
-     * Private (nicht cacheable) Seite
+     * Nicht cachebar: benutzerspezifische Seite
      *
-     * Beispiel: Benutzer-spezifische Inhalte
+     * Ohne "_httpCache" schickt Shopware "Cache-Control" mit "private"
+     * (ohne Reverse Proxy "no-cache, private"). Es ist nichts weiter zu tun.
      */
     #[Route(
         path: '/my-wishlist',
-        name: 'frontend.wishlist.page',
+        name: 'frontend.custom-wishlist.page',
         methods: ['GET']
     )]
     public function wishlistPage(Request $request, SalesChannelContext $context): Response
     {
-        $response = $this->renderStorefront('@YourPlugin/storefront/page/wishlist.html.twig', [
+        return $this->renderStorefront('@YourPlugin/storefront/page/wishlist.html.twig', [
             'items' => $this->getWishlistItems($context),
         ]);
-
-        // Private = nur Browser-Cache, kein CDN/Proxy
-        // no-store = wirklich nicht cachen (auch nicht im Browser)
-        $response->setPrivate();
-        $response->headers->addCacheControlDirective('no-store');
-
-        return $response;
-    }
-
-    /**
-     * API-Endpunkt mit kurzer TTL
-     *
-     * Beispiel: Bestandsabfrage
-     */
-    #[Route(
-        path: '/api/stock/{productId}',
-        name: 'frontend.api.stock',
-        methods: ['GET']
-    )]
-    public function stockApi(string $productId, SalesChannelContext $context): Response
-    {
-        $stock = $this->getProductStock($productId);
-
-        $response = $this->json([
-            'productId' => $productId,
-            'stock' => $stock,
-            'available' => $stock > 0,
-        ]);
-
-        // Kurze TTL für Bestandsdaten
-        $response->setSharedMaxAge(60); // 1 Minute
-        $response->headers->addCacheControlDirective('stale-while-revalidate', '300');
-
-        return $response;
     }
 
     // ============================================================
@@ -170,12 +124,18 @@ class CacheableController extends StorefrontController
     // ============================================================
 
     // EXAMPLE: Vereinfacht für Lernzwecke. Produktions-Code würde hier die Shopware DAL nutzen.
+    /**
+     * @return array<string, string>
+     */
     private function getPageData(): array
     {
         return ['example' => 'data'];
     }
 
     // EXAMPLE: Vereinfacht für Lernzwecke. Produktions-Code würde hier die Shopware DAL nutzen.
+    /**
+     * @return list<array<string, mixed>>
+     */
     private function getPromotions(): array
     {
         return [];
@@ -188,14 +148,11 @@ class CacheableController extends StorefrontController
     }
 
     // EXAMPLE: Vereinfacht für Lernzwecke. Produktions-Code würde hier die Shopware DAL nutzen.
+    /**
+     * @return list<array<string, mixed>>
+     */
     private function getWishlistItems(SalesChannelContext $context): array
     {
         return [];
-    }
-
-    // EXAMPLE: Vereinfacht für Lernzwecke. Produktions-Code würde hier die Shopware DAL nutzen.
-    private function getProductStock(string $productId): int
-    {
-        return 10;
     }
 }
