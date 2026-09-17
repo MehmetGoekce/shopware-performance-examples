@@ -1,0 +1,44 @@
+# Shopware hinter Varnish mit xkey-Invalidierung
+# Kapitel 6: HTTP-Caching
+#
+# Kopieren nach: config/packages/varnish.yaml
+# Danach: bin/console cache:clear
+#
+# Passt zu config/varnish.vcl. Quelle der Werte:
+# https://github.com/shopware/varnish-shopware (README, Abschnitt "Config for Shopware 6.6")
+#
+# @see https://github.com/MehmetGoekce/shopware-performance-examples
+
+# ------------------------------------------------------------
+# Shopware 6.6
+# ------------------------------------------------------------
+shopware:
+    http_cache:
+        reverse_proxy:
+            enabled: true
+            # Shopware schickt Tags im Response-Header "xkey" und
+            # invalidiert per PURGE mit Header "xkey: tag1 tag2 ..."
+            use_varnish_xkey: true
+            # Adresse(n), an die Shopware PURGE/BAN schickt.
+            # Die IP des App-Servers muss in der VCL-ACL "purgers" stehen.
+            hosts:
+                - 'http://127.0.0.1:6081'
+                # - 'http://varnish'        # Docker-Setup
+
+    # Mit xkey muss das Tagging pro Config-Wert, Snippet und Theme-Wert aus sein,
+    # sonst hängt an jeder Seite eine sehr lange Tag-Liste.
+    cache:
+        tagging:
+            each_config: false
+            each_snippet: false
+            each_theme_config: false
+
+# ------------------------------------------------------------
+# Shopware 6.7: xkey ist dort der Standard, es reicht
+# ------------------------------------------------------------
+# shopware:
+#     http_cache:
+#         reverse_proxy:
+#             enabled: true
+#             hosts:
+#                 - 'http://127.0.0.1:6081'

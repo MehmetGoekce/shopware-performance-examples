@@ -1,103 +1,54 @@
-# HTTP-Cache Konfiguration für Shopware 6
+# HTTP-Cache: globale Einstellungen für Shopware 6.6
 # Kapitel 6: HTTP-Caching
 #
-# Kopieren nach: config/packages/shopware.yaml
-# Oder mergen mit bestehender Konfiguration
+# Kopieren nach: config/packages/http_cache.yaml (oder in bestehende Datei mergen)
+# Danach: bin/console cache:clear
+#
+# Der HTTP-Cache ist ab Werk AKTIV. Ein- und Ausschalten sowie die Standard-TTL
+# laufen über Umgebungsvariablen, nicht über diese Datei:
+#
+#   SHOPWARE_HTTP_CACHE_ENABLED=1     # Default: 1
+#   SHOPWARE_HTTP_DEFAULT_TTL=7200    # Default: 7200 Sekunden, gilt für Routen mit _httpCache ohne maxAge
+#   APP_ENV=prod                      # In dev liegt der Cache nur im RAM des Requests: nie ein Treffer
+#
+# Welche Seiten gecacht werden, entscheidet die Route (Default "_httpCache"),
+# siehe src/Controller/CacheableController.php.
+#
+# Varnish-Anbindung: config/varnish.yaml
 #
 # @see https://github.com/MehmetGoekce/shopware-performance-examples
 
-# Hinweis: HTTP-Cache wird über Umgebungsvariablen aktiviert:
-#   SHOPWARE_HTTP_CACHE_ENABLED=1
-#   SHOPWARE_HTTP_DEFAULT_TTL=7200
-
 shopware:
-    # ============================================================
-    # HTTP-Cache Konfiguration
-    # ============================================================
     http_cache:
-        # Stale-While-Revalidate: 4 Stunden
-        # Erlaubt Auslieferung von "veraltetem" Cache während Refresh
-        # Browser-Support: Chrome 75+, Firefox 68+ (seit 2019/2020)
-        stale_while_revalidate: 14400
+        # Werden als Cache-Control-Direktiven an jede cachebare Antwort gehängt.
+        # Wirkung hat das beim Reverse Proxy (Varnish/CDN). Der Browser sieht
+        # ohne Reverse Proxy immer "no-cache, private".
+        stale_while_revalidate: 14400   # 4 Stunden
+        stale_if_error: 86400           # 24 Stunden
 
-        # Stale-If-Error: 24 Stunden
-        # Liefert veralteten Cache bei Backend-Fehlern
-        stale_if_error: 86400
-
-        # URL-Parameter die den Cache NICHT invalidieren
-        # Wichtig für Marketing-Tracking
+        # Tracking-Parameter, die keinen eigenen Cache-Eintrag erzeugen sollen.
+        # Shopware bringt bereits rund 100 Einträge mit (utm_*, gclid, fbclid,
+        # msclkid, pk_*, mc_cid ...). Eigene Einträge werden an diese Liste
+        # angehängt, hier also nur Parameter, die dort fehlen.
+        # Gilt nur für den eingebauten Cache! Hinter Varnish muss die VCL den
+        # Parameter entfernen (config/varnish.vcl, vcl_recv).
         ignored_url_parameters:
-            # Piwik/Matomo
-            - 'pk_campaign'
-            - 'pk_kwd'
-            - 'pk_keyword'
-            - 'pk_source'
-            - 'pk_medium'
-            - 'pk_content'
-            # Google Analytics / UTM
-            - 'utm_source'
-            - 'utm_medium'
-            - 'utm_campaign'
-            - 'utm_term'
-            - 'utm_content'
-            # Advertising Click IDs
-            - 'gclid'      # Google Ads
-            - 'fbclid'     # Facebook
-            - 'msclkid'    # Microsoft Ads
-            - 'dclid'      # DoubleClick
-            - 'mc_cid'     # Mailchimp
-            - 'mc_eid'     # Mailchimp
+            - 'newsletter_id'           # Beispiel für einen shop-eigenen Parameter
 
-    # Cache-Invalidierung (unter shopware.cache, nicht http_cache)
     cache:
         invalidation:
+            # 0 = sofort invalidieren (Default). Ein Wert > 0 sammelt Invalidierungen
+            # und verarbeitet sie per Scheduled Task (cache:clear:delayed).
             delay: 0
-            product_listing_route:
-                - '\Shopware\Core\Content\Product\SalesChannel\Listing\CachedProductListingRoute'
-            product_detail_route:
-                - '\Shopware\Core\Content\Product\SalesChannel\Detail\CachedProductDetailRoute'
-            category_route:
-                - '\Shopware\Core\Content\Category\SalesChannel\CachedCategoryRoute'
-            landing_page_route:
-                - '\Shopware\Core\Content\LandingPage\SalesChannel\CachedLandingPageRoute'
 
-    # ============================================================
-    # Reverse Proxy (Varnish) Konfiguration
-    # Nur aktivieren wenn Varnish im Einsatz ist!
-    # ============================================================
-    # http_cache:
-    #     reverse_proxy:
-    #         enabled: true
-    #         ban_method: "BAN"
-    #         hosts:
-    #             - "127.0.0.1:6081"    # Varnish auf localhost
-    #             # - "varnish:6081"    # Docker-Setup
-    #         max_parallel_invalidations: 3
-    #         use_varnish_xkey: true    # Für Varnish 6.0+ mit xkey
+            # Zustände, in denen Besucher am HTTP-Cache vorbeigehen (Default).
+            # Shopware setzt dafür das Cookie "sw-states".
+            http_cache: ['logged-in', 'cart-filled']
 
-# ============================================================
-# Framework Cache Pools
-# ============================================================
-framework:
-    cache:
-        pools:
-            # HTTP-Cache Pool
-            cache.http:
-                adapter: cache.adapter.filesystem
-                default_lifetime: 7200
+            # Die *_route-Keys (product_detail_route, product_listing_route ...)
+            # sind ebenfalls Zustandslisten (Default: leer), KEINE Klassennamen.
+            # Beispiel: Produktseiten für eingeloggte Kunden nicht aus dem Store-API-Cache:
+            # product_detail_route: ['logged-in']
 
-# ============================================================
-# Seitentyp-spezifische TTLs (via Controller)
-# ============================================================
-#
-# Diese Werte werden im Code gesetzt, hier zur Dokumentation:
-#
-# | Seitentyp        | TTL      | Begründung                        |
-# |------------------|----------|-----------------------------------|
-# | Startseite       | 5-15 Min | Häufige Änderungen (Slider)       |
-# | Kategorie-Seiten | 1-2 Std  | Ändern sich selten                |
-# | Produktseiten    | 2-4 Std  | Preise via ESI                    |
-# | CMS-Seiten       | 24 Std   | Statischer Content                |
-# | Warenkorb        | 0 (priv) | Benutzer-spezifisch               |
-# | Checkout         | 0 (priv) | Benutzer-spezifisch               |
-# | Account          | 0 (priv) | Benutzer-spezifisch               |
+# Kein framework.cache.pools.cache.http-Override nötig: Shopware legt den Pool
+# ab Werk auf cache.app (Filesystem, bzw. Redis, wenn cache.app auf Redis zeigt).
