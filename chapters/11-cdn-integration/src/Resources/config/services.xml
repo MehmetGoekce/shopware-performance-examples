@@ -1,0 +1,30 @@
+<?xml version="1.0" ?>
+<!--
+    Services für Kapitel 11 (CDN-Integration, Shopware 6.6)
+    Namespace "YourPlugin" an das eigene Plugin anpassen.
+
+    CLOUDFLARE_ZONE_ID und CLOUDFLARE_API_TOKEN kommen aus .env.local,
+    siehe .env.example.
+
+    @see https://github.com/MehmetGoekce/shopware-performance-examples
+-->
+<container xmlns="http://symfony.com/schema/dic/services"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xsi:schemaLocation="http://symfony.com/schema/dic/services http://symfony.com/schema/dic/services/services-1.0.xsd">
+    <services>
+        <service id="YourPlugin\Service\CloudflarePurgeService" public="true">
+            <argument type="service" id="Symfony\Contracts\HttpClient\HttpClientInterface"/>
+            <argument>%env(CLOUDFLARE_ZONE_ID)%</argument>
+            <argument>%env(CLOUDFLARE_API_TOKEN)%</argument>
+        </service>
+
+        <service id="YourPlugin\EventSubscriber\CdnCacheTagSubscriber">
+            <tag name="kernel.event_subscriber"/>
+        </service>
+
+        <service id="YourPlugin\EventSubscriber\CdnPurgeSubscriber">
+            <argument type="service" id="YourPlugin\Service\CloudflarePurgeService"/>
+            <tag name="kernel.event_subscriber"/>
+        </service>
+    </services>
+</container>

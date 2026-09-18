@@ -2,73 +2,97 @@
 
 declare(strict_types=1);
 
-namespace App\Service;
+/**
+ * Cache-Purge gegen die Cloudflare-API v4
+ * Kapitel 11: CDN-Integration
+ *
+ * Plan-Verfuegbarkeit (Stand 2026-09, Cloudflare-Doku): URL, Hostname, Tag,
+ * Prefix und Purge Everything sind auf ALLEN Plans verfuegbar - seit April 2025.
+ * Frueher verbreitete Angaben wie "Tags nur Enterprise" oder "Prefix ab Business"
+ * sind veraltet. Unterschiedlich sind nur die Rate-Limits:
+ * Free 5/min, Pro 5/s, Business 10/s, Enterprise 50/s.
+ *
+ * Harte Grenze pro Request: 100 Operationen (Single-File-Purge: Enterprise 500).
+ * Deshalb zerlegt dieser Service jede Liste in 100er-Bloecke.
+ *
+ * Wildcards gibt es beim Single-File-Purge nicht - woertlich: "Wildcards are not
+ * supported on single file purge, and you must use purge by hostname, prefix, or
+ * implement cache tags as an alternative solution". URLs muessen vollqualifiziert
+ * sein (mit Schema und Host).
+ *
+ * @see https://developers.cloudflare.com/cache/how-to/purge-cache/
+ * @see https://github.com/MehmetGoekce/shopware-performance-examples
+ */
+
+namespace YourPlugin\Service;
 
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
-/**
- * Cloudflare-Cache-Purge-Service.
- *
- * Begleitcode zu Kap 11, Subsection "Cache-Invalidierung".
- * Nutzt Cloudflare API v4 (POST /zones/{zone_id}/purge_cache).
- *
- * Skeleton — Production-Hardening offen:
- *  - @TODO Rate-Limit-Schutz (Free 5/min, Pro 5/s, Business 10/s, Enterprise 50/s)
- *  - @TODO Retry mit exponentiellem Backoff
- *  - @TODO Async-Queue (Symfony Messenger) bei hoher Purge-Frequenz
- *  - @TODO Logger statt return-bool (Audit-Trail)
- *
- * Quelle: https://developers.cloudflare.com/cache/how-to/purge-cache/
- */
-final class CloudflarePurgeService
+class CloudflarePurgeService
 {
     private const API_BASE = 'https://api.cloudflare.com/client/v4';
+
+    /**
+     * "Max operations per request: 100" - gilt fuer tags, prefixes, hosts und
+     * (ausser Enterprise) auch fuer files.
+     */
+    private const MAX_ITEMS_PER_REQUEST = 100;
 
     public function __construct(
         private readonly HttpClientInterface $httpClient,
         private readonly string $zoneId,
-        private readonly string $apiToken,
+        private readonly string $apiToken
     ) {
     }
 
     /**
-     * Einzelne URLs invalidieren.
+     * Einzelne URLs invalidieren. Vollqualifiziert, keine Wildcards.
      *
-     * @param string[] $urls Vollqualifizierte URLs (mit https://)
+     * @param string[] $urls
      */
     public function purgeByUrls(array $urls): bool
     {
-        return $this->dispatch(['files' => array_values($urls)]);
+        return $this->dispatchChunked('files', $urls);
     }
 
     /**
-     * Per Cache-Tag invalidieren — seit 2026 auf ALLEN Cloudflare-Plans verfuegbar.
+     * Per Cache-Tag invalidieren.
      *
-     * Voraussetzung: Origin muss "Cache-Tag: tag-1,tag-2"-Header senden
-     * (z.B. via CacheHeaderMiddleware oder einem CacheTagSubscriber).
+     * Voraussetzung: die Antwort traegt einen Cache-Tag-Header. Shopware setzt
+     * ihn nicht von sich aus - dafuer sorgt CdnCacheTagSubscriber.
      *
      * @param string[] $tags
      */
     public function purgeByTags(array $tags): bool
     {
-        return $this->dispatch(['tags' => array_values($tags)]);
+        return $this->dispatchChunked('tags', $tags);
     }
 
     /**
-     * Per Hostname invalidieren — Business+ Plans.
+     * Per URL-Prefix invalidieren, z.B. "shop.example.com/theme/".
+     *
+     * @param string[] $prefixes
+     */
+    public function purgeByPrefixes(array $prefixes): bool
+    {
+        return $this->dispatchChunked('prefixes', $prefixes);
+    }
+
+    /**
+     * Per Hostname invalidieren.
      *
      * @param string[] $hostnames
      */
     public function purgeByHostnames(array $hostnames): bool
     {
-        return $this->dispatch(['hosts' => array_values($hostnames)]);
+        return $this->dispatchChunked('hosts', $hostnames);
     }
 
     /**
-     * Kompletten Zone-Cache loeschen.
+     * Kompletter Zone-Purge.
      *
-     * VORSICHT: Cache-Stampede-Risiko bei traffic-starken Stores.
-     * Nur fuer Deploy-Hooks oder explizit gewollte Reset-Vorgaenge.
+     * Danach laufen alle Anfragen wieder auf den Origin - bei viel Traffic ist
+     * das ein Lastspitzen-Risiko. Nur fuer Deploy-Hooks oder bewusste Resets.
      */
     public function purgeEverything(): bool
     {
@@ -76,8 +100,28 @@ final class CloudflarePurgeService
     }
 
     /**
-     * Interner Request-Dispatch.
+     * Zerlegt die Liste in 100er-Bloecke und schickt sie nacheinander.
      *
+     * @param string[] $items
+     */
+    private function dispatchChunked(string $key, array $items): bool
+    {
+        $items = array_values(array_unique(array_filter($items)));
+
+        if ($items === []) {
+            return true;
+        }
+
+        $ok = true;
+
+        foreach (array_chunk($items, self::MAX_ITEMS_PER_REQUEST) as $chunk) {
+            $ok = $this->dispatch([$key => $chunk]) && $ok;
+        }
+
+        return $ok;
+    }
+
+    /**
      * @param array<string,mixed> $payload
      */
     private function dispatch(array $payload): bool
@@ -88,12 +132,20 @@ final class CloudflarePurgeService
             [
                 'headers' => [
                     'Authorization' => 'Bearer ' . $this->apiToken,
-                    'Content-Type'  => 'application/json',
+                    'Content-Type' => 'application/json',
                 ],
                 'json' => $payload,
-            ],
+            ]
         );
 
-        return $response->getStatusCode() === 200;
+        // Cloudflare antwortet auch bei fachlichen Fehlern mit 200 und
+        // "success": false - der Status allein reicht als Erfolgskriterium nicht.
+        if ($response->getStatusCode() !== 200) {
+            return false;
+        }
+
+        $body = $response->toArray(false);
+
+        return ($body['success'] ?? false) === true;
     }
 }
