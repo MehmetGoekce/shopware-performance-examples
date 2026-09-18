@@ -1,7 +1,6 @@
 {
-  "_comment": "Cloudflare Page Rules für Shopware - via Dashboard oder API erstellen",
+  "_comment": "Cloudflare Page Rules fuer Shopware. Free erlaubt maximal 3 Page Rules - genau diese drei Asset-Regeln. Bypass-Regeln fuer /checkout/, /account/, /admin/ und /store-api/ fehlen absichtlich: bei Cache Level \"Standard\" cached Cloudflare ohnehin kein HTML (\"The Cloudflare CDN does not cache HTML or JSON by default\"). Noetig werden sie erst, wenn HTML per \"Cache Everything\" gecacht wird - dann aber als Cache Rule mit Bypass auf die Cookies sw-states und sw-cache-hash, siehe README.",
   "_documentation": "https://developers.cloudflare.com/rules/page-rules/",
-
   "page_rules": [
     {
       "_comment": "Statische Assets - Maximales Caching",
@@ -90,101 +89,14 @@
       ],
       "priority": 3,
       "status": "active"
-    },
-    {
-      "_comment": "Checkout - NIEMALS cachen",
-      "targets": [
-        {
-          "target": "url",
-          "constraint": {
-            "operator": "matches",
-            "value": "*shop.de/checkout/*"
-          }
-        }
-      ],
-      "actions": [
-        {
-          "id": "cache_level",
-          "value": "bypass"
-        },
-        {
-          "id": "disable_apps",
-          "value": true
-        }
-      ],
-      "priority": 10,
-      "status": "active"
-    },
-    {
-      "_comment": "Account-Bereich - Bypass",
-      "targets": [
-        {
-          "target": "url",
-          "constraint": {
-            "operator": "matches",
-            "value": "*shop.de/account/*"
-          }
-        }
-      ],
-      "actions": [
-        {
-          "id": "cache_level",
-          "value": "bypass"
-        }
-      ],
-      "priority": 11,
-      "status": "active"
-    },
-    {
-      "_comment": "Admin-Bereich - Bypass + Security",
-      "targets": [
-        {
-          "target": "url",
-          "constraint": {
-            "operator": "matches",
-            "value": "*shop.de/admin/*"
-          }
-        }
-      ],
-      "actions": [
-        {
-          "id": "cache_level",
-          "value": "bypass"
-        },
-        {
-          "id": "security_level",
-          "value": "high"
-        }
-      ],
-      "priority": 12,
-      "status": "active"
-    },
-    {
-      "_comment": "Store API - Kein Caching",
-      "targets": [
-        {
-          "target": "url",
-          "constraint": {
-            "operator": "matches",
-            "value": "*shop.de/store-api/*"
-          }
-        }
-      ],
-      "actions": [
-        {
-          "id": "cache_level",
-          "value": "bypass"
-        }
-      ],
-      "priority": 13,
-      "status": "active"
     }
   ],
-
   "_usage_notes": {
     "create_via_api": "curl -X POST 'https://api.cloudflare.com/client/v4/zones/{zone_id}/pagerules' -H 'Authorization: Bearer {token}' -H 'Content-Type: application/json' -d '{rule}'",
     "max_rules_free": 3,
     "max_rules_pro": 20,
     "priority": "Niedrigere Zahl = höhere Priorität"
-  }
+  },
+  "_hinweis_nachfolger": "Page Rules sind der aeltere Mechanismus; Cloudflare empfiehlt Cache Rules. Fuer neue Setups dort beginnen: https://developers.cloudflare.com/cache/how-to/cache-rules/",
+  "_hinweis_pfade": "Die Muster decken /admin/ ab, nicht den Einstieg /admin ohne Slash - bei Bedarf \"*shop.de/admin*\" verwenden."
 }

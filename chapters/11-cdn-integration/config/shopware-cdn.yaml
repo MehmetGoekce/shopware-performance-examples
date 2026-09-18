@@ -1,149 +1,138 @@
-# Shopware CDN-Konfiguration
+# Shopware-Konfiguration fuer Asset-Auslieferung ueber ein CDN
 #
 # Installation:
-#   1. Diese Datei nach config/packages/cdn.yaml kopieren
-#   2. Umgebungsvariablen in .env.local setzen
-#   3. Cache leeren: bin/console cache:clear
+#   1. Datei nach config/packages/cdn.yaml kopieren
+#   2. CDN_URL in .env.local setzen (siehe .env.example)
+#   3. bin/console cache:clear
 #
-# Quelle: https://developer.shopware.com/docs/guides/hosting/infrastructure/cdn.html
-
-# ============================================================================
-# Option 1: Einfache CDN-URL (empfohlen für Cloudflare/Bunny)
-# ============================================================================
-
-# Bei Cloudflare/Bunny als Proxy: Keine Änderung nötig!
-# Das CDN cached automatisch basierend auf Cache-Control Headern.
-
-# Für separate Asset-Domain (z.B. cdn.shop.de):
+# Getestet gegen Shopware 6.6.10.6 (Dockware, prod).
+#
+# FALLE 1 — `url` ohne `type` bricht den Container:
+#   shopware:
+#       filesystem:
+#           public:
+#               url: 'https://cdn.example.com'   # <- so NICHT
+#   Ergebnis: `cache:clear` bricht ab mit
+#   „The parameter shopware.filesystem.theme.type has a dependency on a
+#   non-existent parameter shopware.filesystem.public.type", danach liefert die
+#   Storefront HTTP 500. Der Knoten wird komplett ersetzt, `type` muss mit.
+#
+# FALLE 2 — `public` allein reicht nicht:
+#   Fuer `theme`, `asset` und `sitemap` setzt der
+#   FilesystemConfigMigrationCompilerPass die URL auf '' und uebernimmt die
+#   public-*Storage*-Config („6.1 always refers to the main shop url on theme,
+#   asset and sitemap."). Das FallbackUrlPackage nimmt dann den Request-Host —
+#   Theme-CSS/JS und /bundles/ bleiben auf der Shop-Domain. Verifiziert: mit nur
+#   `public` wandern die Medien aufs CDN, die Theme-Assets nicht.
+#
+# FALLE 3 — Shopware liest weder ASSET_URL noch CDN_URL von sich aus.
+#   CDN_URL ist ausschliesslich der Platzhalter, den diese Datei referenziert.
+#
+# Quellen:
+#   src/Core/Framework/DependencyInjection/FilesystemConfigMigrationCompilerPass.php @v6.6.10.0
+#   https://developer.shopware.com/docs/guides/hosting/infrastructure/filesystem.html
 
 shopware:
     filesystem:
+        # Medien, Thumbnails, Sitemap-Dateien
         public:
-            # CDN-URL für öffentliche Assets
-            url: '%env(ASSET_URL)%'
+            type: 'local'
+            url: '%env(CDN_URL)%'
+            config:
+                root: '%kernel.project_dir%/public'
+
+        # Kompilierte Theme-Assets (/theme/<hash>/...)
         theme:
-            # CDN-URL für Theme-Assets
-            url: '%env(ASSET_URL)%'
+            type: 'local'
+            url: '%env(CDN_URL)%'
+            config:
+                root: '%kernel.project_dir%/public'
 
-    cdn:
-        # Basis-URL für alle CDN-Assets
-        url: '%env(CDN_URL)%'
+        # Bundle-Assets der Plugins (/bundles/...)
+        asset:
+            type: 'local'
+            url: '%env(CDN_URL)%'
+            config:
+                root: '%kernel.project_dir%/public'
+
+        # sitemap.xml und die generierten .xml.gz-Dateien
+        sitemap:
+            type: 'local'
+            url: '%env(CDN_URL)%'
+            config:
+                root: '%kernel.project_dir%/public'
 
 # ============================================================================
-# Option 2: Separate Domains für verschiedene Asset-Typen
+# Optional: S3-kompatibles Storage als Origin
 # ============================================================================
-
+#
+# Die CDN-URL gehoert auf `url` der jeweiligen Sektion, NICHT in `config`.
+#
 # shopware:
 #     filesystem:
 #         public:
-#             url: 'https://media.shop.de'
-#         theme:
-#             url: 'https://static.shop.de'
-#         sitemap:
-#             url: 'https://static.shop.de'
-#         asset:
-#             url: 'https://static.shop.de'
-
-# ============================================================================
-# Option 3: S3/Cloud Storage als Origin
-# ============================================================================
-
-# shopware:
-#     filesystem:
-#         public:
-#             type: amazon-s3
+#             type: 'amazon-s3'
+#             url: '%env(CDN_URL)%'
 #             config:
 #                 bucket: '%env(S3_BUCKET)%'
 #                 region: '%env(S3_REGION)%'
 #                 endpoint: '%env(S3_ENDPOINT)%'
-#                 url: 'https://cdn.shop.de'  # CDN vor S3
 #                 options:
 #                     ACL: public-read
-
-# ============================================================================
-# Cache-Buster für Asset-URLs
-# ============================================================================
-
-# Automatische Cache-Invalidierung durch Hash im URL
-# Aktiviert in: config/packages/shopware.yaml
-
-# shopware:
-#     storefront:
-#         theme:
-#             # Hash in Theme-URLs (empfohlen)
-#             config_loader_id: Shopware\Storefront\Theme\ConfigLoader\DatabaseAvailableThemeProvider
 #
-#     # Asset-Version für Bundle-URLs
-#     asset:
-#         version_strategy: asset_version
+# Ob Bunny Storage unter https://storage.bunnycdn.com eine S3-kompatible API
+# anbietet, ist nicht verifiziert — vor dem Einsatz beim Anbieter pruefen.
 
 # ============================================================================
-# .env.local Beispiel
+# HTML-Caching: was Shopware steuert und was das CDN steuert
 # ============================================================================
-
-# Für Cloudflare (Proxy-Modus):
-# ASSET_URL=https://shop.de
-# CDN_URL=https://shop.de
-
-# Für separate CDN-Domain:
-# ASSET_URL=https://cdn.shop.de
-# CDN_URL=https://cdn.shop.de
-
-# Für Bunny CDN Pull Zone:
-# ASSET_URL=https://shop-cdn.b-cdn.net
-# CDN_URL=https://shop-cdn.b-cdn.net
-
-# ============================================================================
-# HTTP-Cache Konfiguration (ergänzend zu CDN)
-# ============================================================================
-
-# config/packages/shopware.yaml
-
+#
+# Es gibt KEINE Keys `shopware.http_cache.default_ttl` und
+# `shopware.http_cache.tag_headers` (Configuration.php @v6.6.10.0) — wer sie
+# setzt, bekommt „Unrecognized option".
+#
+# Die TTL kommt aus der Umgebung:
+#     SHOPWARE_HTTP_DEFAULT_TTL=7200
+#
+# Ohne Reverse Proxy sendet Shopware an JEDE Storefront-Antwort
+# `Cache-Control: no-cache, private` (CacheControlListener) — ein CDN kann dann
+# kein HTML cachen, egal was im Dashboard eingestellt ist.
+#
+# Mit Reverse Proxy sendet Shopware `public, s-maxage=<TTL>` plus den Header
+# `sw-invalidation-states: logged-in,cart-filled`. Dieser Header ist der
+# Vertrag: der Proxy MUSS Requests mit dem Cookie `sw-states=…` am Cache
+# vorbeischicken. Varnish tut das mit der offiziellen VCL
+# (github.com/shopware/varnish-shopware). Ein CDN tut es nicht von selbst —
+# dort braucht es eine Cache-Rule, die bei `sw-states` bzw. `sw-cache-hash`
+# auf Bypass geht.
+#
 # shopware:
 #     http_cache:
-#         # Reverse Proxy (Varnish) deaktivieren wenn CDN genutzt wird
 #         reverse_proxy:
-#             enabled: false
+#             enabled: true
+#             # PFLICHT: Shopware liefert den Default `redis_url: "redis://redis"`
+#             # mit (Core-shopware.yaml). Ohne erreichbaren Redis endet JEDE Seite
+#             # in HTTP 500. Fuer Varnish deshalb explizit umschalten:
+#             use_varnish_xkey: true
+#             redis_url: null
+#             hosts:
+#                 - 'http://varnish:80'
 #
-#         # Default TTL für gecachte Responses
-#         default_ttl: 7200  # 2 Stunden
-#
-#         # Cache-Tags fuer selektives Purging am CDN-Edge.
-#         # Cloudflare nutzt "Cache-Tag" (komma-separiert) — seit 2026 auf
-#         # ALLEN Plans (Free, Pro, Business, Enterprise) verfuegbar.
-#         # Fastly nutzt "Surrogate-Key" (space-separiert).
-#         # Varnish liest "Surrogate-Key" via xkey VMOD.
-#         tag_headers:
-#             - 'Cache-Tag'        # Cloudflare-Konvention
-#             - 'Surrogate-Key'    # Fastly-Konvention
-#             - 'X-Cache-Tags'     # Legacy/Custom
+# Achtung: bei aktivem reverse_proxy schickt `bin/console cache:clear` ein
+# `BAN /` an jeden Host dieser Liste. Antwortet der Host nicht mit 2xx, bricht
+# cache:clear mit einer Exception ab.
 
 # ============================================================================
-# Vary-Header & Cookie-Whitelist gegen Session/Cart-Leaks
+# Cache-Tags: was Shopware wirklich sendet
 # ============================================================================
 #
-# Shopware sendet bereits Vary: sw-cache-hash + sw-language-id + sw-currency-id
-# automatisch (CacheResponseSubscriber). Verifikation:
-#   curl -I https://shop.example.com/ | grep -i ^vary
+# Mit aktivem Reverse Proxy haengt Shopware die Tags als EINEN Header an:
+#     xkey: theme.assets.css product-<id> navigation … (space-separiert)
+# Gemessen: Produktseite 139 Tags / 4963 Bytes, Startseite 95 Tags / 3192 Bytes.
 #
-# Falscher Vary-Header (Vary: Cookie) fuehrt zu Cache-Explosion: jede
-# Variation einer Tracking-/Analytics-Cookie erzeugt einen neuen Cache-Entry,
-# Cache-Hit-Rate kippt auf wenige Prozent.
-#
-# Cookie-Whitelist am Edge (Cloudflare Worker oder Varnish vcl_recv) filtert
-# Tracking-Cookies wie _ga, _gid, _hjSessionUser, cf_clearance, ...
-# und reicht nur sw-cache-hash, sw-context-hash, session- an Origin durch.
-# Beispiel siehe Buch Kap 11.5 "Vary:Cookie ist gefaehrlich".
-#
-# Quelle: https://developer.shopware.com/docs/concepts/framework/http_cache.html
-
-# ============================================================================
-# Performance-Tipp: Preload für kritische Assets
-# ============================================================================
-
-# In Twig-Templates:
-# {% sw_include '@Storefront/storefront/layout/meta.html.twig' %}
-#
-# Oder manuell:
-# <link rel="preload" href="{{ asset('theme/css/all.css') }}" as="style">
-# <link rel="preload" href="{{ asset('bundles/storefront/assets/fonts/Inter.woff2') }}" as="font" type="font/woff2" crossorigin>
+# Einen `Cache-Tag`-Header (Cloudflare-Konvention) sendet Shopware NIE. Wer am
+# CDN per Tag purgen will, muss ihn selbst setzen — siehe
+# src/EventSubscriber/CdnCacheTagSubscriber.php. Cloudflare-Grenzen:
+# Header max. 16 KB (~1.000 Tags), keine Leerzeichen im Tag, komma-separiert,
+# max. 100 Tags pro Purge-Request.
+# Quelle: https://developers.cloudflare.com/cache/how-to/purge-cache/purge-by-tags/
