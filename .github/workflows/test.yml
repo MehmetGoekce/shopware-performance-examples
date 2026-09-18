@@ -127,6 +127,39 @@ jobs:
           additional_files: '*.sh'
           severity: warning
 
+  nginx-conf:
+    name: Nginx Config Syntax
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate chapter 11 CDN header config
+        run: |
+          cat > nginx-test.conf <<'CONF'
+          events {}
+          http {
+              server {
+                  listen 8080;
+                  root /usr/share/nginx/html;
+
+                  location / {
+                      try_files $uri /index.php$is_args$args;
+                  }
+
+                  include /etc/nginx/ch11-cdn-headers.conf;
+
+                  location ~ \.php$ {
+                      return 404;
+                  }
+              }
+          }
+          CONF
+          docker run --rm \
+            -v "$PWD/nginx-test.conf:/etc/nginx/nginx.conf:ro" \
+            -v "$PWD/chapters/11-cdn-integration/config/nginx-cdn-headers.conf:/etc/nginx/ch11-cdn-headers.conf:ro" \
+            nginx:alpine nginx -t
+
   bats:
     name: BATS Shell Tests
     runs-on: ubuntu-latest
