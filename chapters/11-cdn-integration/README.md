@@ -1,6 +1,7 @@
 # Kapitel 11: CDN-Integration
 
-Companion-Code zum Buchkapitel "CDN-Integration für globale Performance".
+Companion-Code zum Buchkapitel «CDN-Integration für globale Performance».
+Getestet gegen **Shopware 6.6.10.6** (Dockware, `APP_ENV=prod`, nginx 1.18).
 
 ## Architektur
 
@@ -16,185 +17,134 @@ Companion-Code zum Buchkapitel "CDN-Integration für globale Performance".
                     └─────────┘
 ```
 
+## Was Shopware selbst macht — und was nicht
+
+Drei Punkte, die den Rest dieses Verzeichnisses erklären (alle im Testshop gemessen):
+
+1. **Ohne Reverse Proxy cached kein CDN HTML.** Shopware sendet an jede
+   Storefront-Antwort `Cache-Control: no-cache, private` (`CacheControlListener`).
+   Mit `reverse_proxy.enabled: true` wird daraus `public, s-maxage=7200`.
+2. **Der Schutz personalisierter Antworten liegt beim Proxy.** Shopware sendet
+   zusätzlich `sw-invalidation-states: logged-in,cart-filled` und setzt bei
+   Login oder gefülltem Warenkorb die Cookies `sw-states` und `sw-cache-hash`.
+   Wer diese Cookies am Edge nicht auswertet, cached Zustände mit, die nicht
+   geteilt werden dürfen. Varnish erledigt das mit der offiziellen VCL, ein CDN
+   braucht dafür eine eigene Bypass-Regel.
+3. **Shopware sendet nie einen `Cache-Tag`-Header.** Die Tags kommen als `xkey`
+   (Varnish) bzw. `surrogate-key` (Fastly). Gemessen: Produktseite 139 Tags /
+   4963 Bytes. Für Cloudflare übersetzt `CdnCacheTagSubscriber` sie.
+
 ## Dateien
 
 ### config/
 
 | Datei | Beschreibung |
 |-------|--------------|
-| `cloudflare-page-rules.json` | Beispiel Page Rules für Shopware |
-| `nginx-cdn-headers.conf` | Nginx Cache-Header Konfiguration (inkl. HTTP/3 + Brotli-Levels) |
-| `shopware-cdn.yaml` | Shopware CDN-Konfiguration (inkl. Vary-Header + Cache-Tag-Pattern) |
-| `bunny-pull-zone.json` | Bunny CDN Pull Zone Einstellungen |
+| `nginx-cdn-headers.conf` | Cache-Header **nur für statische Assets**; ergänzt die Shopware-nginx-Config, ersetzt sie nicht |
+| `shopware-cdn.yaml` | Assets auf die CDN-Domain (`public`, `theme`, `asset`, `sitemap`) + kommentierte Reverse-Proxy-Sektion |
+| `cloudflare-page-rules.json` | Drei Asset-Regeln (= Free-Limit) |
+| `bunny-pull-zone.json` | Pull-Zone mit `IgnoreQueryStrings: false` |
 
-### src/ (PHP-Klassen — Skeleton, Production-Hardening offen)
+### src/
 
 | Klasse | Beschreibung |
 |--------|--------------|
-| `Service/CloudflarePurgeService.php` | Cache-Purge via API v4 (purgeByUrls / purgeByTags / purgeByHostnames / purgeEverything) |
-| `EventSubscriber/MediaPurgeSubscriber.php` | Auto-Purge bei Media/Product/Category-Writes |
-| `Middleware/CacheHeaderMiddleware.php` | Cache-Control + Surrogate-Control + Cache-Tag + Surrogate-Key pro Route |
+| `Service/CloudflarePurgeService.php` | Purge via API v4, zerlegt Listen in 100er-Blöcke |
+| `EventSubscriber/CdnCacheTagSubscriber.php` | Übersetzt Shopwares `xkey` in einen `Cache-Tag`-Header |
+| `EventSubscriber/CdnPurgeSubscriber.php` | Purge bei `product.written` / `category.written` |
+| `Resources/config/services.xml` | Service-Definitionen (Namespace `YourPlugin` anpassen) |
 
 ### scripts/
 
 | Script | Beschreibung |
 |--------|--------------|
-| `cdn-warmup.sh` | Cache Warming nach Deployment |
-| `cloudflare-purge.sh` | Cloudflare Cache-Invalidierung |
-| `bunny-purge.sh` | Bunny CDN Cache-Invalidierung |
-| `cdn-test.sh` | CDN-Konfiguration testen |
-
-### Root
-
-| Datei | Beschreibung |
-|-------|--------------|
-| `.env.example` | Shopware/Symfony Env-Vars (CLOUDFLARE_API_TOKEN, CLOUDFLARE_ZONE_ID, ASSET_URL, CDN_URL) |
+| `cdn-test.sh` | Prüft Status, Cache-Header, CORS, Bypass |
+| `cdn-warmup.sh` | Warmup inkl. Auflösung von sitemapindex und `.xml.gz` |
+| `cloudflare-purge.sh` | Purge nach URL, Tag, Prefix oder komplett |
+| `bunny-purge.sh` | Bunny-Pull-Zone-Purge |
 
 ## Quick Start
 
-### 1. Cloudflare einrichten
-
 ```bash
-# API Token erstellen: cloudflare.com/profile/api-tokens
-# Berechtigung: Zone:Cache Purge
+export CLOUDFLARE_API_TOKEN="..."   # Zone > Cache Purge > Purge
+export CLOUDFLARE_ZONE_ID="..."
 
-export CLOUDFLARE_API_TOKEN="your-token"
-export CLOUDFLARE_ZONE_ID="your-zone-id"
-
-# Test
 ./scripts/cloudflare-purge.sh --test
+./scripts/cdn-test.sh https://ihr-shop.de
+./scripts/cdn-warmup.sh https://ihr-shop.de --all
 ```
 
-### 2. Cache-Header prüfen
-
-```bash
-# Header einer URL prüfen
-curl -I https://ihr-shop.de/media/image.jpg
-
-# Erwartete Header:
-# Cache-Control: public, max-age=31536000
-# CF-Cache-Status: HIT
-```
-
-### 3. Cache Warming
-
-```bash
-# Nach Deployment Cache vorwärmen
-./scripts/cdn-warmup.sh https://ihr-shop.de
-
-# Nur kritische URLs
-./scripts/cdn-warmup.sh https://ihr-shop.de --critical-only
-```
+`cdn-warmup.sh` wärmt immer nur den PoP, der dem ausführenden Rechner am
+nächsten liegt — ein Runner in Frankfurt wärmt nicht Singapur.
 
 ## Cache-Strategie
 
-### Empfohlene TTLs
-
 | Content-Typ | TTL | Cache-Control |
 |-------------|-----|---------------|
-| Bilder (mit Hash) | 1 Jahr | `public, max-age=31536000, immutable` |
-| CSS/JS (mit Hash) | 1 Jahr | `public, max-age=31536000, immutable` |
-| Fonts | 1 Jahr | `public, max-age=31536000` |
-| HTML (Produktseiten) | 5-60 Min | `public, max-age=300, stale-while-revalidate=60` |
-| API-Responses | 0 | `private, no-store` |
+| Theme-Assets (`/theme/`) | 1 Jahr | `public, max-age=31536000, immutable` |
+| Bundle-Assets (`/bundles/`) | 1 Jahr | `public, max-age=31536000, immutable` |
+| Medien, Thumbnails | 1 Jahr | `public, max-age=31536000, immutable` |
+| HTML | Shopware entscheidet | `public, s-maxage=<SHOPWARE_HTTP_DEFAULT_TTL>` (nur mit Reverse Proxy) |
+| Checkout, Konto, Store-API | nicht cachen | von Shopware gesetzt, keine nginx-Regel nötig |
 
-### Bypass-Regeln
+**Versionierung:** Theme-Assets liegen unter einem Hash-Pfad, tragen aber
+zusätzlich `?<lastModified>`; Bundle-Assets werden **ausschliesslich** über den
+Query-String versioniert; Medien haben den Upload-Timestamp im Pfad **und**
+`?ts=`. Der CDN-Cache-Key muss den Query-String deshalb enthalten.
 
-```
-# Diese URLs NICHT cachen:
-/checkout/*
-/account/*
-/api/*
-/admin/*
-/store-api/*
-```
+## Invalidierung
 
-## Metriken
+Alle Purge-Arten (URL, Hostname, Tag, Prefix, Everything) sind auf **allen**
+Cloudflare-Plans verfügbar; nur die Rate-Limits unterscheiden sich:
 
-### Erfolgs-Indikatoren
-
-| Metrik | Ziel | Messen mit |
-|--------|------|------------|
-| Cache Hit Ratio | >90% | CDN Dashboard |
-| TTFB | <200ms | WebPageTest |
-| Origin-Requests | <10% | Server Logs |
-| Global Latenz | <100ms | Catchpoint/Pingdom |
-
-### Cloudflare Analytics
+| Plan | Rate-Limit | Max. Operationen pro Request |
+|------|-----------|------------------------------|
+| Free | 5/min | 100 |
+| Pro | 5/s | 100 |
+| Business | 10/s | 100 |
+| Enterprise | 50/s | 100 (Single-File-Purge 500) |
 
 ```bash
-# Cache-Statistiken via API abrufen
-curl -X GET "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/analytics/dashboard" \
-  -H "Authorization: Bearer $API_TOKEN" \
-  -H "Content-Type: application/json"
+# Vollqualifizierte URLs, keine Wildcards
+./scripts/cloudflare-purge.sh --urls 'https://shop.de/media/a.jpg'
+
+# Statt Wildcards: Prefix
+./scripts/cloudflare-purge.sh --prefixes 'shop.de/theme/,shop.de/bundles/'
+
+# Per Tag (setzt CdnCacheTagSubscriber voraus)
+./scripts/cloudflare-purge.sh --tags 'product-abc123'
 ```
+
+`Cache-Tag`-Grenzen: Header max. 16 KB (~1.000 Tags), komma-separiert, keine
+Leerzeichen im Tag, max. 100 Tags pro Purge-Request.
+
+Listing-Seiten und Suchergebnisse taggt Shopware nicht («List-type routes are
+not tagged with all entities returned in the response … These routes instead
+rely on their TTL») — sie laufen über die TTL ab, nicht über den Purge.
+
+## Messwerte und Ziele
+
+Cache-Hit-Rate und Origin-Anteil hängen von Sortiment, Traffic-Mix und TTL ab.
+Als Orientierung, nicht als Zielvorgabe: liegt die Hit-Rate für statische Assets
+unter 80 %, stimmt meist etwas an den Cache-Headern oder am Cache-Key nicht.
 
 ## Troubleshooting
 
-### Cache-Miss trotz korrekter Header
+| Symptom | Ursache |
+|---------|---------|
+| Checkout/Konto/Store-API liefern 404 | nginx-Location ohne `try_files`/`fastcgi_pass` |
+| nginx startet nicht: `duplicate location "/"` | Buch-Block zusätzlich zu Shopwares `location /` eingefügt |
+| Zwei `Cache-Control`-Header | `expires` **und** `add_header Cache-Control` im selben Block |
+| `HTTP 500` nach dem Einspielen der CDN-Config | `url` ohne `type` unter `shopware.filesystem.*` |
+| Theme-Assets bleiben auf der Shop-Domain | nur `public` gesetzt, `theme`/`asset`/`sitemap` fehlen |
+| `HTTP 500` nach Aktivieren des Reverse Proxy | Default `redis_url: redis://redis` — Gateway explizit wählen |
+| `cache:clear` bricht ab | Reverse Proxy aktiv, `BAN /` an `reverse_proxy.hosts` bleibt unbeantwortet |
+| Altes Plugin-JS trotz Update | CDN ignoriert Query-Strings (`IgnoreQueryStrings: true`) |
 
-```bash
-# 1. Vary-Header prüfen
-curl -I https://shop.de/page | grep -i vary
+## Quellen
 
-# Problem: Vary: Cookie verhindert Caching
-# Lösung: Vary nur für nötige Header setzen
-```
-
-### Stale Content nach Deployment
-
-```bash
-# Kompletten Cache purgen
-./scripts/cloudflare-purge.sh --all
-
-# Nur bestimmte URLs
-./scripts/cloudflare-purge.sh --urls "/media/*,/theme/*"
-```
-
-### CORS-Fehler mit CDN
-
-```bash
-# Origin prüfen
-curl -I -H "Origin: https://shop.de" https://cdn.shop.de/font.woff2
-
-# Access-Control-Allow-Origin muss gesetzt sein
-```
-
-## Cache-Tag-Pattern (Cloudflare auf allen Plans seit 2026)
-
-Tag-basierter Purge ist seit 2026 auf ALLEN Cloudflare-Plans (Free, Pro,
-Business, Enterprise) verfügbar — Rate-Limits skalieren aber pro Tier:
-
-| Plan | Rate-Limit | Use-Case |
-|------|------------|----------|
-| Free | 5/min | Hobby-Shops, niedriges Purge-Volumen |
-| Pro | 5/s | KMU mit moderatem Edit-Volumen |
-| Business | 10/s | Hochfrequente Updates (Preis-Sync) |
-| Enterprise | 50/s | Mass-Updates, Multi-Sales-Channel |
-
-Quelle: [Cloudflare Cache-Purge-Doku](https://developers.cloudflare.com/cache/how-to/purge-cache/).
-
-`CloudflarePurgeService::purgeByTags(['product-123'])` invalidiert alle
-Responses mit `Cache-Tag: product-123` in einem Call — egal ob die als
-Produktdetailseite, Kategorie-Listing oder Suchresultat ausgespielt
-werden. Voraussetzung: `CacheHeaderMiddleware` (oder eigener Subscriber)
-emittiert die `Cache-Tag`-Header am Origin.
-
-## Shopware 6.7.6 Caching-Rework (Q1 2026)
-
-Wer von Shopware 6.6 auf 6.7.6+ upgradet, sollte CDN-Page-Rules
-auditieren: alte "No-Cache wenn `sw-states`-Cookie gesetzt"-Regeln
-werden obsolet (cookie wird deprecated). Mit aktivem `CACHE_REWORK`-
-Feature-Flag werden eingeloggte User und gefüllte Carts standardmäßig
-cachebar. Siehe Buch Kap 11.4 "Forward-Hinweis Shopware 6.7.6".
-
-## Weiterführende Ressourcen
-
-- [Cloudflare Documentation](https://developers.cloudflare.com/cache/)
-- [Cloudflare Cache-Purge](https://developers.cloudflare.com/cache/how-to/purge-cache/)
-- [Bunny CDN Docs](https://docs.bunny.net/)
-- [Shopware CDN Guide](https://developer.shopware.com/docs/guides/hosting/infrastructure/cdn.html)
-- [Shopware Caching Concepts](https://developer.shopware.com/docs/concepts/framework/http_cache.html)
-- [Shopware New Caching System (6.7.6)](https://www.shopware.com/en/news/new-caching-system/)
-- [Cloudflare Workers Module Format](https://developers.cloudflare.com/workers/reference/migrate-to-module-workers/)
-- [Web.dev: CDNs](https://web.dev/articles/content-delivery-networks)
+- https://developer.shopware.com/docs/concepts/framework/http_cache.html
+- https://developer.shopware.com/docs/guides/hosting/infrastructure/filesystem.html
+- https://developers.cloudflare.com/cache/how-to/purge-cache/
+- https://developers.cloudflare.com/cache/how-to/purge-cache/purge-by-tags/
+- https://nginx.org/en/docs/http/ngx_http_core_module.html#location

@@ -1,236 +1,185 @@
 #!/bin/bash
 #
-# CDN Cache Warming Script
-# Wärmt den CDN-Cache nach Deployment vor
+# Waermt den CDN-Cache nach einem Deployment
+# Kapitel 11: CDN-Integration
 #
-# Verwendung:
-#   ./cdn-warmup.sh https://shop.de
-#   ./cdn-warmup.sh https://shop.de --critical-only
-#   ./cdn-warmup.sh https://shop.de --sitemap
+# Usage:
+#   ./cdn-warmup.sh <shop-url> [--critical|--sitemap|--all]
+#   ./cdn-warmup.sh --help
 #
-# Voraussetzungen:
-#   - curl installiert
-#   - xmllint (optional, für Sitemap-Parsing)
+# Exit-Codes:
+#   0  alle angefragten URLs haben mit 200 geantwortet
+#   1  mindestens eine URL hat nicht mit 200 geantwortet
+#   2  falsche Aufrufparameter
+#
+# WICHTIG — was ein Warmup leisten kann und was nicht:
+# Der Aufruf landet immer am PoP, der dem ausfuehrenden Rechner am naechsten
+# liegt. Ein CI-Runner in Frankfurt waermt Frankfurt, nicht Singapur. Wer
+# mehrere Regionen waermen will, braucht Runner in diesen Regionen.
+#
+# Shopwares /sitemap.xml ist ein sitemapindex und verlinkt gzip-komprimierte
+# Teil-Sitemaps (.xml.gz). Ein Warmup, das nur die <loc>-Eintraege der
+# Index-Datei abruft, waermt also Archive statt Seiten. Dieses Skript loest den
+# Index auf und entpackt die Teil-Sitemaps.
+#
+# @see https://github.com/MehmetGoekce/shopware-performance-examples
 
-set -e
+set -euo pipefail
 
-SHOP_URL="${1:-}"
-MODE="${2:---all}"
-CONCURRENCY=5
-USER_AGENT="CDN-Warmup/1.0"
-
-# Farben
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
+CONCURRENCY=5
+USER_AGENT="CDN-Warmup/2.0"
+MAX_SITEMAP_URLS=500
+
+OK_COUNT=0
+ERR_COUNT=0
+
 usage() {
-    echo "Verwendung: $0 <shop-url> [--critical-only|--sitemap|--all]"
-    echo ""
-    echo "Optionen:"
-    echo "  --critical-only  Nur kritische URLs (Homepage, Top-Kategorien)"
-    echo "  --sitemap        URLs aus Sitemap extrahieren"
-    echo "  --all            Kritische URLs + Sitemap (default)"
-    exit 1
+    cat <<'USAGE'
+Usage: cdn-warmup.sh <shop-url> [--critical|--sitemap|--all]
+
+  <shop-url>    Basis-URL des Shops, z.B. https://shop.example.com
+  --critical    Nur Startseite, Suche, Kategorie-Einstieg
+  --sitemap     URLs aus der Sitemap (loest den sitemapindex und .xml.gz auf)
+  --all         Beides (Default)
+  --help        Diese Hilfe
+
+Exit-Codes: 0 = alles 200, 1 = mindestens ein Fehler, 2 = Aufruffehler
+USAGE
 }
 
-if [[ -z "${SHOP_URL}" ]]; then
-    usage
-fi
+# Ruft eine URL ab und zaehlt das Ergebnis. Nie abbrechen, nur zaehlen.
+warm_url() {
+    local url="$1" status
+    status=$(curl -sS -o /dev/null -w '%{http_code}' -A "${USER_AGENT}" "${url}" 2>/dev/null || printf '000')
 
-# URL normalisieren
-SHOP_URL="${SHOP_URL%/}"
-
-echo "=== CDN Cache Warming ==="
-echo ""
-echo "Shop:        ${SHOP_URL}"
-echo "Modus:       ${MODE}"
-echo "Parallelität: ${CONCURRENCY}"
-echo ""
-
-# ============================================================================
-# Kritische URLs
-# ============================================================================
+    if [ "${status}" = "200" ]; then
+        OK_COUNT=$((OK_COUNT + 1))
+        printf "  ${GREEN}200${NC} %s\n" "${url}"
+    else
+        ERR_COUNT=$((ERR_COUNT + 1))
+        printf "  ${RED}%s${NC} %s\n" "${status}" "${url}"
+    fi
+}
 
 warm_critical() {
-    echo "=== Wärme kritische URLs ==="
+    echo "=== Kritische Seiten ==="
 
-    CRITICAL_URLS=(
-        "/"
-        "/navigation/hauptkategorie"
-        "/search"
-        # CSS/JS werden durch HTML-Requests automatisch gewärmt
-    )
-
-    for url in "${CRITICAL_URLS[@]}"; do
-        full_url="${SHOP_URL}${url}"
-        echo -n "  ${url} ... "
-
-        status=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "User-Agent: ${USER_AGENT}" \
-            "${full_url}")
-
-        if [[ "${status}" == "200" ]]; then
-            echo -e "${GREEN}OK${NC}"
-        else
-            echo -e "${YELLOW}${status}${NC}"
-        fi
+    local path
+    for path in "/" "/search?search=a" "/sitemap.xml"; do
+        warm_url "${SHOP_URL}${path}"
     done
+
+    echo ""
 }
 
-# ============================================================================
-# Sitemap-basiertes Warming
-# ============================================================================
+# Zieht alle <loc>-Werte aus einem XML-Dokument auf stdin.
+extract_locs() {
+    grep -oE '<loc>[^<]+</loc>' | sed -e 's#<loc>##' -e 's#</loc>##'
+}
 
 warm_sitemap() {
-    echo ""
-    echo "=== Wärme URLs aus Sitemap ==="
+    echo "=== Sitemap ==="
 
-    SITEMAP_URL="${SHOP_URL}/sitemap.xml"
+    local index children child body urls count
+    index=$(curl -sS -A "${USER_AGENT}" "${SHOP_URL}/sitemap.xml" 2>/dev/null || true)
 
-    echo "Lade Sitemap: ${SITEMAP_URL}"
-
-    # Prüfen ob xmllint verfügbar
-    if ! command -v xmllint &> /dev/null; then
-        echo -e "${YELLOW}WARNUNG: xmllint nicht installiert, überspringe Sitemap${NC}"
-        echo "         sudo apt install libxml2-utils"
+    if [ -z "${index}" ]; then
+        printf "${YELLOW}Keine Sitemap unter %s/sitemap.xml${NC}\n\n" "${SHOP_URL}"
         return
     fi
 
-    # Sitemap herunterladen und URLs extrahieren
-    URLS=$(curl -s "${SITEMAP_URL}" | \
-        xmllint --xpath "//*[local-name()='loc']/text()" - 2>/dev/null || echo "")
+    urls=''
 
-    if [[ -z "${URLS}" ]]; then
-        echo -e "${YELLOW}Keine URLs in Sitemap gefunden${NC}"
-        return
-    fi
+    if printf '%s' "${index}" | grep -q '<sitemapindex'; then
+        children=$(printf '%s' "${index}" | extract_locs || true)
+        echo "  sitemapindex mit $(printf '%s\n' "${children}" | grep -c . || true) Teil-Sitemaps"
 
-    URL_COUNT=$(echo "${URLS}" | wc -l)
-    echo "Gefundene URLs: ${URL_COUNT}"
-    echo ""
+        for child in ${children}; do
+            # Teil-Sitemaps sind gzip-komprimiert; unkomprimierte trotzdem zulassen.
+            case "${child}" in
+                *.gz) body=$(curl -sS -A "${USER_AGENT}" "${child}" 2>/dev/null | gunzip -c 2>/dev/null || true) ;;
+                *)    body=$(curl -sS -A "${USER_AGENT}" "${child}" 2>/dev/null || true) ;;
+            esac
 
-    # Parallel ausführen
-    echo "${URLS}" | xargs -P ${CONCURRENCY} -I {} sh -c "
-        status=\$(curl -s -o /dev/null -w '%{http_code}' -H 'User-Agent: ${USER_AGENT}' '{}')
-        if [[ \"\${status}\" == \"200\" ]]; then
-            echo \"  {} ... OK\"
-        else
-            echo \"  {} ... \${status}\"
-        fi
-    "
-}
-
-# ============================================================================
-# Asset Warming (CSS, JS, Fonts)
-# ============================================================================
-
-warm_assets() {
-    echo ""
-    echo "=== Wärme statische Assets ==="
-
-    # Homepage laden und Asset-URLs extrahieren
-    ASSETS=$(curl -s "${SHOP_URL}" | \
-        grep -oE '(href|src)="[^"]+\.(css|js|woff2?)"' | \
-        sed -E 's/(href|src)="([^"]+)"/\2/' | \
-        sort -u)
-
-    if [[ -z "${ASSETS}" ]]; then
-        echo "Keine Assets gefunden"
-        return
-    fi
-
-    ASSET_COUNT=$(echo "${ASSETS}" | wc -l)
-    echo "Gefundene Assets: ${ASSET_COUNT}"
-
-    echo "${ASSETS}" | while read -r asset; do
-        # Relative URLs zu absoluten machen
-        if [[ "${asset}" == /* ]]; then
-            asset="${SHOP_URL}${asset}"
-        elif [[ "${asset}" != http* ]]; then
-            asset="${SHOP_URL}/${asset}"
-        fi
-
-        echo -n "  $(basename "${asset}") ... "
-        status=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "User-Agent: ${USER_AGENT}" \
-            "${asset}")
-
-        if [[ "${status}" == "200" ]]; then
-            echo -e "${GREEN}OK${NC}"
-        else
-            echo -e "${YELLOW}${status}${NC}"
-        fi
-    done
-}
-
-# ============================================================================
-# Cache-Header prüfen
-# ============================================================================
-
-check_cache_headers() {
-    echo ""
-    echo "=== Cache-Header Prüfung ==="
-
-    TEST_URL="${SHOP_URL}/bundles/storefront/assets/icon/default/info.svg"
-
-    echo "Test-URL: ${TEST_URL}"
-    echo ""
-
-    headers=$(curl -sI "${TEST_URL}")
-
-    # Cache-Control
-    cache_control=$(echo "${headers}" | grep -i "cache-control" | head -1)
-    if [[ -n "${cache_control}" ]]; then
-        echo -e "${GREEN}Cache-Control:${NC} ${cache_control}"
+            urls="${urls}$(printf '%s' "${body}" | extract_locs || true)
+"
+        done
     else
-        echo -e "${RED}Cache-Control: FEHLT${NC}"
+        urls=$(printf '%s' "${index}" | extract_locs || true)
     fi
 
-    # CDN-Status (Cloudflare)
-    cf_status=$(echo "${headers}" | grep -i "cf-cache-status" | head -1)
-    if [[ -n "${cf_status}" ]]; then
-        echo -e "${GREEN}CF-Cache-Status:${NC} ${cf_status}"
+    urls=$(printf '%s\n' "${urls}" | grep -E '^https?://' | sort -u | head -n "${MAX_SITEMAP_URLS}" || true)
+    count=$(printf '%s\n' "${urls}" | grep -c . || true)
+
+    if [ "${count}" -eq 0 ]; then
+        printf "${YELLOW}Keine Seiten-URLs in der Sitemap gefunden${NC}\n\n"
+        return
     fi
 
-    # CDN-Status (Bunny)
-    bunny_status=$(echo "${headers}" | grep -i "cdn-cache" | head -1)
-    if [[ -n "${bunny_status}" ]]; then
-        echo -e "${GREEN}CDN-Cache:${NC} ${bunny_status}"
-    fi
+    echo "  ${count} URLs (max. ${MAX_SITEMAP_URLS}), ${CONCURRENCY} parallel"
+
+    # xargs ruft /bin/sh auf — hier ist POSIX Pflicht, kein [[ ]].
+    printf '%s\n' "${urls}" | xargs -P "${CONCURRENCY}" -I {} sh -c '
+        status=$(curl -sS -o /dev/null -w "%{http_code}" -A "$1" "$2" 2>/dev/null || echo 000)
+        if [ "$status" = "200" ]; then
+            echo "  200 $2"
+        else
+            echo "  $status $2"
+        fi
+    ' _ "${USER_AGENT}" {} | tee /dev/stderr | grep -cE '^  200 ' >/tmp/.cdn_warmup_ok 2>/dev/null || true
+
+    local ok
+    ok=$(cat /tmp/.cdn_warmup_ok 2>/dev/null || echo 0)
+    rm -f /tmp/.cdn_warmup_ok
+    OK_COUNT=$((OK_COUNT + ok))
+    ERR_COUNT=$((ERR_COUNT + count - ok))
+
+    echo ""
 }
 
-# ============================================================================
-# Hauptlogik
-# ============================================================================
+main() {
+    if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+        usage
+        return 0
+    fi
 
-START_TIME=$(date +%s)
+    if [ $# -lt 1 ] || [ -z "${1}" ]; then
+        usage >&2
+        return 2
+    fi
 
-case ${MODE} in
-    --critical-only)
-        warm_critical
-        warm_assets
-        ;;
-    --sitemap)
-        warm_sitemap
-        ;;
-    --all|*)
-        warm_critical
-        warm_assets
-        warm_sitemap
-        ;;
-esac
+    SHOP_URL="${1%/}"
+    MODE="${2:---all}"
 
-check_cache_headers
+    case "${MODE}" in
+        --critical|--sitemap|--all) ;;
+        *) printf 'Unbekannter Modus: %s\n\n' "${MODE}" >&2; usage >&2; return 2 ;;
+    esac
 
-END_TIME=$(date +%s)
-DURATION=$((END_TIME - START_TIME))
+    echo "=== CDN-Warmup ==="
+    echo ""
+    echo "Shop: ${SHOP_URL}"
+    echo "Modus: ${MODE}"
+    echo ""
 
-echo ""
-echo "=== Zusammenfassung ==="
-echo "Dauer: ${DURATION}s"
-echo ""
-echo "Nächste Schritte:"
-echo "  1. CDN-Dashboard auf Hit-Rate prüfen"
-echo "  2. curl -I ${SHOP_URL} | grep -i cache"
+    case "${MODE}" in
+        --critical) warm_critical ;;
+        --sitemap)  warm_sitemap ;;
+        --all)      warm_critical; warm_sitemap ;;
+    esac
+
+    echo "Erfolgreich: ${OK_COUNT}"
+    echo "Fehler:      ${ERR_COUNT}"
+
+    [ "${ERR_COUNT}" -eq 0 ]
+}
+
+# Nur ausfuehren, wenn das Skript direkt aufgerufen wird.
+if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+    main "$@"
+fi

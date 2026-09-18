@@ -7,6 +7,9 @@
 #   ./bunny-purge.sh --all
 #   ./bunny-purge.sh --url "https://cdn.shop.de/media/image.jpg"
 #   ./bunny-purge.sh --test
+#   ./bunny-purge.sh --help
+#
+# Exit-Codes: 0 = ok, 1 = API-Fehler, 2 = Aufruffehler
 #
 # Voraussetzungen:
 #   - BUNNY_API_KEY (Account API Key)
@@ -15,7 +18,7 @@
 # API Key: bunny.net > Account > API Keys
 # Pull Zone ID: bunny.net > Pull Zones > Ihre Zone > ID in URL
 
-set -e
+set -euo pipefail
 
 # Konfiguration
 API_KEY="${BUNNY_API_KEY:-}"
@@ -28,13 +31,15 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
+# exit_code 0 fuer --help, 2 fuer Aufruffehler
 usage() {
-    echo "Verwendung: $0 <option>"
+    echo "Usage: $0 <option>"
     echo ""
     echo "Optionen:"
     echo "  --all          Gesamten Pull Zone Cache purgen"
     echo "  --url <url>    Einzelne URL purgen"
     echo "  --test         Verbindung testen"
+    echo "  --help         Diese Hilfe"
     echo ""
     echo "Beispiele:"
     echo "  $0 --all"
@@ -43,7 +48,7 @@ usage() {
     echo "Umgebungsvariablen:"
     echo "  BUNNY_API_KEY       Account API Key"
     echo "  BUNNY_PULL_ZONE_ID  Pull Zone ID"
-    exit 1
+    exit "${1:-2}"
 }
 
 check_config() {
@@ -215,6 +220,9 @@ if [[ $# -eq 0 ]]; then
 fi
 
 case "$1" in
+    --help|-h)
+        usage 0
+        ;;
     --all)
         purge_all
         ;;

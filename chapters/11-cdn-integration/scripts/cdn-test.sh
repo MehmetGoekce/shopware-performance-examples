@@ -1,348 +1,320 @@
 #!/bin/bash
 #
-# CDN Configuration Test Script
-# Prüft CDN-Setup und Cache-Header
+# Prueft die CDN-Konfiguration eines Shopware-Shops
+# Kapitel 11: CDN-Integration
 #
-# Verwendung:
-#   ./cdn-test.sh https://shop.de
-#   ./cdn-test.sh https://shop.de --verbose
+# Usage:
+#   ./cdn-test.sh <shop-url> [--verbose]
+#   ./cdn-test.sh --help
 #
-# Prüft:
-#   - Cache-Control Header
-#   - CDN-Status Header (Cloudflare/Bunny)
-#   - CORS Header für Fonts
-#   - Compression
-#   - TTL-Konfiguration
+# Exit-Codes:
+#   0  alles bestanden oder nur Warnungen
+#   1  mindestens ein Fehler
+#   2  falsche Aufrufparameter
+#
+# Geprueft werden: HTTP-Status, Cache-Control, CDN-Status-Header, Langzeit-Cache
+# und Kompression statischer Assets, CORS fuer Fonts sowie der Bypass fuer den
+# Checkout.
+#
+# @see https://github.com/MehmetGoekce/shopware-performance-examples
 
-set -e
+set -euo pipefail
 
-SHOP_URL="${1:-}"
-VERBOSE="${2:-}"
-
-# Farben
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
-BLUE='\033[0;34m'
 NC='\033[0m'
-
-usage() {
-    echo "Verwendung: $0 <shop-url> [--verbose]"
-    exit 1
-}
-
-if [[ -z "${SHOP_URL}" ]]; then
-    usage
-fi
-
-SHOP_URL="${SHOP_URL%/}"
-
-echo "=== CDN Configuration Test ==="
-echo ""
-echo "Shop: ${SHOP_URL}"
-echo ""
 
 PASS=0
 WARN=0
 FAIL=0
 
-# ============================================================================
-# Helper Functions
-# ============================================================================
+usage() {
+    cat <<'USAGE'
+Usage: cdn-test.sh <shop-url> [--verbose]
 
-check_pass() {
-    echo -e "${GREEN}[PASS]${NC} $1"
-    ((PASS++))
+  <shop-url>   Basis-URL des Shops, z.B. https://shop.example.com
+  --verbose    Vollstaendige Response-Header ausgeben
+  --help       Diese Hilfe
+
+Exit-Codes: 0 = ok/Warnungen, 1 = Fehler gefunden, 2 = Aufruffehler
+USAGE
 }
 
-check_warn() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
-    ((WARN++))
-}
+check_pass() { printf "${GREEN}[PASS]${NC} %s\n" "$1"; PASS=$((PASS + 1)); }
+check_warn() { printf "${YELLOW}[WARN]${NC} %s\n" "$1"; WARN=$((WARN + 1)); }
+check_fail() { printf "${RED}[FAIL]${NC} %s\n" "$1"; FAIL=$((FAIL + 1)); }
 
-check_fail() {
-    echo -e "${RED}[FAIL]${NC} $1"
-    ((FAIL++))
-}
-
+# Header holen. curl darf fehlschlagen, ohne das Skript zu beenden.
 get_headers() {
-    curl -sI -H "Accept-Encoding: gzip, deflate, br" "$1" 2>/dev/null
+    curl -sS -D - -o /dev/null -H "Accept-Encoding: gzip, deflate, br" "$1" 2>/dev/null || true
 }
 
-# ============================================================================
-# Test: Homepage
-# ============================================================================
+# Gibt den Wert eines Headers zurueck, oder nichts. Wichtig: die Funktion muss
+# mit 0 enden, sonst beendet `set -e` das Skript, sobald ein Header fehlt.
+header_value() {
+    printf '%s\n' "$1" | grep -i "^$2:" | head -1 | cut -d: -f2- | tr -d '\r' | sed 's/^ *//' || true
+}
+
+# Loest "." und ".." in einem Pfad auf. Als Subshell, damit das geaenderte IFS
+# lokal bleibt.
+normalize_path() (
+    IFS='/'
+    out=''
+    for seg in $1; do
+        case "${seg}" in
+            ''|.) continue ;;
+            ..)   out="${out%/*}" ;;
+            *)    out="${out}/${seg}" ;;
+        esac
+    done
+    printf '%s' "${out:-/}"
+)
+
+# Macht aus einer (auch relativen) URL eine absolute.
+#   $1 = Referenz
+#   $2 = Basis-URL, gegen die relative Referenzen aufgeloest werden
+#        (Default: Shop-Root)
+#
+# Wichtig fuer Fonts: in der Theme-CSS stehen Pfade wie
+# "../../<hash>/assets/font/Inter-Regular-Roman.woff2" — relativ zur CSS-Datei,
+# nicht zum Shop-Root. Wer sie einfach an die Shop-URL haengt, testet eine
+# Adresse, die es nicht gibt, und meldet faelschlich fehlendes CORS.
+absolute_url() {
+    local ref="$1" base="${2:-${SHOP_URL}/}" origin path query dir
+
+    case "${ref}" in
+        http*) printf '%s' "${ref}"; return ;;
+    esac
+
+    query=''
+    case "${ref}" in
+        *\?*) query="?${ref#*\?}"; ref="${ref%%\?*}" ;;
+    esac
+
+    base="${base%%\?*}"
+    origin=$(printf '%s' "${base}" | sed -E 's#^(https?://[^/]+).*#\1#')
+
+    case "${ref}" in
+        /*) path="${ref}" ;;
+        *)
+            dir="${base#"${origin}"}"
+            dir="${dir%/*}"
+            path="${dir}/${ref}"
+            ;;
+    esac
+
+    printf '%s%s%s' "${origin}" "$(normalize_path "${path}")" "${query}"
+}
 
 test_homepage() {
-    echo "=== 1. Homepage ==="
+    echo "=== 1. Startseite ==="
 
+    local headers status cache_control cf_status
     headers=$(get_headers "${SHOP_URL}/")
 
-    if [[ "${VERBOSE}" == "--verbose" ]]; then
-        echo "${headers}"
-        echo ""
+    [ "${VERBOSE}" = "--verbose" ] && printf '%s\n\n' "${headers}"
+
+    status=$(printf '%s\n' "${headers}" | head -1 | grep -oE '[0-9]{3}' | head -1 || true)
+    if [ "${status:-000}" = "200" ]; then
+        check_pass "HTTP-Status: ${status}"
+    else
+        check_fail "HTTP-Status: ${status:-keine Antwort} (erwartet 200)"
     fi
 
-    # HTTP Status
-    status=$(echo "${headers}" | head -1 | grep -oE "[0-9]{3}")
-    if [[ "${status}" == "200" ]]; then
-        check_pass "HTTP Status: ${status}"
+    cache_control=$(header_value "${headers}" "cache-control")
+    if [ -z "${cache_control}" ]; then
+        check_warn "Kein Cache-Control-Header"
+    elif printf '%s' "${cache_control}" | grep -qi 's-maxage'; then
+        check_pass "Cache-Control: ${cache_control}"
     else
-        check_fail "HTTP Status: ${status} (erwartet: 200)"
+        # Ohne Reverse Proxy sendet Shopware bewusst no-cache, private.
+        check_warn "Cache-Control: ${cache_control} (CDN cached kein HTML; Reverse Proxy aktiv?)"
     fi
 
-    # Cache-Control
-    cache_control=$(echo "${headers}" | grep -i "^cache-control:" | head -1)
-    if [[ -n "${cache_control}" ]]; then
-        if echo "${cache_control}" | grep -qi "public"; then
-            check_pass "Cache-Control: public gesetzt"
-        else
-            check_warn "Cache-Control: private (CDN cached nicht)"
-        fi
+    cf_status=$(header_value "${headers}" "cf-cache-status")
+    if [ -n "${cf_status}" ]; then
+        case "${cf_status}" in
+            HIT) check_pass "cf-cache-status: HIT" ;;
+            MISS|EXPIRED|REVALIDATED) check_warn "cf-cache-status: ${cf_status}" ;;
+            BYPASS|DYNAMIC) check_warn "cf-cache-status: ${cf_status} (HTML wird nicht gecacht)" ;;
+            *) echo "  cf-cache-status: ${cf_status}" ;;
+        esac
+    elif [ -n "$(header_value "${headers}" "cdn-cache")" ]; then
+        echo "  Bunny CDN: $(header_value "${headers}" "cdn-cache")"
     else
-        check_warn "Cache-Control Header fehlt"
-    fi
-
-    # CDN Status
-    cf_status=$(echo "${headers}" | grep -i "^cf-cache-status:" | head -1)
-    bunny_status=$(echo "${headers}" | grep -i "^cdn-cache:" | head -1)
-
-    if [[ -n "${cf_status}" ]]; then
-        status_value=$(echo "${cf_status}" | cut -d: -f2 | tr -d ' ')
-        if [[ "${status_value}" == "HIT" ]]; then
-            check_pass "Cloudflare: HIT (aus Cache)"
-        elif [[ "${status_value}" == "MISS" ]]; then
-            check_warn "Cloudflare: MISS (nicht im Cache)"
-        elif [[ "${status_value}" == "BYPASS" ]]; then
-            check_warn "Cloudflare: BYPASS (Caching deaktiviert)"
-        else
-            echo "  Cloudflare Status: ${status_value}"
-        fi
-    elif [[ -n "${bunny_status}" ]]; then
-        echo "  Bunny CDN Status: ${bunny_status}"
-    else
-        check_warn "Kein CDN-Status Header gefunden"
+        check_warn "Kein CDN-Status-Header gefunden"
     fi
 
     echo ""
 }
-
-# ============================================================================
-# Test: Statische Assets
-# ============================================================================
 
 test_static_assets() {
     echo "=== 2. Statische Assets ==="
 
-    # CSS-Datei finden
-    css_url=$(curl -s "${SHOP_URL}/" | grep -oE 'href="[^"]+\.css[^"]*"' | head -1 | sed 's/href="//;s/"//')
+    local css_url headers cache_control max_age encoding
+    css_url=$(curl -sS "${SHOP_URL}/" 2>/dev/null | grep -oE 'href="[^"]+\.css[^"]*"' | head -1 | sed 's/href="//;s/"$//' || true)
 
-    if [[ -n "${css_url}" ]]; then
-        # Relative URL zu absoluter machen
-        if [[ "${css_url}" == /* ]]; then
-            css_url="${SHOP_URL}${css_url}"
-        elif [[ "${css_url}" != http* ]]; then
-            css_url="${SHOP_URL}/${css_url}"
-        fi
+    if [ -z "${css_url}" ]; then
+        check_warn "Keine CSS-Datei auf der Startseite gefunden"
+        echo ""
+        return
+    fi
 
-        echo "Test-URL: ${css_url}"
+    css_url=$(absolute_url "${css_url}")
+    echo "Test-URL: ${css_url}"
 
-        headers=$(get_headers "${css_url}")
+    headers=$(get_headers "${css_url}")
+    [ "${VERBOSE}" = "--verbose" ] && printf '%s\n\n' "${headers}"
 
-        if [[ "${VERBOSE}" == "--verbose" ]]; then
-            echo "${headers}"
-            echo ""
-        fi
+    if [ "$(printf '%s\n' "${headers}" | grep -ci '^cache-control:' || true)" -gt 1 ]; then
+        check_fail "Zwei Cache-Control-Header (expires UND add_header gesetzt?)"
+    fi
 
-        # Cache-Control mit max-age
-        cache_control=$(echo "${headers}" | grep -i "^cache-control:" | head -1)
-        if echo "${cache_control}" | grep -qE "max-age=[0-9]+"; then
-            max_age=$(echo "${cache_control}" | grep -oE "max-age=[0-9]+" | cut -d= -f2)
-            if [[ "${max_age}" -ge 31536000 ]]; then
-                check_pass "max-age: ${max_age} (1 Jahr+)"
-            elif [[ "${max_age}" -ge 86400 ]]; then
-                check_warn "max-age: ${max_age} (nur $((${max_age}/86400)) Tage)"
-            else
-                check_fail "max-age: ${max_age} (zu kurz!)"
-            fi
-        else
-            check_fail "max-age nicht gesetzt"
-        fi
+    cache_control=$(header_value "${headers}" "cache-control")
+    max_age=$(printf '%s' "${cache_control}" | grep -oE 'max-age=[0-9]+' | head -1 | cut -d= -f2 || true)
 
-        # immutable Flag
-        if echo "${cache_control}" | grep -qi "immutable"; then
-            check_pass "immutable Flag gesetzt"
-        else
-            check_warn "immutable Flag fehlt (empfohlen für versionierte Assets)"
-        fi
-
-        # Compression
-        content_encoding=$(echo "${headers}" | grep -i "^content-encoding:" | head -1)
-        if [[ -n "${content_encoding}" ]]; then
-            check_pass "Komprimierung: ${content_encoding}"
-        else
-            check_warn "Keine Komprimierung (gzip/br)"
-        fi
+    if [ -z "${max_age}" ]; then
+        check_fail "max-age nicht gesetzt"
+    elif [ "${max_age}" -ge 31536000 ]; then
+        check_pass "max-age: ${max_age} (ein Jahr)"
+    elif [ "${max_age}" -ge 86400 ]; then
+        check_warn "max-age: ${max_age} (nur $((max_age / 86400)) Tage)"
     else
-        check_warn "Keine CSS-Datei gefunden zum Testen"
+        check_fail "max-age: ${max_age} (zu kurz fuer versionierte Assets)"
+    fi
+
+    if printf '%s' "${cache_control}" | grep -qi 'immutable'; then
+        check_pass "immutable gesetzt"
+    else
+        check_warn "immutable fehlt (bei versionierten Assets empfohlen)"
+    fi
+
+    encoding=$(header_value "${headers}" "content-encoding")
+    if [ -n "${encoding}" ]; then
+        check_pass "Kompression: ${encoding}"
+    else
+        check_warn "Keine Kompression (gzip/br)"
     fi
 
     echo ""
 }
-
-# ============================================================================
-# Test: Bilder
-# ============================================================================
-
-test_images() {
-    echo "=== 3. Bilder ==="
-
-    # Bild-URL finden
-    img_url=$(curl -s "${SHOP_URL}/" | grep -oE 'src="[^"]+\.(jpg|png|webp)[^"]*"' | head -1 | sed 's/src="//;s/"//')
-
-    if [[ -n "${img_url}" ]]; then
-        if [[ "${img_url}" == /* ]]; then
-            img_url="${SHOP_URL}${img_url}"
-        elif [[ "${img_url}" != http* ]]; then
-            img_url="${SHOP_URL}/${img_url}"
-        fi
-
-        echo "Test-URL: ${img_url}"
-
-        headers=$(get_headers "${img_url}")
-
-        # Cache-Control
-        cache_control=$(echo "${headers}" | grep -i "^cache-control:" | head -1)
-        if echo "${cache_control}" | grep -qE "max-age=[0-9]+"; then
-            max_age=$(echo "${cache_control}" | grep -oE "max-age=[0-9]+" | cut -d= -f2)
-            if [[ "${max_age}" -ge 31536000 ]]; then
-                check_pass "Bild-Cache: ${max_age} Sekunden"
-            else
-                check_warn "Bild-Cache nur ${max_age} Sekunden"
-            fi
-        else
-            check_fail "Bild max-age nicht gesetzt"
-        fi
-
-        # Content-Type
-        content_type=$(echo "${headers}" | grep -i "^content-type:" | head -1)
-        if echo "${content_type}" | grep -qi "webp"; then
-            check_pass "WebP Format"
-        else
-            echo "  Format: ${content_type}"
-        fi
-    else
-        check_warn "Keine Bilder gefunden zum Testen"
-    fi
-
-    echo ""
-}
-
-# ============================================================================
-# Test: Fonts (CORS)
-# ============================================================================
 
 test_fonts() {
-    echo "=== 4. Fonts (CORS) ==="
+    echo "=== 3. Fonts (CORS) ==="
 
-    # Font-URL finden
-    font_url=$(curl -s "${SHOP_URL}/" | grep -oE 'href="[^"]+\.woff2[^"]*"' | head -1 | sed 's/href="//;s/"//')
+    local font_url css_url cors
+    font_url=$(curl -sS "${SHOP_URL}/" 2>/dev/null | grep -oE 'href="[^"]+\.woff2[^"]*"' | head -1 | sed 's/href="//;s/"$//' || true)
 
-    if [[ -z "${font_url}" ]]; then
-        # Versuche aus CSS zu extrahieren
-        css_url=$(curl -s "${SHOP_URL}/" | grep -oE 'href="[^"]+\.css[^"]*"' | head -1 | sed 's/href="//;s/"//')
-        if [[ -n "${css_url}" ]]; then
-            if [[ "${css_url}" == /* ]]; then
-                css_url="${SHOP_URL}${css_url}"
-            fi
-            font_url=$(curl -s "${css_url}" | grep -oE 'url\([^)]+\.woff2[^)]*\)' | head -1 | sed 's/url(//;s/)//;s/"//g;s/'\''//g')
+    if [ -z "${font_url}" ]; then
+        css_url=$(curl -sS "${SHOP_URL}/" 2>/dev/null | grep -oE 'href="[^"]+\.css[^"]*"' | head -1 | sed 's/href="//;s/"$//' || true)
+        if [ -n "${css_url}" ]; then
+            css_url=$(absolute_url "${css_url}")
+            font_url=$(curl -sS "${css_url}" 2>/dev/null | grep -oE 'url\([^)]+\.woff2[^)]*\)' | head -1 | sed 's/url(//;s/)$//;s/"//g;s/'\''//g' || true)
         fi
     fi
 
-    if [[ -n "${font_url}" ]]; then
-        if [[ "${font_url}" == /* ]]; then
-            font_url="${SHOP_URL}${font_url}"
-        elif [[ "${font_url}" != http* ]]; then
-            font_url="${SHOP_URL}/${font_url}"
-        fi
+    if [ -z "${font_url}" ]; then
+        check_warn "Keine woff2-Datei gefunden"
+        echo ""
+        return
+    fi
 
-        echo "Test-URL: ${font_url}"
+    # Relative Font-Pfade gegen die CSS-Datei aufloesen, nicht gegen den Shop-Root.
+    font_url=$(absolute_url "${font_url}" "${css_url:-${SHOP_URL}/}")
+    echo "Test-URL: ${font_url}"
 
-        # Mit Origin-Header testen (CORS)
-        headers=$(curl -sI -H "Origin: ${SHOP_URL}" "${font_url}" 2>/dev/null)
+    cors=$(curl -sS -D - -o /dev/null -H "Origin: ${SHOP_URL}" "${font_url}" 2>/dev/null | grep -i '^access-control-allow-origin:' | head -1 | tr -d '\r' || true)
 
-        # Access-Control-Allow-Origin
-        cors=$(echo "${headers}" | grep -i "^access-control-allow-origin:" | head -1)
-        if [[ -n "${cors}" ]]; then
-            check_pass "CORS Header: ${cors}"
-        else
-            check_fail "CORS Header fehlt (Fonts werden blockiert!)"
-        fi
+    if [ -n "${cors}" ]; then
+        check_pass "${cors}"
     else
-        check_warn "Keine Font-Datei gefunden zum Testen"
+        check_fail "Kein Access-Control-Allow-Origin (Fonts von der CDN-Domain werden blockiert)"
     fi
 
     echo ""
 }
-
-# ============================================================================
-# Test: Bypass-Bereiche
-# ============================================================================
 
 test_bypass() {
-    echo "=== 5. Bypass-Bereiche ==="
+    echo "=== 4. Bypass-Bereiche ==="
 
-    # Checkout sollte nicht gecached werden
-    checkout_url="${SHOP_URL}/checkout/cart"
+    local path headers status cache_control
+    for path in /checkout/cart /account/login; do
+        headers=$(get_headers "${SHOP_URL}${path}")
+        status=$(printf '%s\n' "${headers}" | head -1 | grep -oE '[0-9]{3}' | head -1 || true)
 
-    headers=$(get_headers "${checkout_url}")
+        if [ "${status:-000}" = "404" ]; then
+            check_fail "${path}: HTTP 404 - fehlt try_files/fastcgi_pass in der nginx-Location?"
+            continue
+        fi
 
-    cache_control=$(echo "${headers}" | grep -i "^cache-control:" | head -1)
-    if echo "${cache_control}" | grep -qiE "(private|no-store|no-cache)"; then
-        check_pass "Checkout: Nicht gecached"
-    else
-        check_fail "Checkout: Könnte gecached werden! (Sicherheitsrisiko)"
-    fi
-
-    # CDN Bypass?
-    cf_status=$(echo "${headers}" | grep -i "^cf-cache-status:" | head -1)
-    if echo "${cf_status}" | grep -qi "BYPASS\|DYNAMIC"; then
-        check_pass "CDN: Bypass für Checkout"
-    fi
+        cache_control=$(header_value "${headers}" "cache-control")
+        if printf '%s' "${cache_control}" | grep -qiE 'private|no-store|no-cache'; then
+            check_pass "${path}: nicht cachebar (${cache_control})"
+        else
+            check_fail "${path}: cachebar (${cache_control:-kein Header})"
+        fi
+    done
 
     echo ""
 }
 
+summary() {
+    echo "==========================================="
+    echo "=== Zusammenfassung ==="
+    echo "==========================================="
+    echo ""
+    printf "${GREEN}Bestanden: %s${NC}\n" "${PASS}"
+    printf "${YELLOW}Warnungen: %s${NC}\n" "${WARN}"
+    printf "${RED}Fehler:    %s${NC}\n" "${FAIL}"
+    echo ""
+
+    if [ "${FAIL}" -gt 0 ]; then
+        printf "${RED}CDN-Konfiguration hat Fehler.${NC}\n"
+        return 1
+    fi
+
+    if [ "${WARN}" -gt 0 ]; then
+        printf "${YELLOW}CDN laeuft, mit Optimierungspotenzial.${NC}\n"
+        return 0
+    fi
+
+    printf "${GREEN}CDN-Konfiguration ist in Ordnung.${NC}\n"
+    return 0
+}
+
 # ============================================================================
-# Zusammenfassung
+# Hauptlauf
 # ============================================================================
 
-echo "==========================================="
-echo "=== Zusammenfassung ==="
-echo "==========================================="
-echo ""
-echo -e "${GREEN}Bestanden: ${PASS}${NC}"
-echo -e "${YELLOW}Warnungen: ${WARN}${NC}"
-echo -e "${RED}Fehler:    ${FAIL}${NC}"
-echo ""
+main() {
+    if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+        usage
+        return 0
+    fi
 
-if [[ ${FAIL} -gt 0 ]]; then
-    echo -e "${RED}CDN-Konfiguration hat kritische Probleme!${NC}"
-    exit 1
-elif [[ ${WARN} -gt 0 ]]; then
-    echo -e "${YELLOW}CDN funktioniert, aber mit Optimierungspotential.${NC}"
-    exit 0
-else
-    echo -e "${GREEN}CDN-Konfiguration ist optimal!${NC}"
-    exit 0
+    if [ $# -lt 1 ] || [ -z "${1}" ]; then
+        usage >&2
+        return 2
+    fi
+
+    SHOP_URL="${1%/}"
+    VERBOSE="${2:-}"
+
+    echo "=== CDN-Test ==="
+    echo ""
+    echo "Shop: ${SHOP_URL}"
+    echo ""
+
+    test_homepage
+    test_static_assets
+    test_fonts
+    test_bypass
+    summary
+}
+
+# Nur ausfuehren, wenn das Skript direkt aufgerufen wird - so koennen die
+# Hilfsfunktionen in Tests eingebunden werden (siehe tests/Shell/cdn-scripts.bats).
+if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+    main "$@"
 fi
-
-# ============================================================================
-# Tests ausführen
-# ============================================================================
-
-test_homepage
-test_static_assets
-test_images
-test_fonts
-test_bypass

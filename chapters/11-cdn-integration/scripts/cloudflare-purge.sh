@@ -3,11 +3,22 @@
 # Cloudflare Cache Purge Script
 # Invalidiert den Cloudflare-Cache nach Deployments
 #
-# Verwendung:
+# Usage:
 #   ./cloudflare-purge.sh --all
-#   ./cloudflare-purge.sh --urls "/media/*,/theme/*"
-#   ./cloudflare-purge.sh --tags "product,category-123"
+#   ./cloudflare-purge.sh --urls "https://shop.de/media/a.jpg,https://shop.de/b.css"
+#   ./cloudflare-purge.sh --tags "product-abc123,navigation"
+#   ./cloudflare-purge.sh --prefixes "shop.de/theme/,shop.de/bundles/"
 #   ./cloudflare-purge.sh --test
+#
+# Plan-Verfuegbarkeit (Cloudflare-Doku, Stand 2026-09): URL, Hostname, Tag,
+# Prefix und Purge Everything gibt es auf ALLEN Plans - seit April 2025.
+# Unterschiedlich sind nur die Rate-Limits: Free 5/min, Pro 5/s, Business 10/s,
+# Enterprise 50/s. Pro Request sind 100 Operationen erlaubt; dieses Skript
+# zerlegt laengere Listen automatisch.
+#
+# Wildcards gibt es beim URL-Purge nicht: "Wildcards are not supported on single
+# file purge, and you must use purge by hostname, prefix, or implement cache tags
+# as an alternative solution." URLs muessen vollqualifiziert sein.
 #
 # Voraussetzungen:
 #   - CLOUDFLARE_API_TOKEN (Zone:Cache Purge Berechtigung)
@@ -16,7 +27,7 @@
 # Token erstellen: https://dash.cloudflare.com/profile/api-tokens
 # Zone ID: Dashboard > Übersicht > rechte Sidebar
 
-set -e
+set -euo pipefail
 
 # Konfiguration aus Umgebungsvariablen
 API_TOKEN="${CLOUDFLARE_API_TOKEN:-}"
@@ -29,25 +40,31 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
+# exit_code 0 fuer --help, 2 fuer Aufruffehler
 usage() {
-    echo "Verwendung: $0 <option>"
+    echo "Usage: $0 <option>"
     echo ""
     echo "Optionen:"
     echo "  --all              Gesamten Cache purgen (Vorsicht!)"
-    echo "  --urls <pattern>   Bestimmte URLs purgen (kommasepariert)"
-    echo "  --tags <tags>      Cache-Tags purgen (Enterprise only)"
-    echo "  --prefixes <paths> URL-Prefixes purgen (Enterprise only)"
+    echo "  --urls <urls>      Vollqualifizierte URLs purgen (kommasepariert)"
+    echo "  --tags <tags>      Cache-Tags purgen"
+    echo "  --prefixes <paths> URL-Prefixes purgen, z.B. shop.de/theme/"
     echo "  --test             Verbindung testen"
+    echo "  --help             Diese Hilfe"
     echo ""
     echo "Beispiele:"
     echo "  $0 --all"
-    echo "  $0 --urls 'https://shop.de/media/*,https://shop.de/theme/*'"
-    echo "  $0 --tags 'product,category-123'"
+    echo "  $0 --urls 'https://shop.de/media/a.jpg,https://shop.de/b.css'"
+    echo "  $0 --tags 'product-abc123,navigation'"
+    echo "  $0 --prefixes 'shop.de/theme/,shop.de/bundles/'"
+    echo ""
+    echo "Alle Purge-Arten sind auf allen Plans verfuegbar; Wildcards sind beim"
+    echo "URL-Purge nicht erlaubt. Listen ueber 100 Eintraege werden gestueckelt."
     echo ""
     echo "Umgebungsvariablen:"
     echo "  CLOUDFLARE_API_TOKEN  API Token mit Cache Purge Berechtigung"
     echo "  CLOUDFLARE_ZONE_ID    Zone ID aus dem Dashboard"
-    exit 1
+    exit "${1:-2}"
 }
 
 check_config() {
@@ -153,104 +170,78 @@ purge_all() {
 }
 
 # ============================================================================
-# Purge: Bestimmte URLs
+# Purge: URLs, Tags, Prefixes
 # ============================================================================
 
-purge_urls() {
-    local urls="$1"
+# Cloudflare erlaubt 100 Operationen pro Request.
+MAX_ITEMS_PER_REQUEST=100
 
-    echo "=== Purge: URLs ==="
+# purge_items <json-key> <Bezeichnung> <kommaseparierte Liste>
+purge_items() {
+    local key="$1" label="$2" csv="$3"
+    local items=() chunk=() json response success item
+
+    echo "=== Purge: ${label} ==="
     echo ""
 
     check_config
 
-    # URLs in JSON-Array konvertieren
-    IFS=',' read -ra URL_ARRAY <<< "${urls}"
-    json_urls=$(printf '%s\n' "${URL_ARRAY[@]}" | jq -R . | jq -s .)
+    IFS=',' read -ra items <<< "${csv}"
 
-    echo "URLs zu purgen:"
-    echo "${json_urls}" | jq -r '.[]'
+    # Leere Eintraege entfernen und Wildcards fruehzeitig abfangen.
+    local cleaned=()
+    for item in "${items[@]}"; do
+        item="$(printf '%s' "${item}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+        [ -n "${item}" ] || continue
+
+        if [ "${key}" = "files" ]; then
+            case "${item}" in
+                *\**)
+                    echo -e "${RED}FEHLER: Wildcards sind beim URL-Purge nicht erlaubt: ${item}${NC}" >&2
+                    echo "Nutze stattdessen --prefixes oder --tags." >&2
+                    exit 1
+                    ;;
+                http*) ;;
+                *)
+                    echo -e "${RED}FEHLER: URL muss vollqualifiziert sein (mit https://): ${item}${NC}" >&2
+                    exit 1
+                    ;;
+            esac
+        fi
+
+        cleaned+=("${item}")
+    done
+
+    if [ "${#cleaned[@]}" -eq 0 ]; then
+        echo -e "${RED}FEHLER: keine ${label} angegeben${NC}" >&2
+        exit 2
+    fi
+
+    echo "${#cleaned[@]} Eintraege, ${MAX_ITEMS_PER_REQUEST} pro Request"
     echo ""
 
-    response=$(api_call "POST" "/zones/${ZONE_ID}/purge_cache" "{\"files\":${json_urls}}")
+    local i=0
+    while [ "${i}" -lt "${#cleaned[@]}" ]; do
+        chunk=("${cleaned[@]:i:MAX_ITEMS_PER_REQUEST}")
+        json=$(printf '%s\n' "${chunk[@]}" | jq -R . | jq -s .)
 
-    success=$(echo "${response}" | jq -r '.success')
-    if [[ "${success}" == "true" ]]; then
-        echo -e "${GREEN}URLs erfolgreich gepurged!${NC}"
-    else
-        echo -e "${RED}Purge fehlgeschlagen!${NC}"
-        echo "${response}" | jq -r '.errors[]?.message // .errors'
-        exit 1
-    fi
+        response=$(api_call "POST" "/zones/${ZONE_ID}/purge_cache" "{\"${key}\":${json}}")
+        success=$(echo "${response}" | jq -r '.success')
+
+        if [ "${success}" != "true" ]; then
+            echo -e "${RED}Purge fehlgeschlagen!${NC}" >&2
+            echo "${response}" | jq -r '.errors[]?.message // .errors' >&2
+            exit 1
+        fi
+
+        echo -e "${GREEN}${#chunk[@]} ${label} gepurged${NC}"
+        i=$((i + MAX_ITEMS_PER_REQUEST))
+    done
 }
 
-# ============================================================================
-# Purge: Cache-Tags (Enterprise)
-# ============================================================================
-
-purge_tags() {
-    local tags="$1"
-
-    echo "=== Purge: Cache-Tags (Enterprise) ==="
-    echo ""
-
-    check_config
-
-    # Tags in JSON-Array konvertieren
-    IFS=',' read -ra TAG_ARRAY <<< "${tags}"
-    json_tags=$(printf '%s\n' "${TAG_ARRAY[@]}" | jq -R . | jq -s .)
-
-    echo "Tags zu purgen:"
-    echo "${json_tags}" | jq -r '.[]'
-    echo ""
-
-    response=$(api_call "POST" "/zones/${ZONE_ID}/purge_cache" "{\"tags\":${json_tags}}")
-
-    success=$(echo "${response}" | jq -r '.success')
-    if [[ "${success}" == "true" ]]; then
-        echo -e "${GREEN}Tags erfolgreich gepurged!${NC}"
-    else
-        echo -e "${RED}Purge fehlgeschlagen!${NC}"
-        echo ""
-        echo "Hinweis: Cache-Tags sind nur im Enterprise-Plan verfügbar."
-        echo "${response}" | jq -r '.errors[]?.message // .errors'
-        exit 1
-    fi
-}
-
-# ============================================================================
-# Purge: Prefixes (Enterprise)
-# ============================================================================
-
-purge_prefixes() {
-    local prefixes="$1"
-
-    echo "=== Purge: URL-Prefixes (Enterprise) ==="
-    echo ""
-
-    check_config
-
-    # Prefixes in JSON-Array konvertieren
-    IFS=',' read -ra PREFIX_ARRAY <<< "${prefixes}"
-    json_prefixes=$(printf '%s\n' "${PREFIX_ARRAY[@]}" | jq -R . | jq -s .)
-
-    echo "Prefixes zu purgen:"
-    echo "${json_prefixes}" | jq -r '.[]'
-    echo ""
-
-    response=$(api_call "POST" "/zones/${ZONE_ID}/purge_cache" "{\"prefixes\":${json_prefixes}}")
-
-    success=$(echo "${response}" | jq -r '.success')
-    if [[ "${success}" == "true" ]]; then
-        echo -e "${GREEN}Prefixes erfolgreich gepurged!${NC}"
-    else
-        echo -e "${RED}Purge fehlgeschlagen!${NC}"
-        echo ""
-        echo "Hinweis: Prefix-Purge ist nur im Enterprise-Plan verfügbar."
-        echo "${response}" | jq -r '.errors[]?.message // .errors'
-        exit 1
-    fi
-}
+purge_urls()     { purge_items "files" "URLs" "$1"; }
+purge_tags()     { purge_items "tags" "Cache-Tags" "$1"; }
+purge_prefixes() { purge_items "prefixes" "Prefixes" "$1"; }
 
 # ============================================================================
 # Hauptlogik
@@ -261,25 +252,28 @@ if [[ $# -eq 0 ]]; then
 fi
 
 case "$1" in
+    --help|-h)
+        usage 0
+        ;;
     --all)
         purge_all
         ;;
     --urls)
-        if [[ -z "$2" ]]; then
+        if [[ -z "${2:-}" ]]; then
             echo -e "${RED}FEHLER: URLs erforderlich${NC}"
             usage
         fi
         purge_urls "$2"
         ;;
     --tags)
-        if [[ -z "$2" ]]; then
+        if [[ -z "${2:-}" ]]; then
             echo -e "${RED}FEHLER: Tags erforderlich${NC}"
             usage
         fi
         purge_tags "$2"
         ;;
     --prefixes)
-        if [[ -z "$2" ]]; then
+        if [[ -z "${2:-}" ]]; then
             echo -e "${RED}FEHLER: Prefixes erforderlich${NC}"
             usage
         fi
