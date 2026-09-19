@@ -50,16 +50,15 @@ shopware:
         # Ohne sie erzeugt jede Kampagnen-URL einen eigenen Eintrag, und die
         # Trefferquote sinkt, obwohl die Seite identisch ist.
         # Achtung: die Liste ersetzt die Shopware-Defaults nicht, sie ergänzt
-        # sie — Shopware bringt bereits Piwik-, Google- und Facebook-Parameter
-        # mit (siehe shopware.yaml im Core-Bundle).
+        # sie. Und der Default ist lang: Piwik, Matomo, Yahoo, Google
+        # (inklusive gclid und aller utm_*), Google Analytics, Facebook
+        # (inklusive fbclid), Mailchimp, Bronto, Listrak stehen bereits drin
+        # — nachzulesen in vendor/shopware/core/Framework/Resources/config/
+        # packages/shopware.yaml. Hier gehört nur hinein, was dort fehlt;
+        # alles andere doppelt sich wirkungslos.
+        #
+        # 'ref' ist ein solches Beispiel: verbreitet, aber nicht im Default.
         ignored_url_parameters:
-            - 'gclid'
-            - 'utm_source'
-            - 'utm_medium'
-            - 'utm_campaign'
-            - 'utm_content'
-            - 'utm_term'
-            - 'fbclid'
             - 'ref'
 
         # Stale-Verhalten. Beide sind ab Werk null, also aus.
@@ -84,30 +83,28 @@ shopware:
 # Cache-Backend
 # ============================================
 #
-# Der Adapter unten gehört NICHT in dieselbe Datei wie die shopware-Keys,
-# wenn beides getrennt gepflegt werden soll — hier steht es nur zusammen,
-# damit die Vorlage vollständig ist.
-
-framework:
-    cache:
-        # Mit Redis: redis_tag_aware, nicht der einfache redis-Adapter.
-        # Shopware invalidiert über Cache-Tags; der einfache Adapter kann das
-        # nicht, und die Invalidierung greift dann schlicht nicht.
-        #
-        # app: cache.adapter.redis_tag_aware
-        # system: cache.adapter.redis_tag_aware
-        #
-        # dazu in config/packages/ zusätzlich:
-        # framework:
-        #     cache:
-        #         default_redis_provider: '%env(REDIS_URL)%'
-        #
-        # REDIS_URL zeigt dabei auf die CACHE-Instanz. Sessions gehören auf
-        # eine eigene Instanz — siehe config/redis-session.yaml.
-
-        # Ohne Redis: Dateisystem. Funktioniert, skaliert aber nicht über
-        # mehrere Anwendungsserver, weil jeder seinen eigenen Cache hat.
-        app: cache.adapter.filesystem
+# Der Cache-Adapter steht hier bewusst NUR als Kommentar. config/packages/*.yaml
+# wird alphabetisch geladen: eine aktive framework.cache-Zeile in dieser Datei
+# käme nach framework.yaml und redis.yaml und würde einen bestehenden
+# Redis-Cache stillschweigend auf das Dateisystem zurückschalten. Wer den
+# Adapter setzen will, legt dafür eine eigene Datei an.
+#
+# Mit Redis: redis_tag_aware, nicht der einfache redis-Adapter. Shopware
+# invalidiert über Cache-Tags; der einfache Adapter kann das nicht, und die
+# Invalidierung greift dann schlicht nicht.
+#
+#   framework:
+#       cache:
+#           app: cache.adapter.redis_tag_aware
+#           system: cache.adapter.redis_tag_aware
+#           default_redis_provider: '%env(REDIS_URL)%'
+#
+# REDIS_URL zeigt dabei auf die CACHE-Instanz. Sessions gehören auf eine
+# eigene Instanz — siehe config/redis-session.yaml.
+#
+# Ohne Redis bleibt es beim Dateisystem (cache.adapter.filesystem). Das
+# funktioniert, skaliert aber nicht über mehrere Anwendungsserver, weil
+# jeder seinen eigenen Cache hat.
 
 # ============================================
 # Einspielen
