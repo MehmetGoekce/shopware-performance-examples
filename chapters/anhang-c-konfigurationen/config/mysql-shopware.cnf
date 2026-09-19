@@ -1,0 +1,92 @@
+# MySQL 8.0 fuer Shopware 6
+# Anhang C: Konfigurationen
+#
+# Datei: /etc/mysql/mysql.conf.d/shopware.cnf
+#        (unter Debian/Ubuntu bindet /etc/mysql/my.cnf sowohl conf.d/ als auch
+#         mysql.conf.d/ ein; mysql.conf.d/ ist der Ort fuer [mysqld])
+#        sudo systemctl restart mysql
+#
+# Geprueft gegen mysql:8.0 (8.0.46): Startlog ohne Deprecation-Warnung,
+# `SHOW VARIABLES` mit den erwarteten Werten.
+#
+# Die Zahlen unten gehoeren zu einem Server mit 16 GB RAM, auf dem MySQL
+# allein laeuft. Wer Shopware, PHP-FPM, Redis und MySQL auf dieselbe Maschine
+# legt, rechnet anders — dann bleiben fuer den Buffer Pool eher 25-40 % statt
+# 70 %. Die Formeln stehen jeweils im Kommentar.
+#
+# @see https://github.com/MehmetGoekce/shopware-performance-examples
+
+[mysqld]
+
+# ==============================================================================
+# InnoDB Buffer Pool
+# ==============================================================================
+
+# 70-80 % des RAM, wenn MySQL die Maschine fuer sich hat. 16 GB * 0,7 = 11 GB.
+# Teilt sich MySQL den Server mit PHP-FPM und Redis, ist eher ein Viertel
+# realistisch — dann hier 4G und den Rest den anderen Diensten lassen.
+innodb_buffer_pool_size = 11G
+
+# Eine Instanz je GB, hoechstens 64. Wirkt erst ab 1 GB Poolgroesse.
+innodb_buffer_pool_instances = 11
+
+# ==============================================================================
+# Redo-Log
+# ==============================================================================
+
+# WICHTIG: innodb_log_file_size ist seit MySQL 8.0.30 abgekuendigt. Steht es
+# allein in der Konfiguration, protokolliert der Server MY-013907 — und
+# innodb_redo_log_capacity bleibt trotzdem auf dem Vorgabewert von 100 MB
+# stehen (in 8.0.46 nachgestellt). Der Wert wirkt also nicht, sondern nur die
+# Warnung erscheint.
+#
+# Richtig ist die neue Direktive. Als Anhaltswert etwa ein Viertel des Buffer
+# Pools, mindestens 512 MB.
+innodb_redo_log_capacity = 2G
+
+innodb_log_buffer_size = 64M
+
+# ==============================================================================
+# Schreibverhalten
+# ==============================================================================
+
+# 1 = jede Transaktion landet vor dem Commit auf der Platte (Vorgabe, sicher).
+# 2 = schreibt einmal je Sekunde; ein Serverabsturz kann bis zu eine Sekunde
+#     bestaetigter Transaktionen kosten. Fuer einen Shop mit Bestellungen ist
+#     das eine bewusste Entscheidung, keine Standardoptimierung.
+innodb_flush_log_at_trx_commit = 1
+
+innodb_flush_method = O_DIRECT
+
+# ==============================================================================
+# I/O
+# ==============================================================================
+
+# Auf SSD/NVMe. Auf rotierenden Platten deutlich niedriger ansetzen.
+innodb_io_capacity = 2000
+innodb_io_capacity_max = 4000
+
+# ==============================================================================
+# Verbindungen
+# ==============================================================================
+
+# Vorgabe ist 151. Richtwert: PHP-FPM-Worker + Worker-Prozesse + Reserve.
+max_connections = 200
+
+# Vorgabe ist 28800 Sekunden (8 Stunden). So lange haelt kein Shop-Request
+# eine Verbindung; kuerzer raeumt haengengebliebene Verbindungen schneller weg.
+wait_timeout = 600
+interactive_timeout = 600
+
+# ==============================================================================
+# Slow Query Log
+# ==============================================================================
+
+# Vorgabe von long_query_time ist 10 Sekunden — damit taucht fast nichts auf.
+slow_query_log = 1
+slow_query_log_file = /var/log/mysql/slow.log
+long_query_time = 1
+
+# group_concat_max_len steht hier bewusst NICHT. Shopware hebt den Wert
+# selbst je Verbindung auf mindestens 320000 an (Kernel.php), die Zeile in
+# der my.cnf waere wirkungslos verdoppelt.
