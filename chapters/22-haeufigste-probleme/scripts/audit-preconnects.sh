@@ -33,7 +33,7 @@ if [[ $# -gt 2 ]]; then
     exit 64
 fi
 
-SHOP_URL="${1:-https://localhost}"
+SHOP_URL="${1:-http://localhost}"
 
 # Farben
 RED='\033[0;31m'
@@ -75,8 +75,26 @@ HEADERS=$(curl -sS -o /dev/null -D - -L "${SHOP_URL}" 2>/dev/null || true)
 # Vorhandene Preconnects finden
 echo -e "${BLUE}1. Vorhandene Preconnects${NC}"
 
-PRECONNECTS=$(echo "${HTML}" | grep -oE 'rel="preconnect"[^>]*href="[^"]*"' | grep -oE 'href="[^"]*"' | sed 's/href="//g' | sed 's/"//g' || true)
-DNS_PREFETCH=$(echo "${HTML}" | grep -oE 'rel="dns-prefetch"[^>]*href="[^"]*"' | grep -oE 'href="[^"]*"' | sed 's/href="//g' | sed 's/"//g' || true)
+# Zwei Fallen auf einmal: Shopware umbricht Link-Attribute (rel und href
+# stehen oft auf verschiedenen Zeilen), und die Reihenfolge der Attribute
+# ist frei — <link href="..." rel="preconnect"> ist genauso gueltig.
+# Deshalb erst jeden <link>-Tag isolieren, dann je Tag pruefen.
+LINK_TAGS=$(printf '%s\n' "${HTML}" | tr '\n' ' ' | grep -oE '<link[^>]*>' || true)
+
+links_with_rel() {
+    # $1 = rel-Wert
+    local want="$1" tag href
+    while IFS= read -r tag; do
+        [[ -z "${tag}" ]] && continue
+        printf '%s' "${tag}" | grep -qE "rel=\"?${want}\"?([[:space:]>]|$)" || continue
+        href=$(printf '%s' "${tag}" | grep -oE 'href="[^"]*"' | head -1 \
+            | sed 's/^href="//; s/"$//')
+        [[ -n "${href}" ]] && printf '%s\n' "${href}"
+    done <<< "${LINK_TAGS}"
+}
+
+PRECONNECTS=$(links_with_rel 'preconnect' || true)
+DNS_PREFETCH=$(links_with_rel 'dns-prefetch' || true)
 
 if [[ -n "${PRECONNECTS}" ]]; then
     echo "   Preconnects gefunden:"

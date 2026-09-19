@@ -202,10 +202,17 @@ Ansatzpunkte:
   Wer die Umschaltung per .htaccess loesen will, braucht beide Bedingungen —
   sonst liefert der Rewrite eine 404 fuer jedes Bild ohne .webp-Geschwister:
 
+    AddType image/webp .webp
     RewriteCond %{HTTP_ACCEPT} image/webp
-    RewriteCond %{REQUEST_FILENAME}.webp -f
-    RewriteRule (.+)\.(jpe?g|png)$ $1.webp [T=image/webp,E=webp:1]
+    RewriteCond %{REQUEST_FILENAME} (.+)\.(jpe?g|png)$
+    RewriteCond %1.webp -f
+    RewriteRule (.+)\.(jpe?g|png)$ $1.webp [T=image/webp,E=webp:1,L]
     Header append Vary Accept env=webp
+
+  Die mittlere Bedingung haelt den Basisnamen in %1 fest. Die verbreitete
+  Kurzform "RewriteCond %{REQUEST_FILENAME}.webp -f" prueft dagegen auf
+  "bild.jpg.webp" und passt nicht zur Regel, die "bild.webp" ausliefert.
+  Fertig zum Kopieren steht das in config/apache-webp.conf.
 
   Das Vary gehoert dazu, sonst cachen Proxys das WebP fuer alle.
   Unter Nginx wirkt .htaccess nicht; dort uebernimmt das eine map-Direktive

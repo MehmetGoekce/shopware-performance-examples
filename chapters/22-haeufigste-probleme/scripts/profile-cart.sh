@@ -14,13 +14,17 @@
 #   "DELETE FROM rule WHERE active = 0" ist schlicht ungueltiges SQL.
 #
 #   Was der RuleLoader wirklich laedt: alle Regeln mit invalid = 0 und einem
-#   nicht leeren payload, begrenzt auf 500. Das ist die Zahl, die zaehlt.
+#   nicht leeren payload. Die 500 in RuleLoader.php sind die Seitengroesse
+#   eines RepositoryIterator, keine Obergrenze — die Schleife holt Seite um
+#   Seite, bis eine Seite weniger als 500 Treffer liefert. Es faellt nichts
+#   unter den Tisch.
 #
 #   Und: Regeln loescht man nicht per SQL. 14 Fremdschluessel zeigen auf die
 #   Tabelle, sieben davon mit ON DELETE RESTRICT (Produktpreise, Versand- und
 #   Zahlarten, Steuerdienstleister, Flows). Ein Massen-DELETE bricht deshalb
-#   fuer das ganze Statement ab. Die fuenf CASCADE-Beziehungen der Promotions
-#   wuerden dagegen still deren Bedingungen mitloeschen.
+#   fuer das ganze Statement ab. Die sieben CASCADE-Beziehungen — fuenf
+#   Promotion-Zuordnungen sowie rule_condition und rule_tag — wuerden
+#   dagegen still mitloeschen, was daran haengt.
 #
 # Dieses Skript misst und zaehlt. Es aendert nichts.
 #
@@ -120,11 +124,17 @@ if [[ -z "${DB_URL}" ]] || ! command -v mysql >/dev/null 2>&1; then
     echo "2. Regeln und Promotions"
     echo "   Uebersprungen: keine DATABASE_URL oder kein mysql-Client."
 else
+    # Benutzerteil am LETZTEN @ abtrennen: ein "@" im Passwort ist in der
+    # DSN prozentkodiert, manche Installationen schreiben es aber roh.
     DB_REST="${DB_URL#*://}"
-    DB_CRED="${DB_REST%%@*}"
-    DB_HOSTPART="${DB_REST#*@}"
+    DB_CRED="${DB_REST%@*}"
+    DB_HOSTPART="${DB_REST##*@}"
     DB_USER="${DB_CRED%%:*}"
     DB_PASS="${DB_CRED#*:}"
+    # Prozentkodierung aufloesen (@ : / # stehen als %40 %3A %2F %23).
+    urldecode() { printf '%b' "${1//%/\\x}"; }
+    DB_USER=$(urldecode "${DB_USER}")
+    DB_PASS=$(urldecode "${DB_PASS}")
     DB_HOSTPORT="${DB_HOSTPART%%/*}"
     DB_NAME="${DB_HOSTPART#*/}"; DB_NAME="${DB_NAME%%\?*}"
     DB_HOST="${DB_HOSTPORT%%:*}"
@@ -149,12 +159,7 @@ else
     echo "   Aktive Promotions:                ${PROMOS:-?}"
     echo "   davon ohne Gutscheincode:         ${PROMOS_AUTO:-?}   (werden immer geprueft)"
 
-    if [[ "${RULES_LOADED:-0}" -ge 500 ]]; then
-        echo "   Das Limit des RuleLoaders liegt bei 500. Ab hier werden Regeln"
-        echo "   stillschweigend nicht mehr geladen — das ist nicht nur langsam,"
-        echo "   sondern fachlich falsch."
-        ISSUES=$((ISSUES + 1))
-    elif [[ "${RULES_LOADED:-0}" -gt 100 ]]; then
+    if [[ "${RULES_LOADED:-0}" -gt 100 ]]; then
         echo "   Viele Regeln. Jede wird bei jeder Warenkorbaenderung ausgewertet."
         ISSUES=$((ISSUES + 1))
     fi
@@ -218,8 +223,9 @@ cat <<'EOF'
 Was hier wirklich hilft:
 
   1. Weniger Regeln laden. Der RuleLoader holt alle Regeln mit invalid = 0
-     und nicht leerem payload — bis zu 500 Stueck — und wertet sie bei jeder
-     Warenkorbaenderung aus. Nicht mehr benutzte Regeln gehoeren weg.
+     und nicht leerem payload — in Seiten zu 500, aber vollstaendig — und
+     wertet sie bei jeder Warenkorbaenderung aus. Nicht mehr benutzte Regeln
+     gehoeren weg.
 
      Aber nicht per SQL: 14 Fremdschluessel zeigen auf die Tabelle, sieben
      davon mit ON DELETE RESTRICT. Ein DELETE bricht fuer das ganze Statement

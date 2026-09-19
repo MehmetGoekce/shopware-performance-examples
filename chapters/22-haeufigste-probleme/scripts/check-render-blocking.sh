@@ -35,7 +35,7 @@ Argumente:
 
 Umgebungsvariablen:
   CSS_THRESHOLD_KB   Ab dieser komprimierten Groesse gilt ein Stylesheet als
-                     gross. Default: 50
+                     gross. Default: 80 (das Standardtheme liegt bei rund 64)
 USAGE
 }
 
@@ -54,7 +54,10 @@ fi
 # nicht ausgewertet, damit run-all-diagnostics.sh alle gleich aufrufen kann.
 SHOP_URL="${1:-http://localhost}"
 SHOP_URL="${SHOP_URL%/}"
-CSS_THRESHOLD_KB="${CSS_THRESHOLD_KB:-50}"
+# 80 statt 50: das unveraenderte Standardtheme liefert all.css mit rund
+# 64 KB gzip. Mit 50 bekaeme jeder Shop ab Werk einen Fund, und "nichts
+# Auffaelliges" waere nie erreichbar.
+CSS_THRESHOLD_KB="${CSS_THRESHOLD_KB:-80}"
 
 echo "=== Problem 6: Render-Blocking ==="
 echo
@@ -69,7 +72,9 @@ HTML=$(curl -sS -L "${SHOP_URL}/") || {
 HEAD_HTML=$(printf '%s\n' "${HTML}" | tr '\n' ' ' | grep -oE '<head.*</head>' || true)
 if [[ -z "${HEAD_HTML}" ]]; then
     echo "Kein <head> gefunden — antwortet die URL ueberhaupt mit HTML?" >&2
-    exit 1
+    echo "Ohne Host-Header antwortet Shopware mit \"Sales Channel Not Found\"" >&2
+    echo "— und zwar als HTTP 200." >&2
+    exit 69
 fi
 
 absolutise() {
@@ -110,6 +115,7 @@ while IFS= read -r link; do
     kb=$(size_kb "${url}")
     if [[ "${kb}" -ge "${CSS_THRESHOLD_KB}" ]]; then
         printf '   %-34s blockiert, %s KB komprimiert\n' "${name}" "${kb}"
+        printf '   %-34s (Standardtheme liegt bei rund 64 KB)\n' ""
         ISSUES=$((ISSUES + 1))
     else
         printf '   %-34s blockiert, %s KB komprimiert (klein)\n' "${name}" "${kb}"

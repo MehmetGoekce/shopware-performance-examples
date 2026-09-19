@@ -33,7 +33,7 @@ if [[ $# -gt 2 ]]; then
     exit 64
 fi
 
-SHOP_URL="${1:-https://localhost}"
+SHOP_URL="${1:-http://localhost}"
 SHOP_PATH="${2:-.}"
 
 # Farben
@@ -65,23 +65,27 @@ CDN_DETECTED=""
 # Check 1: CDN-Header prüfen
 echo -e "${BLUE}1. CDN-Header Analyse${NC}"
 
-HEADERS=$(curl -sI "${SHOP_URL}" 2>/dev/null)
+# GET statt HEAD und Weiterleitungen folgen: manche Setups beantworten HEAD
+# anders als GET, und ohne -L landet man auf der Weiterleitung statt am Ziel.
+HEADERS=$(curl -sS -o /dev/null -D - -L "${SHOP_URL}" 2>/dev/null || true)
 
 for header in "${CDN_HEADERS[@]}"; do
-    if echo "${HEADERS}" | grep -qi "${header}"; then
-        HEADER_VALUE=$(echo "${HEADERS}" | grep -i "${header}" | head -1)
+    if echo "${HEADERS}" | grep -qi "^${header}"; then
+        HEADER_VALUE=$(echo "${HEADERS}" | grep -i "^${header}" | head -1)
         echo -e "   ${GREEN}✓${NC} ${HEADER_VALUE}"
 
-        # CDN identifizieren
-        if echo "${header}" | grep -qi "cf-ray"; then
-            CDN_DETECTED="Cloudflare"
-        elif echo "${header}" | grep -qi "x-amz-cf"; then
-            CDN_DETECTED="CloudFront"
-        elif echo "${header}" | grep -qi "x-served-by"; then
-            CDN_DETECTED="Fastly"
-        elif echo "${header}" | grep -qi "bunny"; then
-            CDN_DETECTED="BunnyCDN"
-        fi
+        # CDN identifizieren. Jede erkannte Kopfzeile muss CDN_DETECTED
+        # setzen — sonst meldet das Skript direkt unter einem CDN-Header
+        # "Kein CDN erkannt".
+        case "${header}" in
+            cf-ray)         CDN_DETECTED="Cloudflare" ;;
+            x-amz-cf-id)    CDN_DETECTED="CloudFront" ;;
+            x-served-by)    CDN_DETECTED="Fastly" ;;
+            x-bunny-*)      CDN_DETECTED="BunnyCDN" ;;
+            x-vercel-cache) CDN_DETECTED="Vercel" ;;
+            x-akamai-*)     CDN_DETECTED="Akamai" ;;
+            *)              CDN_DETECTED="${CDN_DETECTED:-unbekannt (Cache-Header vorhanden)}" ;;
+        esac
     fi
 done
 
@@ -164,9 +168,11 @@ echo "   shopware.filesystem.public.url, also die URLs fuer Medien und"
 echo "   Thumbnails. Die Filesysteme theme, asset und sitemap bekommen im"
 echo "   selben Compiler-Pass ausdruecklich url = '' und bleiben damit auf der"
 echo "   APP_URL. CSS, JS und Fonts kommen also weiter vom Origin, solange"
-echo "   nicht auch shopware.filesystem.theme.url und .asset.url gesetzt sind."
+echo "   theme und asset nicht eigene Filesysteme bekommen. Dabei genuegt"
+echo "   der url-Key allein nicht: der Compiler-Pass steigt nur aus, wenn"
+echo "   shopware.filesystem.<fs>.type gesetzt ist."
 echo "   Und: der Key laedt nichts hoch. Er aendert nur die erzeugten URLs —"
-echo "   davor muss ein Pull-Proxy stehen oder das Filesystem auf S3 zeigen." 
+echo "   davor muss ein Pull-Proxy stehen oder das Filesystem auf S3 zeigen."
 
 # Check 4: Response-Zeit vergleichen
 echo ""
