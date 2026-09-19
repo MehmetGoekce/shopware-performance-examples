@@ -88,6 +88,19 @@ framework:
 #                 parameters:
 #                     password: '%env(REDIS_AUTH_PASSWORD)%'
 #
+# Mit TLS: die drei Hosts auf 'tls://' umstellen und den ssl-Block ergaenzen.
+# phpredis kennt vergleichbare Stream-Context-Options bei Redis::connect().
+#
+#                 - 'tls://%env(REDIS_SENTINEL_HOST1)%'
+#                 - 'tls://%env(REDIS_SENTINEL_HOST2)%'
+#                 - 'tls://%env(REDIS_SENTINEL_HOST3)%'
+#
+#                 ssl:
+#                     verify_peer: true
+#                     cafile:     '/etc/redis/tls/ca.crt'
+#                     local_cert: '/etc/redis/tls/client.crt'
+#                     local_pk:   '/etc/redis/tls/client.key'
+#
 # framework:
 #     cache:
 #         app: cache.adapter.redis_tag_aware
