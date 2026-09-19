@@ -6,7 +6,30 @@
 # Verwendung: ./run-all-diagnostics.sh [SHOP_URL] [SHOP_PATH]
 #
 
-set -e
+set -uo pipefail
+
+usage() {
+    cat <<'USAGE'
+Usage: run-all-diagnostics.sh [SHOP_URL] [SHOP_PATH]
+
+Fuehrt alle 20 Diagnose-Skripte dieses Kapitels nacheinander aus und
+fasst das Ergebnis zusammen.
+
+Argumente:
+  SHOP_URL    Basis-URL des Shops. Default: http://localhost
+  SHOP_PATH   Wurzel der Shopware-Installation. Default: aktuelles Verzeichnis
+USAGE
+}
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    usage
+    exit 0
+fi
+
+if [[ $# -gt 2 ]]; then
+    usage >&2
+    exit 64
+fi
 
 # Farben für Output
 RED='\033[0;31m'
@@ -36,25 +59,50 @@ echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
 echo ""
 
 # Funktion: Check ausführen
+# Ruft ein Einzelskript auf. Alle Skripte dieses Kapitels nehmen dieselben
+# beiden Argumente: $1 = SHOP_URL, $2 = SHOP_PATH.
+#
+# stderr wird NICHT verworfen. Ein "2>/dev/null" an dieser Stelle verbirgt
+# genau die Faelle, in denen ein Skript selbst kaputt ist — es meldet dann
+# stillschweigend "OK", obwohl es gar nichts gemessen hat.
 run_check() {
     local name="$1"
     local script="$2"
-    local number="$3"
+    local problem="$3"
+    local output status
 
-    echo -e "${BLUE}[${number}/20]${NC} Prüfe: ${name}..."
+    echo -e "${BLUE}[Problem ${problem}]${NC} ${name}"
 
-    if [[ -f "${SCRIPT_DIR}/${script}" ]]; then
-        if bash "${SCRIPT_DIR}/${script}" "${SHOP_URL}" "${SHOP_PATH}" 2>/dev/null; then
-            echo -e "  ${GREEN}✓ OK${NC}"
-            PASSED+=("${name}")
-        else
-            echo -e "  ${RED}✗ Problem gefunden${NC}"
-            FAILED+=("${name}")
-        fi
-    else
-        echo -e "  ${YELLOW}⚠ Script nicht gefunden${NC}"
+    if [[ ! -f "${SCRIPT_DIR}/${script}" ]]; then
+        echo -e "  ${YELLOW}Script nicht gefunden: ${script}${NC}"
         WARNINGS+=("${name} (Script fehlt)")
+        return
     fi
+
+    output=$(bash "${SCRIPT_DIR}/${script}" "${SHOP_URL}" "${SHOP_PATH}" 2>&1)
+    status=$?
+
+    case "${status}" in
+        0)
+            echo -e "  ${GREEN}unauffaellig${NC}"
+            PASSED+=("${name}")
+            ;;
+        1)
+            echo -e "  ${YELLOW}etwas gefunden — Einzelaufruf fuer Details:${NC}"
+            echo "    ./${script} '${SHOP_URL}' '${SHOP_PATH}'"
+            FAILED+=("${name}")
+            ;;
+        64|69)
+            echo -e "  ${YELLOW}nicht ausfuehrbar (Exit ${status}):${NC}"
+            printf '%s\n' "${output}" | tail -3 | sed 's/^/    /'
+            WARNINGS+=("${name} (Exit ${status})")
+            ;;
+        *)
+            echo -e "  ${RED}Skript abgebrochen (Exit ${status}):${NC}"
+            printf '%s\n' "${output}" | tail -5 | sed 's/^/    /'
+            WARNINGS+=("${name} (Abbruch, Exit ${status})")
+            ;;
+    esac
 }
 
 # ============================================
@@ -123,28 +171,16 @@ for item in "${WARNINGS[@]}"; do
     echo "  ⚠ ${item}"
 done
 
-# Score berechnen
-TOTAL=$((${#PASSED[@]} + ${#FAILED[@]}))
-if [[ ${TOTAL} -gt 0 ]]; then
-    SCORE=$((${#PASSED[@]} * 100 / ${TOTAL}))
-else
-    SCORE=0
-fi
-
 echo ""
-echo -e "${BLUE}Performance Score: ${SCORE}%${NC}"
-
-if [[ ${SCORE} -ge 80 ]]; then
-    echo -e "${GREEN}Excellent! Ihr Shop ist gut optimiert.${NC}"
-elif [[ ${SCORE} -ge 60 ]]; then
-    echo -e "${YELLOW}Gut, aber es gibt Verbesserungspotential.${NC}"
-else
-    echo -e "${RED}Kritisch! Mehrere Performance-Probleme gefunden.${NC}"
-fi
-
+echo "${#FAILED[@]} von $(( ${#PASSED[@]} + ${#FAILED[@]} )) Pruefungen haben etwas gefunden."
 echo ""
-echo "Detaillierte Lösungen finden Sie in Kapitel 22 des Buchs."
-echo "Professionelles Audit: memotech.ch/performance-audit"
+echo "Eine Prozentzahl steht hier bewusst nicht. Die Pruefungen sind weder"
+echo "gleich gewichtet noch unabhaengig voneinander: ein abgeschalteter"
+echo "HTTP-Cache wiegt schwerer als ein fehlender Preconnect, und beide"
+echo "zaehlten in einem Score gleich viel. Gehen Sie die Liste oben durch."
+echo ""
+echo "Zu jedem Punkt steht die Erklaerung in Kapitel 22 des Buchs."
+echo "Professionelles Audit: memotech.ch/performance-check"
 echo ""
 
 # Exit-Code basierend auf Ergebnis
