@@ -201,6 +201,82 @@ jobs:
             -v "$PWD/chapters/11-cdn-integration/config/nginx-brotli.conf:/etc/nginx/ch11-brotli.conf:ro" \
             fholzer/nginx-brotli:latest -t
 
+  appendix-configs:
+    name: Anhang C Config Syntax
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate the Nginx vHost
+        run: |
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+            -keyout privkey.pem -out fullchain.pem -subj "/CN=shop.example.com" 2>/dev/null
+          mkdir -p le && mv privkey.pem fullchain.pem le/
+          cat > nginx-test.conf <<'CONF'
+          events {}
+          http {
+              include /etc/nginx/anhang-c-shopware.conf;
+          }
+          CONF
+          docker run --rm \
+            -v "$PWD/nginx-test.conf:/etc/nginx/nginx.conf:ro" \
+            -v "$PWD/chapters/anhang-c-konfigurationen/config/nginx-shopware.conf:/etc/nginx/anhang-c-shopware.conf:ro" \
+            -v "$PWD/le:/etc/letsencrypt/live/shop.example.com:ro" \
+            nginx:1.27 nginx -t
+
+      - name: Validate the PHP-FPM pool
+        run: |
+          # php-fpm prueft beim -t auch, ob es slowlog und error_log anlegen
+          # kann - das Verzeichnis muss also existieren. Genau das steht auch
+          # als Installationsschritt in der Vorlage.
+          docker run --rm \
+            -v "$PWD/chapters/anhang-c-konfigurationen/config/php-fpm-pool.conf:/usr/local/etc/php-fpm.d/zz-shopware.conf:ro" \
+            php:8.3-fpm bash -c 'mkdir -p /var/log/php-fpm /run/php && php-fpm -t'
+
+      - name: Validate the MySQL config
+        run: |
+          # --validate-config faengt Tippfehler und unbekannte Variablen ab.
+          # Abgekuendigte Direktiven meldet es NICHT - die Warnung MY-013907
+          # zu innodb_log_file_size erscheint erst beim echten Start.
+          docker run --rm --entrypoint mysqld \
+            -v "$PWD/chapters/anhang-c-konfigurationen/config/mysql-shopware.cnf:/etc/mysql/conf.d/shopware.cnf:ro" \
+            mysql:8.0 --validate-config
+
+      - name: Validate the Supervisor config
+        run: |
+          cat > supervisord-test.conf <<'CONF'
+          [supervisord]
+          logfile=/tmp/supervisord.log
+          pidfile=/tmp/supervisord.pid
+          nodaemon=true
+          [include]
+          files = /etc/supervisor/conf.d/*.conf
+          CONF
+          docker run --rm \
+            -v "$PWD/supervisord-test.conf:/tmp/supervisord.conf:ro" \
+            -v "$PWD/chapters/anhang-c-konfigurationen/config/supervisor-shopware.conf:/tmp/shopware-worker.conf:ro" \
+            python:3.12-slim bash -c '
+              pip -q install supervisor
+              mkdir -p /etc/supervisor/conf.d /var/log/supervisor /var/www/shopware/bin
+              cp /tmp/shopware-worker.conf /etc/supervisor/conf.d/
+              printf "#!/bin/sh\nsleep 60\n" > /var/www/shopware/bin/console
+              chmod +x /var/www/shopware/bin/console
+              ln -sf /bin/sh /usr/bin/php
+              useradd -M www-data 2>/dev/null || true
+              # "spawned" allein reicht nicht: ein Programm, das sofort
+              # stirbt, wird auch gespawnt. Geprueft wird der RUNNING-Zustand
+              # nach startsecs=10 - den erreicht nur, was wirklich laeuft.
+              # Die greps mit && verketten, sonst entscheidet nur der letzte
+              # ueber den Exit-Code.
+              set -e
+              timeout --preserve-status 25 supervisord -c /tmp/supervisord.conf -n > /tmp/out 2>&1
+              cat /tmp/out
+              grep -q "success: shopware-worker_00 entered RUNNING state" /tmp/out \
+                && grep -q "success: shopware-worker_01 entered RUNNING state" /tmp/out \
+                && grep -q "success: shopware-scheduled-task entered RUNNING state" /tmp/out
+            '
+
   bats:
     name: BATS Shell Tests
     runs-on: ubuntu-latest
