@@ -1,15 +1,57 @@
-# Shopware HTTP-Cache Konfiguration
+# Shopware HTTP-Cache und Cache-Backend
 # Kapitel 22, Problem 2: HTTP-Cache nicht aktiv
 #
-# Datei: config/packages/shopware.yaml
-
-# Hinweis: HTTP-Cache wird über Umgebungsvariablen aktiviert:
-#   SHOPWARE_HTTP_CACHE_ENABLED=1
-#   SHOPWARE_HTTP_DEFAULT_TTL=7200
+# Datei: config/packages/shopware.yaml (eigene Datei anlegen)
+#
+# ============================================================
+# Was hier NICHT hineingehört
+# ============================================================
+#
+# Unter shopware.http_cache gibt es KEINE Schlüssel "enabled", "default_ttl"
+# oder "invalidation". Wer sie dort einträgt, bekommt beim nächsten
+# cache:clear einen Konfigurationsfehler.
+#
+# Vorhanden sind dort nur: cookies, ignored_url_parameters,
+# stale_while_revalidate, stale_if_error und reverse_proxy.
+# (Beleg: Configuration::createHttpCacheSection() in
+#  vendor/shopware/core/Framework/DependencyInjection/Configuration.php)
+#
+# Ein- und ausgeschaltet wird der HTTP-Cache über Umgebungsvariablen:
+#
+#   SHOPWARE_HTTP_CACHE_ENABLED=1     # Default ist bereits 1
+#   SHOPWARE_HTTP_DEFAULT_TTL=7200    # Default ist bereits 7200
+#
+# Beide Werte sind ab Werk gesetzt. Wenn der Cache nicht arbeitet, hat sie
+# jemand überschrieben — zuerst nachsehen:
+#
+#   grep -E 'SHOPWARE_HTTP' .env .env.local
+#
+# ============================================================
+# Woran man erkennt, dass der Cache arbeitet
+# ============================================================
+#
+# NICHT am Cache-Control-Header. Eine Shopware-6.6-Storefront antwortet dem
+# Browser mit "Cache-Control: no-cache, private" — auch dann, wenn der Cache
+# läuft und gerade einen Treffer ausliefert. Shopware setzt intern
+# setSharedMaxAge() für den Shared Cache; was beim Browser ankommt,
+# überschreibt Symfonys AbstractSessionListener. "public, max-age=3600"
+# bekommt man an einer Storefront-URL nie zu sehen.
+#
+# Das belastbare Merkmal ist der Age-Header: vorhanden heisst, ein Shared
+# Cache antwortet; wachsend heisst, die Antwort kam aus dem Cache.
+#
+#   curl -s -o /dev/null -D - https://shop/ | grep -i '^age'
+#
+# (curl -I sendet HEAD; manche Setups beantworten HEAD anders als GET.)
 
 shopware:
     http_cache:
-        # Diese URL-Parameter ignorieren (für Cache-Key)
+        # Diese URL-Parameter beim Bilden des Cache-Keys ignorieren.
+        # Ohne sie erzeugt jede Kampagnen-URL einen eigenen Eintrag, und die
+        # Trefferquote sinkt, obwohl die Seite identisch ist.
+        # Achtung: die Liste ersetzt die Shopware-Defaults nicht, sie ergänzt
+        # sie — Shopware bringt bereits Piwik-, Google- und Facebook-Parameter
+        # mit (siehe shopware.yaml im Core-Bundle).
         ignored_url_parameters:
             - 'gclid'
             - 'utm_source'
@@ -20,20 +62,62 @@ shopware:
             - 'fbclid'
             - 'ref'
 
-        # Stale-while-revalidate (optional)
+        # Stale-Verhalten. Beide sind ab Werk null, also aus.
+        # stale_while_revalidate: der Proxy darf eine abgelaufene Antwort noch
+        #   ausliefern, während er im Hintergrund erneuert.
+        # stale_if_error: er darf sie ausliefern, wenn der Origin gerade nicht
+        #   antwortet.
+        # Wirken nur mit einem Reverse Proxy, der die Direktiven unterstützt.
         stale_while_revalidate: 3600
         stale_if_error: 86400
 
-    # Cache-Invalidierung
     cache:
         invalidation:
+            # 0 = sofort invalidieren.
+            # Grösser 0 sammelt Shopware die Tags und arbeitet sie gebündelt
+            # über den Scheduled Task shopware.invalidate_cache ab — das
+            # setzt laufende Worker voraus, sonst bleibt der alte Stand
+            # stehen, bis der Eintrag von selbst abläuft.
             delay: 0
 
-# Cache-Backend (Symfony Framework)
+# ============================================
+# Cache-Backend
+# ============================================
+#
+# Der Adapter unten gehört NICHT in dieselbe Datei wie die shopware-Keys,
+# wenn beides getrennt gepflegt werden soll — hier steht es nur zusammen,
+# damit die Vorlage vollständig ist.
+
 framework:
     cache:
-        # Redis als Cache-Backend (empfohlen)
-        # app: cache.adapter.redis
+        # Mit Redis: redis_tag_aware, nicht der einfache redis-Adapter.
+        # Shopware invalidiert über Cache-Tags; der einfache Adapter kann das
+        # nicht, und die Invalidierung greift dann schlicht nicht.
+        #
+        # app: cache.adapter.redis_tag_aware
+        # system: cache.adapter.redis_tag_aware
+        #
+        # dazu in config/packages/ zusätzlich:
+        # framework:
+        #     cache:
+        #         default_redis_provider: '%env(REDIS_URL)%'
+        #
+        # REDIS_URL zeigt dabei auf die CACHE-Instanz. Sessions gehören auf
+        # eine eigene Instanz — siehe config/redis-session.yaml.
 
-        # Alternativ: Filesystem
+        # Ohne Redis: Dateisystem. Funktioniert, skaliert aber nicht über
+        # mehrere Anwendungsserver, weil jeder seinen eigenen Cache hat.
         app: cache.adapter.filesystem
+
+# ============================================
+# Einspielen
+# ============================================
+#
+# cp config/shopware-cache.yaml /var/www/shopware/config/packages/
+# chmod 644 /var/www/shopware/config/packages/shopware-cache.yaml
+# bin/console cache:clear
+#
+# Das chmod nicht überspringen: eine Datei in config/packages/, die der
+# PHP-Benutzer nicht lesen darf, lässt den Container-Build mit
+# "does not contain valid YAML: ... cannot be read" abbrechen — der Shop
+# antwortet dann mit HTTP 500.

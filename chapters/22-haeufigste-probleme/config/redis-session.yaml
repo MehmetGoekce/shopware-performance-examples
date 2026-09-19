@@ -2,10 +2,31 @@
 # Kapitel 22, Problem 8: Session-Lock Blocking
 #
 # Datei: config/packages/framework.yaml
+#
+# ============================================================
+# Der wichtigste Punkt zuerst: eine EIGENE Instanz
+# ============================================================
+#
+# Sessions gehören NICHT in dieselbe Redis-Instanz wie der Cache.
+#
+# Die Cache-Instanz läuft üblicherweise mit maxmemory-policy volatile-lru und
+# ohne Persistenz — sie darf Einträge wegwerfen, das ist ihre Aufgabe. Eine
+# Session hat eine TTL und ist damit ein Verdrängungskandidat wie jeder
+# andere Eintrag auch.
+#
+# Nachgestellt im Test (Shopware 6.6.10.6, Redis 7.4): Warenkorb gefüllt,
+# Redis-Cache-Instanz mit `save ""` und `appendonly no` neu gestartet —
+# danach war der Warenkorb leer und die Session weg. Bei jedem Kunden, nicht
+# nur bei einem. Dieselbe Prüfung mit einer Session-Instanz (appendonly yes,
+# noeviction): Warenkorb unverändert vorhanden.
+#
+# Deshalb hier REDIS_SESSION_URL und nicht REDIS_URL. REDIS_URL zeigt nach
+# Kapitel 7 und 10 auf die Cache-Instanz.
 
 framework:
     session:
-        # Redis als Session-Handler
+        # Redis als Session-Handler. Der Redis-Handler sperrt nicht — genau
+        # darum geht es bei diesem Problem.
         handler_id: '%env(REDIS_SESSION_URL)%'
 
         # Session-Name
@@ -16,67 +37,96 @@ framework:
         cookie_httponly: true
         cookie_samesite: lax
 
-        # Garbage Collection
+        # Garbage Collection.
+        # Bei einem Redis-Handler läuft die Bereinigung ohnehin über die TTL
+        # der Schlüssel; diese Werte betreffen nur den Fallback auf Dateien.
         gc_probability: 1
         gc_divisor: 100
         gc_maxlifetime: 86400
 
 # ============================================
-# .env Konfiguration
+# .env.local
 # ============================================
 #
-# REDIS_SESSION_URL=redis://localhost:6379/0
+# Einfach:
+# REDIS_SESSION_URL=redis://127.0.0.1:6380/0
 #
-# Mit Passwort:
-# REDIS_SESSION_URL=redis://:password@localhost:6379/0
+# Mit Passwort (Benutzer weglassen heisst "default"):
+# REDIS_SESSION_URL=redis://:passwort@127.0.0.1:6380/0
 #
-# Mit Sentinel (High Availability):
-# REDIS_SESSION_URL=redis://sentinel1:26379,sentinel2:26379?redis_sentinel=mymaster
+# Mit Sentinel — Achtung, hier stecken drei verbreitete Fehler drin:
+#
+#   1. KEINE Schrägstriche nach dem Schema. "redis://host:port?..." wirft bei
+#      Sentinel "Invalid Redis DSN."; parsebar ist nur die Form ohne "//".
+#   2. Die Sentinel-Hosts gehören als host[...]-Parameter, nicht
+#      kommasepariert in die Autorität.
+#   3. Der Mastername ist der, der in sentinel.conf steht — "mymaster" ist
+#      nur der Redis-Default und für eine Session-Instanz falsch.
+#
+# Richtig (eine Zeile, hier umbrochen):
+#
+# REDIS_SESSION_URL=redis:?host[sentinel1:26379]&host[sentinel2:26379]
+#   &host[sentinel3:26379]&redis_sentinel=shopware-session
+#   &timeout=2&read_timeout=2
+#
+# Die beiden Timeouts nicht weglassen. Ohne sie gilt der Symfony-Default von
+# 30 Sekunden: Fällt der Master aus, wartet jeder Request eine halbe Minute,
+# bevor der Client überhaupt zum nächsten Sentinel weitergeht. Die Ausfallzeit
+# bestimmt dann der Client, nicht die Failover-Dauer des Clusters.
+#
+# Siehe Kapitel 10 für das vollständige Sentinel-Setup.
 
 # ============================================
-# Alternative: Filesystem mit Read-Only
+# Alternative ohne Redis
 # ============================================
 #
-# Wenn Redis nicht verfügbar:
-# handler_id: session.handler.native_file
+# Ist kein Redis verfügbar, bleibt es beim PHP-Save-Handler aus der php.ini
+# (Default: files) — und damit bei der Sperre. Wer sie im eigenen Code
+# entschärfen will, schliesst die Session früh, sobald der Request sie nicht
+# mehr zum Schreiben braucht:
 #
-# Und in PHP:
-# session_set_save_handler(new ReadOnlySessionHandler());
+#   $request->getSession()->save();
+#
+# NICHT session_write_close() aufrufen: das umgeht Symfonys Session-Objekt,
+# das sich danach weiter für geöffnet hält. Nach save() sind nur noch
+# Lesezugriffe erlaubt.
 
 # ============================================
-# Redis-Server Konfiguration
+# Redis-Server für Sessions
 # ============================================
 #
-# /etc/redis/redis.conf:
+# /etc/redis/redis-session.conf:
 #
-# # Memory
-# maxmemory 256mb
-# maxmemory-policy allkeys-lru
+# port 6380
 #
-# # Persistence (optional für Sessions)
-# save ""
-# appendonly no
+# # Sessions sind Nutzdaten, kein Cache. Nichts wegwerfen.
+# maxmemory 512mb
+# maxmemory-policy noeviction
 #
-# # Performance
+# # Persistenz AN — sonst meldet ein Neustart alle Kunden ab.
+# appendonly yes
+# appendfsync everysec
+#
+# # Datenverzeichnis innerhalb der systemd-Sandbox lassen, sonst startet
+# # die Instanz nicht (siehe Kapitel 10).
+# dir /var/lib/redis
+#
 # tcp-keepalive 300
 # timeout 0
 
 # ============================================
-# Vorteile von Redis für Sessions
+# Was die Umstellung bringt
 # ============================================
 #
-# 1. Kein Session-Lock-Blocking
-#    - Mehrere Requests können parallel laufen
-#    - Eliminiert Wartezeiten bei Ajax-Calls
+# 1. Keine Serialisierung mehr.
+#    Gemessen im Test-Shop (Median aus fünf Runden, zwei gleichzeitige
+#    Requests auf /checkout/cart mit derselben Session):
+#      files-Handler:  parallel 91 ms, nacheinander 101 ms — also 90 % der
+#                      sequenziellen Zeit, die Requests warten aufeinander.
+#      Redis-Handler:  parallel 99 ms, nacheinander 180 ms — also 55 %, die
+#                      Requests laufen wirklich nebeneinander.
+#    (Docker, Dockware 6.6.10.6, Demodaten, einzelne Requests, kein Lasttest.)
 #
-# 2. Shared Sessions
-#    - Load Balancer: Session auf allen Servern verfügbar
-#    - Keine Sticky Sessions nötig
+# 2. Gemeinsame Sessions über mehrere Anwendungsserver, ohne Sticky Sessions.
 #
-# 3. Schneller als Filesystem
-#    - In-Memory Storage
-#    - Keine Disk-I/O
-#
-# 4. Automatische Bereinigung
-#    - TTL-basierte Expiration
-#    - Keine manuellen Cleanup-Jobs
+# 3. Ablauf über die TTL der Schlüssel statt über Aufräum-Jobs.
