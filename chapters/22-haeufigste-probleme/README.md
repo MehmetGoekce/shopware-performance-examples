@@ -31,7 +31,11 @@ Jedes Skript kennt `--help`. Die Exit-Codes sind einheitlich:
 | 0 | unauffällig |
 | 1 | etwas gefunden, das man sich ansehen sollte |
 | 64 | Aufruffehler (falsche Argumente) |
-| 69 | Voraussetzung fehlt (z. B. `jq`, `mysql`, keine FPM-Binary) |
+| 69 | Voraussetzung fehlt (z. B. `jq`, `mysql`, keine FPM-Binary, Shop nicht erreichbar) |
+
+`run-all-diagnostics.sh` folgt derselben Tabelle: 1, sobald mindestens eine
+Prüfung etwas gefunden hat, sonst 0. Einen eigenen Code für „viele Funde"
+gibt es nicht — die Zahl steht in der Liste am Ende des Laufs.
 
 ## Die 20 Probleme
 
@@ -112,11 +116,16 @@ Ausführlicher: `QUICKSTART.md`.
 
 | Werkzeug | Wofür | Ohne es |
 |---|---|---|
-| `bash` 4.0+, `curl` | alle Skripte | nichts läuft |
-| `php` | `audit-plugins.sh`, `check-elasticsearch.sh`, `analyze-cronjobs.sh` | Abschnitte entfallen |
+| `bash` 4.4+, GNU-Coreutils/-findutils, `curl` | alle Skripte | nichts läuft |
+| `php` | `audit-plugins.sh` | Exit 69 |
+| `php` | `check-elasticsearch.sh`, `analyze-cronjobs.sh` | Abschnitte entfallen |
 | `mysql`-Client | `diagnose-slow-queries.sh`, `audit-themes.sh`, `profile-cart.sh` | Exit 69 bzw. Abschnitt entfällt |
 | `jq` | `audit-plugins.sh` | Exit 69 |
 | `php-fpm<version>` | `check-opcache.sh` | Exit 69 mit Hinweis auf den Web-Weg |
+
+Getestet unter Linux. Die Skripte benutzen `find -printf`, `du -sb`,
+`pgrep -fc`, `sort -h` und `date +%s%N` — das sind GNU-Varianten. Unter
+macOS (bash 3.2, BSD-Tools) laufen sie nicht.
 
 Nicht nötig: Node.js, npm, Composer. Der Ordner enthält kein JavaScript und
 kein installierbares Plugin.
