@@ -74,6 +74,8 @@ Dazu zwei Skripte, die alle anderen aufrufen:
 | `config/php-opcache.ini` | OPcache für PHP-FPM (Problem 12) |
 | `config/nginx-gzip.conf` | Kompression unter Nginx (Problem 14) |
 | `config/apache-compression.conf` | Kompression und Ablaufzeiten unter Apache (Problem 14, 20) |
+| `config/apache-webp.conf` | WebP-Auslieferung unter Apache (Problem 4) |
+| `config/nginx-webp.conf` | WebP-Auslieferung unter Nginx (Problem 4) |
 | `config/logrotate.conf` | Log-Aufbewahrung (Problem 17) — mit der Warnung, dass sie meist gar nicht nötig ist |
 
 Die Vorlagen sind kommentiert und erklären jeweils, **warum** ein Wert so

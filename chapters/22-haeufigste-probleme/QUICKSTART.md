@@ -110,6 +110,12 @@ sudo nginx -t && sudo systemctl reload nginx
 sudo cp config/apache-compression.conf /etc/apache2/conf-available/
 sudo a2enconf apache-compression && sudo systemctl reload apache2
 
+# WebP-Auslieferung, Apache: Inhalt VOR "# BEGIN Shopware" in die
+# public/.htaccess einfügen. Dahinter wirkt die Regel nicht — Shopwares
+# Block liefert existierende Dateien mit [L] aus.
+# Unter Nginx entsprechend config/nginx-webp.conf.
+cat config/apache-webp.conf   # von Hand einsetzen, kein cp
+
 # Shopware HTTP-Cache
 sudo cp config/shopware-cache.yaml ${SHOP}/config/packages/
 sudo chmod 644 ${SHOP}/config/packages/shopware-cache.yaml
