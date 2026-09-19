@@ -126,9 +126,12 @@ EOF
 sudo chown root:redis /etc/redis/{redis,sentinel}-auth.conf
 sudo chmod 640 /etc/redis/{redis,sentinel}-auth.conf
 
-# 3. Fuer CLI-Aufrufe: REDIS_AUTH_PASSWORD exportieren
+# 3. Fuer CLI-Aufrufe exportieren. redis-cli liest AUSSCHLIESSLICH
+#    REDISCLI_AUTH — ohne die zweite Zeile antwortet jeder Aufruf mit
+#    "NOAUTH Authentication required."
 sudo tee /etc/profile.d/redis-credentials.sh > /dev/null <<'EOF'
 export REDIS_AUTH_PASSWORD=$(grep ^requirepass /etc/redis/redis-auth.conf | cut -d'"' -f2)
+export REDISCLI_AUTH="${REDIS_AUTH_PASSWORD}"
 EOF
 sudo chmod 600 /etc/profile.d/redis-credentials.sh
 
@@ -181,10 +184,10 @@ env -u REDISCLI_AUTH redis-cli -p 26379 SENTINEL ckquorum shopware-session
 ./scripts/redis-monitor.sh
 ```
 
-`SENTINEL ckquorum` antwortet auf Redis 7.4 mit
+`SENTINEL ckquorum` antwortet bei Erfolg mit
 `OK 3 usable Sentinels. Quorum and failover authorization can be reached`.
-Der Wortlaut nach dem `OK` hat sich zwischen Redis-Versionen geaendert —
-Skripte sollten nur auf das fuehrende `OK` pruefen.
+Skripte sollten nur auf das fuehrende `OK` pruefen — der Rest der Zeile ist
+kein zugesichertes Format.
 
 ### 7. Failover testen
 
@@ -232,10 +235,24 @@ Fruehere Fassungen dieses Verzeichnisses benannten `CONFIG` per
 `CONFIG` und `SLAVEOF` auf den ueberwachten Instanzen. Im Test blieb Sentinel
 danach in `+failover-state-wait-promotion` haengen, nach zwei Minuten war der
 tote Knoten immer noch als Master eingetragen und beide Replicas zeigten
-weiter auf ihn. Wer umbenennen will, muss es Sentinel mit
-`SENTINEL rename-command <master> CONFIG <neuerName>` mitteilen. Upstream ist
+weiter auf ihn. Wer umbenennen will, traegt es in `sentinel.conf` als
+`sentinel rename-command <master> <alt> <neu>` nach (zur Laufzeit:
+`SENTINEL SET <master> rename-command <alt> <neu>`). Upstream ist
 `rename-command` ohnehin als deprecated markiert — stattdessen ACLs benutzen,
 siehe `users.acl.example`.
+
+## Wenn Sie den default-User abschalten
+
+`users.acl.example` enthaelt `user default off`. Das ist sinnvoll, hat aber
+eine Folge, die nirgends steht: `masterauth` und Sentinels `auth-pass` melden
+sich ebenfalls als `default` an. Ohne Gegenmassnahme bricht damit die
+Replikation — `Unable to AUTH to MASTER: -WRONGPASS ... or user is disabled`,
+`master_link_status` bleibt `down`. Eine bestehende Verbindung laeuft weiter,
+es faellt also erst beim naechsten Verbindungsaufbau auf: beim Failover.
+
+Noetig sind drei Dinge: der `replicator`-User aus `users.acl.example`,
+`masteruser replicator` in beiden Instanz-Configs, und je Master ein
+`sentinel auth-user <master> replicator` in `sentinel-auth.conf`.
 
 ## Gemessene Werte
 

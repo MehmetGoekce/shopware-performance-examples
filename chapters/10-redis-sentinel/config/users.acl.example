@@ -26,19 +26,53 @@
 # Gegenprobe nach jeder Aenderung:
 #   redis-cli -u "redis://<user>:<pass>@127.0.0.1:6379" PING
 #   -> PONG, nicht NOPERM
+#
+# DIESE DATEI IST EIN LESEBEISPIEL, KEIN LAUFFAEHIGES aclfile.
+# Redis' aclfile-Parser akzeptiert AUSSCHLIESSLICH `user`-Zeilen und
+# Leerzeilen. Schon eine einzige Kommentarzeile laesst den Server abbrechen:
+# "Aborting Redis startup because of ACL errors: <datei>:1 should start with
+# user keyword followed by the username." Legen Sie die User deshalb per
+# `ACL SETUSER` an und schreiben Sie die Datei mit `ACL SAVE` — dann steht
+# dort garantiert nur, was der Parser versteht.
+#
+# VERSIONSHINWEIS: Das Pub/Sub-Pattern `&*` gibt es erst ab Redis 6.2. Auf
+# Ubuntu 22.04 (Redis 6.0.16) lehnt der Server die Datei ab
+# ("ERR Error in ACL SETUSER modifier '&*': Syntax error") und startet nicht.
+# Dort die `&*` aus allen Zeilen entfernen — oder Redis >= 6.2 installieren,
+# was ohnehin die bessere Wahl ist.
 
 # Default-User deaktivieren.
 #
-# ACHTUNG: Danach funktioniert `redis-cli -a "${REDIS_AUTH_PASSWORD}"` nicht
+# ACHTUNG 1: Danach funktioniert `redis-cli -a "${REDIS_AUTH_PASSWORD}"` nicht
 # mehr — das ist der default-User. Alle Skripte und Monitoring-Aufrufe muessen
 # vorher auf einen named User umgestellt sein, sonst sperrt man sich selbst aus.
-# requirepass/masterauth aus redis-auth.conf bleiben fuer die Replikation noetig.
+#
+# ACHTUNG 2: `masterauth` und Sentinels `auth-pass` melden sich EBENFALLS als
+# default an. Ohne den replicator-User weiter unten bricht damit die
+# Replikation: "Unable to AUTH to MASTER: -WRONGPASS ... or user is disabled",
+# master_link_status bleibt down. Eine bestehende Verbindung laeuft noch
+# weiter — es faellt erst beim naechsten Verbindungsaufbau auf, also beim
+# Failover. Reihenfolge deshalb: replicator anlegen, masteruser/auth-user
+# setzen, testen, und ERST DANN default abschalten.
 user default off nopass ~* &* -@all
+
+# Replikations-Account. Ohne ihn ist "default off" ein Ausfall mit Ansage.
+# Gehoert zusammen mit `masteruser replicator` in redis-cache.conf und
+# redis-session.conf sowie `sentinel auth-user <master> replicator` in
+# sentinel-auth.conf.
+user replicator on >REPLACED-BY-ACL-SAVE-SHA256 +psync +replconf +ping
 
 # Shopware-Account: alle Datentyp-Operationen, kein FLUSH/CONFIG/DEBUG.
 # -@dangerous steht hier bewusst am ENDE: es soll aus den vorher vergebenen
 # Kategorien die destruktiven Befehle wieder herausnehmen.
-user shopware on >REPLACED-BY-ACL-SAVE-SHA256 ~* &* +@read +@write +@hash +@set +@list +@string +@sortedset +@scripting +@connection +@transaction +@keyspace +@pubsub -@dangerous
+#
+# +info danach ist PFLICHT und kein Detail: INFO gehoert zu @dangerous
+# (`ACL CAT dangerous`) und wird von der Regel davor mitgesperrt.
+# RedisTagAwareAdapter liest aber vor dem ersten Schreibvorgang die
+# Eviction-Policy per `INFO Memory`. Kommt darauf NOPERM, liest der Adapter
+# eine leere Policy, wirft die LogicException und speichert NICHTS — bei
+# korrektem volatile-lru und leerem prod-Log.
+user shopware on >REPLACED-BY-ACL-SAVE-SHA256 ~* &* +@read +@write +@hash +@set +@list +@string +@sortedset +@scripting +@connection +@transaction +@keyspace +@pubsub -@dangerous +info
 
 # Read-only Watcher fuer die Monitoring-Skripte.
 # -@all ZUERST, dann die einzelnen erlaubten Befehle.

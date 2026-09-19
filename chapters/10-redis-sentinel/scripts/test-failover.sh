@@ -170,8 +170,9 @@ for master_name in "${masters[@]}"; do
         echo "FEHLER    Failover nicht innerhalb von ${WAIT_SECONDS} s abgeschlossen." >&2
         echo "          Sentinel-Log pruefen: journalctl -u redis-sentinel -n 50" >&2
         echo "          Haeufigste Ursache: CONFIG oder SLAVEOF wurden per rename-command" >&2
-        echo "          umbenannt, ohne Sentinel das per SENTINEL rename-command" >&2
-        echo "          mitzuteilen — dann bleibt er in failover-state-wait-promotion." >&2
+        echo "          umbenannt, ohne Sentinel das per 'sentinel rename-command" >&2
+        echo "          <master> <alt> <neu>' mitzuteilen — dann bleibt er in" >&2
+        echo "          failover-state-wait-promotion." >&2
         [[ "${exit_code}" -lt 1 ]] && exit_code=1
         continue
     fi

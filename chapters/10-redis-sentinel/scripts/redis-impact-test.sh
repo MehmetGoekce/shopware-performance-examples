@@ -36,10 +36,11 @@ Erwartete Umgebungsvariablen:
                    auch Symfonys Default fuer den Redis-Verbindungsaufbau
                    (RedisTrait::$defaultConnectionOptions) — deshalb haengt
                    ein Request ohne eigene Timeouts genau so lange.
-  REDIS_STOP_CMD   Optional, Default "systemctl stop redis-server".
-                   Bei getrennten Instanzen (Kapitel 10) beide nennen, z. B.
-                   "systemctl stop redis-cache redis-session".
-  REDIS_START_CMD  Optional, Default "systemctl start redis-server".
+  REDIS_STOP_CMD   Optional, Default
+                   "systemctl stop redis-server@cache redis-server@session"
+                   — die beiden Instanzen aus Kapitel 10. Bei einer
+                   Einzelinstanz auf "systemctl stop redis-server" setzen.
+  REDIS_START_CMD  Optional, Gegenstueck dazu.
   ASSUME_YES       Optional. Auf 1 setzen, um die Rueckfrage zu ueberspringen.
 USAGE
 }
@@ -58,8 +59,8 @@ fi
 URL="$1"
 REQUESTS="${REQUESTS:-20}"
 CURL_TIMEOUT="${CURL_TIMEOUT:-30}"
-REDIS_STOP_CMD="${REDIS_STOP_CMD:-systemctl stop redis-server}"
-REDIS_START_CMD="${REDIS_START_CMD:-systemctl start redis-server}"
+REDIS_STOP_CMD="${REDIS_STOP_CMD:-systemctl stop redis-server@cache redis-server@session}"
+REDIS_START_CMD="${REDIS_START_CMD:-systemctl start redis-server@cache redis-server@session}"
 
 # Eine Phase messen: gibt "<anzahl-fehler> <zeit1> <zeit2> ..." aus.
 measure() {
