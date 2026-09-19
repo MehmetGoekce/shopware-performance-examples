@@ -225,6 +225,52 @@ jobs:
             -v "$PWD/le:/etc/letsencrypt/live/shop.example.com:ro" \
             nginx:1.27 nginx -t
 
+      - name: Check what the Nginx vHost actually answers
+        run: |
+          # nginx -t sagt nur, dass die Datei parst. Die drei Fallen, die die
+          # Vorlage zu vermeiden vorgibt, gehen durch eine reine Syntaxpruefung
+          # alle hindurch - deshalb hier echte Antworten.
+          cat > nginx-live.conf <<'CONF'
+          events {}
+          http {
+              include /etc/nginx/anhang-c-shopware.conf;
+          }
+          CONF
+          mkdir -p www/theme acme/.well-known/acme-challenge
+          echo "body{}" > www/theme/all.css
+          echo "token" > acme/.well-known/acme-challenge/tok
+          docker run -d --name nginx-live \
+            -v "$PWD/nginx-live.conf:/etc/nginx/nginx.conf:ro" \
+            -v "$PWD/chapters/anhang-c-konfigurationen/config/nginx-shopware.conf:/etc/nginx/anhang-c-shopware.conf:ro" \
+            -v "$PWD/le:/etc/letsencrypt/live/shop.example.com:ro" \
+            -v "$PWD/www:/var/www/shopware/public:ro" \
+            -v "$PWD/acme:/var/www/html:ro" \
+            -p 127.0.0.1:8443:443 nginx:1.27
+          for i in $(seq 1 20); do
+            curl -sk -o /dev/null --resolve shop.example.com:8443:127.0.0.1 \
+              https://shop.example.com:8443/theme/all.css && break
+            sleep 1
+          done
+          curl -sk -D headers.txt -o /dev/null --resolve shop.example.com:8443:127.0.0.1 \
+            https://shop.example.com:8443/theme/all.css
+          cat headers.txt
+
+          fail=0
+          # Falle 1: genau EIN Cache-Control
+          n=$(grep -ci '^cache-control:' headers.txt)
+          [ "$n" = "1" ] || { echo "FAIL: $n Cache-Control-Header statt 1"; fail=1; }
+          # Falle 2: alle drei Security-Header auch auf der Asset-Antwort
+          for h in x-frame-options x-content-type-options referrer-policy; do
+            grep -qi "^$h:" headers.txt || { echo "FAIL: $h fehlt auf /theme/"; fail=1; }
+          done
+          # Falle 3: ACME-Challenge kommt durch die Punkt-Regel
+          code=$(curl -sk -o /dev/null -w '%{http_code}' --resolve shop.example.com:8443:127.0.0.1 \
+            https://shop.example.com:8443/.well-known/acme-challenge/tok)
+          [ "$code" = "200" ] || { echo "FAIL: ACME-Challenge antwortet $code statt 200"; fail=1; }
+
+          docker rm -f nginx-live >/dev/null
+          exit $fail
+
       - name: Validate the PHP-FPM pool
         run: |
           # php-fpm prueft beim -t auch, ob es slowlog und error_log anlegen
@@ -237,8 +283,10 @@ jobs:
       - name: Validate the MySQL config
         run: |
           # --validate-config faengt Tippfehler und unbekannte Variablen ab.
-          # Abgekuendigte Direktiven meldet es NICHT - die Warnung MY-013907
-          # zu innodb_log_file_size erscheint erst beim echten Start.
+          # NICHT gemeldet werden abgekuendigte Direktiven (die Warnung
+          # MY-013907 zu innodb_log_file_size erscheint erst beim echten
+          # Start) und Werte ausserhalb des gueltigen Bereichs
+          # (innodb_buffer_pool_instances = 999 geht durch).
           docker run --rm --entrypoint mysqld \
             -v "$PWD/chapters/anhang-c-konfigurationen/config/mysql-shopware.cnf:/etc/mysql/conf.d/shopware.cnf:ro" \
             mysql:8.0 --validate-config
@@ -257,7 +305,9 @@ jobs:
             -v "$PWD/supervisord-test.conf:/tmp/supervisord.conf:ro" \
             -v "$PWD/chapters/anhang-c-konfigurationen/config/supervisor-shopware.conf:/tmp/shopware-worker.conf:ro" \
             python:3.12-slim bash -c '
-              pip -q install supervisor
+              # Version festnageln: ohne sie kippt ein Release das Gate ohne
+              # Commit im Repo.
+              pip -q install 'supervisor==4.3.0'
               mkdir -p /etc/supervisor/conf.d /var/log/supervisor /var/www/shopware/bin
               cp /tmp/shopware-worker.conf /etc/supervisor/conf.d/
               printf "#!/bin/sh\nsleep 60\n" > /var/www/shopware/bin/console
@@ -269,6 +319,9 @@ jobs:
               # nach startsecs=10 - den erreicht nur, was wirklich laeuft.
               # Die greps mit && verketten, sonst entscheidet nur der letzte
               # ueber den Exit-Code.
+              #
+              # Grenze des Schritts: php und bin/console sind gestubt, ein
+              # Tippfehler im Shopware-Befehl selbst faellt hier nicht auf.
               set -e
               timeout --preserve-status 25 supervisord -c /tmp/supervisord.conf -n > /tmp/out 2>&1
               cat /tmp/out
