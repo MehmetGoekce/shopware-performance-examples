@@ -1,27 +1,50 @@
 # /etc/redis/users.acl  (chmod 640, root:redis)
 #
-# Skeleton fuer Redis 7.x ACL-Persistenz. Diese Datei wird per
-# `aclfile /etc/redis/users.acl`-Direktive in redis.conf aktiviert.
+# Skeleton fuer Redis-ACL-Persistenz. Wird per `aclfile /etc/redis/users.acl`
+# in redis-cache.conf / redis-session.conf aktiviert.
 #
-# Generierungs-Workflow (siehe Buch Kap 10, Subsection "Redis 7.x ACLs"):
+# Generierungs-Workflow (siehe Buch Kap. 10, Abschnitt "ACLs"):
 #   1. Im laufenden Redis Users via `redis-cli ACL SETUSER ...` anlegen
 #   2. `redis-cli ACL SAVE` schreibt diese Datei
 #   3. chown redis:redis + chmod 640
 #
-# Diese .example-Datei ist NICHT lauffaehig — Hashes muessen frisch
-# generiert werden (Redis ersetzt Klartext-Passwoerter beim SAVE durch
-# SHA256-Hashes, daher hier nur Platzhalter).
+# Diese .example-Datei ist NICHT lauffaehig — Redis ersetzt Klartext-Passwoerter
+# beim SAVE durch SHA256-Hashes, hier stehen nur Platzhalter.
 #
 # Format (ACL LIST-Output): user <name> [on|off] >hash...|nopass ~pattern +cmd -cmd
 #
 # Quelle: https://redis.io/docs/latest/operate/oss_and_stack/management/security/acl/
+#
+# ---------------------------------------------------------------------------
+# REIHENFOLGE IST ENTSCHEIDEND
+# ---------------------------------------------------------------------------
+# Redis wendet die Regeln von links nach rechts an. Ein "-@all" NACH den
+# "+"-Regeln nimmt alles wieder weg, was davor vergeben wurde — der Benutzer
+# existiert dann, kann sich anmelden und bekommt auf jeden Befehl NOPERM.
+# Deshalb steht "-@all" immer ZUERST und die "+"-Regeln danach.
+#
+# Gegenprobe nach jeder Aenderung:
+#   redis-cli -u "redis://<user>:<pass>@127.0.0.1:6379" PING
+#   -> PONG, nicht NOPERM
 
-# Default-User deaktivieren (statt nopass +@all aus dem Default zu erben):
+# Default-User deaktivieren.
+#
+# ACHTUNG: Danach funktioniert `redis-cli -a "${REDIS_AUTH_PASSWORD}"` nicht
+# mehr — das ist der default-User. Alle Skripte und Monitoring-Aufrufe muessen
+# vorher auf einen named User umgestellt sein, sonst sperrt man sich selbst aus.
+# requirepass/masterauth aus redis-auth.conf bleiben fuer die Replikation noetig.
 user default off nopass ~* &* -@all
 
 # Shopware-Account: alle Datentyp-Operationen, kein FLUSH/CONFIG/DEBUG.
-# Hash beim ersten ACL SAVE durch Redis ersetzt.
+# -@dangerous steht hier bewusst am ENDE: es soll aus den vorher vergebenen
+# Kategorien die destruktiven Befehle wieder herausnehmen.
 user shopware on >REPLACED-BY-ACL-SAVE-SHA256 ~* &* +@read +@write +@hash +@set +@list +@string +@sortedset +@scripting +@connection +@transaction +@keyspace +@pubsub -@dangerous
 
-# Read-only Watcher fuer Monitoring-Scripts (INFO, PING, REPLCONF).
-user sentinel-watcher on >REPLACED-BY-ACL-SAVE-SHA256 ~* &* +ping +info +client|setname +replconf -@all
+# Read-only Watcher fuer die Monitoring-Skripte.
+# -@all ZUERST, dann die einzelnen erlaubten Befehle.
+#
+# CONFIG ist bewusst dabei: redis-monitor.sh liest `CONFIG GET maxmemory`, um
+# die Speicherauslastung in Prozent auszurechnen. Ohne dieses Recht meldet das
+# Skript stillschweigend nichts. Wer CONFIG hier nicht vergeben will, muss
+# maxmemory im Skript fest hinterlegen.
+user sentinel-watcher on >REPLACED-BY-ACL-SAVE-SHA256 ~* &* -@all +ping +info +client|setname +replconf +config|get
