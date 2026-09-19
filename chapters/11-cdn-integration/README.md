@@ -31,8 +31,9 @@ Drei Punkte, die den Rest dieses Verzeichnisses erklären (alle im Testshop geme
    geteilt werden dürfen. Varnish erledigt das mit der offiziellen VCL, ein CDN
    braucht dafür eine eigene Bypass-Regel.
 3. **Shopware sendet nie einen `Cache-Tag`-Header.** Die Tags kommen als `xkey`
-   (Varnish) bzw. `surrogate-key` (Fastly). Gemessen: Produktseite 139 Tags /
-   4963 Bytes. Für Cloudflare übersetzt `CdnCacheTagSubscriber` sie.
+   (Varnish) bzw. `surrogate-key` (Fastly). Gemessen: Produktseite rund 140
+   Tags / knapp 5 KB — der Wert schwankt mit Sales-Channel-Kontext und Session.
+   Für Cloudflare übersetzt `CdnCacheTagSubscriber` sie.
 
 ## Dateien
 
@@ -44,14 +45,16 @@ Drei Punkte, die den Rest dieses Verzeichnisses erklären (alle im Testshop geme
 | `shopware-cdn.yaml` | Assets auf die CDN-Domain (`public`, `theme`, `asset`, `sitemap`) + kommentierte Reverse-Proxy-Sektion |
 | `cloudflare-page-rules.json` | Drei Asset-Regeln (= Free-Limit) |
 | `bunny-pull-zone.json` | Pull-Zone mit `IgnoreQueryStrings: false` |
+| `nginx-http3.conf` | QUIC-Listener fürs eigene Origin, in der CI mit `nginx -t` geprüft |
+| `nginx-brotli.conf` | Brotli-Direktiven (braucht `ngx_brotli`), in der CI mit `nginx -t` geprüft |
 
 ### src/
 
 | Klasse | Beschreibung |
 |--------|--------------|
-| `Service/CloudflarePurgeService.php` | Purge via API v4, zerlegt Listen in 100er-Blöcke |
+| `Service/CloudflarePurgeService.php` | Purge via API v4, zerlegt Listen in 100er-Blöcke, wirft nie (loggt stattdessen) |
 | `EventSubscriber/CdnCacheTagSubscriber.php` | Übersetzt Shopwares `xkey` in einen `Cache-Tag`-Header |
-| `EventSubscriber/CdnPurgeSubscriber.php` | Purge bei `product.written` / `category.written` |
+| `EventSubscriber/CdnPurgeSubscriber.php` | Purge bei `product.written` / `category.written` (Tags `product-`, `category-route-`, `product-listing-`, `product-listing-route-`) |
 | `Resources/config/services.xml` | Service-Definitionen (Namespace `YourPlugin` anpassen) |
 
 ### scripts/
@@ -61,7 +64,7 @@ Drei Punkte, die den Rest dieses Verzeichnisses erklären (alle im Testshop geme
 | `cdn-test.sh` | Prüft Status, Cache-Header, CORS, Bypass |
 | `cdn-warmup.sh` | Warmup inkl. Auflösung von sitemapindex und `.xml.gz` |
 | `cloudflare-purge.sh` | Purge nach URL, Tag, Prefix oder komplett |
-| `bunny-purge.sh` | Bunny-Pull-Zone-Purge |
+| `bunny-purge.sh` | Bunny-Pull-Zone-Purge (`--all`, `--url`, `--test`, `--stats`) |
 
 ## Quick Start
 

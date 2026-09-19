@@ -29,6 +29,29 @@ teardown() {
     done
 }
 
+@test "purge scripts exit 2 with a message when a value option has no argument" {
+    # Unter `set -u` bricht ein blosses "$2" mit einer Bash-Fehlermeldung und
+    # Exit 1 ab, bevor die eigene Meldung erscheint - "${2:-}" ist Pflicht.
+    # cloudflare-purge.sh nimmt Listen (--urls), bunny-purge.sh eine URL (--url).
+    run bash "$DIR/cloudflare-purge.sh" --urls
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"URLs erforderlich"* ]]
+
+    run bash "$DIR/bunny-purge.sh" --url
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"URL erforderlich"* ]]
+    [[ "$output" != *"not set"* ]]
+    [[ "$output" != *"nicht gesetzt"* ]]
+}
+
+@test "bunny-purge.sh documents every implemented option in its help" {
+    run bash "$DIR/bunny-purge.sh" --help
+    [ "$status" -eq 0 ]
+    for opt in --all --url --test --stats; do
+        [[ "$output" == *"$opt"* ]]
+    done
+}
+
 @test "cdn-warmup.sh rejects an unknown mode" {
     run bash "$DIR/cdn-warmup.sh" https://shop.example.com --nonsense
     [ "$status" -eq 2 ]

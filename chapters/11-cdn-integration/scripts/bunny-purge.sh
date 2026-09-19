@@ -39,6 +39,7 @@ usage() {
     echo "  --all          Gesamten Pull Zone Cache purgen"
     echo "  --url <url>    Einzelne URL purgen"
     echo "  --test         Verbindung testen"
+    echo "  --stats        Traffic-Statistik der Pull Zone (letzte 30 Tage)"
     echo "  --help         Diese Hilfe"
     echo ""
     echo "Beispiele:"
@@ -83,29 +84,18 @@ test_connection() {
 
     check_config
 
-    # Account-Info abrufen
+    # Pull Zones auflisten. GET /user gibt es im oeffentlichen Bunny-Spec
+    # nicht (nur /user/audit/{date} und /user/closeaccount) - ein 401/404 auf
+    # /pullzone ist der ehrlichere Verbindungstest.
     response=$(curl -s -X GET \
-        "${API_BASE}/user" \
+        "${API_BASE}/pullzone" \
         -H "AccessKey: ${API_KEY}")
 
-    # Prüfen ob Antwort gültig
-    if echo "${response}" | jq -e '.Id' > /dev/null 2>&1; then
-        email=$(echo "${response}" | jq -r '.Email')
-        balance=$(echo "${response}" | jq -r '.Balance')
-
+    if echo "${response}" | jq -e 'type == "array" or has("Items")' > /dev/null 2>&1; then
         echo -e "${GREEN}Verbindung erfolgreich!${NC}"
         echo ""
-        echo "Account: ${email}"
-        echo "Balance: \$${balance}"
-
-        # Pull Zones auflisten
-        echo ""
         echo "Pull Zones:"
-        zones=$(curl -s -X GET \
-            "${API_BASE}/pullzone" \
-            -H "AccessKey: ${API_KEY}")
-
-        echo "${zones}" | jq -r '.[] | "  - \(.Name) (ID: \(.Id))"'
+        echo "${response}" | jq -r '(if type == "array" then . else .Items end)[] | "  - \(.Name) (ID: \(.Id))"'
     else
         echo -e "${RED}Verbindung fehlgeschlagen!${NC}"
         echo "${response}"
@@ -192,9 +182,14 @@ get_stats() {
 
     check_zone_config
 
-    # Letzte 24 Stunden
+    # Die Statistik haengt am Account, nicht an der Pull Zone: der Pfad
+    # /pullzone/{id}/statistics existiert nicht, die Zone wird als Query-
+    # Parameter uebergeben.
+    date_from=$(date -u -d '30 days ago' +%Y-%m-%d 2>/dev/null || date -u -v-30d +%Y-%m-%d)
+    date_to=$(date -u +%Y-%m-%d)
+
     response=$(curl -s -X GET \
-        "${API_BASE}/pullzone/${PULL_ZONE_ID}/statistics" \
+        "${API_BASE}/statistics?pullZone=${PULL_ZONE_ID}&dateFrom=${date_from}&dateTo=${date_to}" \
         -H "AccessKey: ${API_KEY}")
 
     if echo "${response}" | jq -e '.TotalBandwidthUsed' > /dev/null 2>&1; then
@@ -227,7 +222,7 @@ case "$1" in
         purge_all
         ;;
     --url)
-        if [[ -z "$2" ]]; then
+        if [[ -z "${2:-}" ]]; then
             echo -e "${RED}FEHLER: URL erforderlich${NC}"
             usage
         fi

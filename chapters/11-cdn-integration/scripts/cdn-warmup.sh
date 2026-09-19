@@ -22,6 +22,11 @@
 # Index-Datei abruft, waermt also Archive statt Seiten. Dieses Skript loest den
 # Index auf und entpackt die Teil-Sitemaps.
 #
+# Die URLs in der Sitemap zeigen auf die Shop-Domain aus APP_URL, nicht auf die
+# hier uebergebene <shop-url>. Im Sitemap-Modus waermt das Skript also die
+# Hosts, die in der Sitemap stehen. Wer eine CDN- oder Staging-Domain waermen
+# will, setzt APP_URL entsprechend oder nutzt --critical.
+#
 # @see https://github.com/MehmetGoekce/shopware-performance-examples
 
 set -euo pipefail
@@ -123,6 +128,11 @@ warm_sitemap() {
 
     echo "  ${count} URLs (max. ${MAX_SITEMAP_URLS}), ${CONCURRENCY} parallel"
 
+    # mktemp statt festem Pfad: parallele Laeufe wuerden sich sonst dieselbe
+    # Datei teilen, und ein vorab angelegter Symlink liesse sich unterschieben.
+    local ok_file
+    ok_file=$(mktemp "${TMPDIR:-/tmp}/cdn-warmup.XXXXXX")
+
     # xargs ruft /bin/sh auf — hier ist POSIX Pflicht, kein [[ ]].
     printf '%s\n' "${urls}" | xargs -P "${CONCURRENCY}" -I {} sh -c '
         status=$(curl -sS -o /dev/null -w "%{http_code}" -A "$1" "$2" 2>/dev/null || echo 000)
@@ -131,11 +141,11 @@ warm_sitemap() {
         else
             echo "  $status $2"
         fi
-    ' _ "${USER_AGENT}" {} | tee /dev/stderr | grep -cE '^  200 ' >/tmp/.cdn_warmup_ok 2>/dev/null || true
+    ' _ "${USER_AGENT}" {} | tee /dev/stderr | grep -cE '^  200 ' >"${ok_file}" 2>/dev/null || true
 
     local ok
-    ok=$(cat /tmp/.cdn_warmup_ok 2>/dev/null || echo 0)
-    rm -f /tmp/.cdn_warmup_ok
+    ok=$(cat "${ok_file}" 2>/dev/null || echo 0)
+    rm -f "${ok_file}"
     OK_COUNT=$((OK_COUNT + ok))
     ERR_COUNT=$((ERR_COUNT + count - ok))
 
