@@ -130,7 +130,7 @@ code_only() {
     # ist eine Option.
     # Gesucht ist der Aufruf, nicht die Erwaehnung: die korrigierten Skripte
     # nennen --keep-all absichtlich, um davor zu warnen.
-    run bash -c "grep -rnE 'theme:compile[^\n]*--keep-all' $DIR"
+    run bash -c "grep -vhE '^[[:space:]]*#' $DIR/*.sh | grep -nE 'theme:compile[^\n]*--keep-all'"
     [ "$status" -ne 0 ] || {
         echo "theme:compile --keep-all gefunden: $output"
         return 1
@@ -287,4 +287,271 @@ STUB
     [ "$status" -eq 0 ]
     run grep -nE 'redis://[^ ]*,[^ ]*redis_sentinel' "$CONFIG/redis-session.yaml"
     [ "$status" -ne 0 ]
+}
+
+
+# --- Phase 5, Review-Funde ---------------------------------------------
+
+@test "kein Skript behauptet ein 500er-Limit des RuleLoaders" {
+    # Regressionstest zu F99: die 500 in RuleLoader.php sind die Seitengroesse
+    # eines RepositoryIterator, keine Obergrenze. profile-cart.sh meldete
+    # darauf eine Fehlfunktion, die es nicht gibt.
+    run bash -c "code_only() { grep -vE '^[[:space:]]*#' \"\$@\"; }; \
+        code_only $DIR/*.sh | grep -nE 'RULES_LOADED[^\n]*-ge 500'"
+    [ "$status" -ne 0 ] || {
+        echo "500er-Schwelle gefunden: $output"
+        return 1
+    }
+    run grep -rn 'begrenzt auf 500' "$DIR"
+    [ "$status" -ne 0 ] || {
+        echo "Limit-Behauptung gefunden: $output"
+        return 1
+    }
+}
+
+@test "kein Skript und keine Vorlage empfiehlt REQUEST_FILENAME}.webp" {
+    # Regressionstest zu F100: die Kurzform prueft auf "bild.jpg.webp" und
+    # passt nicht zur Regel, die "bild.webp" ausliefert. Gesucht ist die
+    # Empfehlung, nicht die Warnung davor — also ohne Kommentarzeilen.
+    run bash -c "grep -vhE '^[[:space:]]*#' $CONFIG/apache-webp.conf \
+        | grep -nF 'REQUEST_FILENAME}.webp'"
+    [ "$status" -ne 0 ] || {
+        echo "in der Vorlage gefunden: $output"
+        return 1
+    }
+    # In check-images.sh steht die Kurzform nur als Warnung im Fliesstext.
+    # Ein Fund waere eine Zeile, die NUR aus der Direktive besteht.
+    run bash -c "grep -nE '^[[:space:]]*RewriteCond %\\{REQUEST_FILENAME\\}\\.webp -f[[:space:]]*$' $DIR/check-images.sh"
+    [ "$status" -ne 0 ] || {
+        echo "in check-images.sh als Direktive gefunden: $output"
+        return 1
+    }
+    # Und die empfohlene Form muss dastehen.
+    run grep -nF 'RewriteCond %1.webp -f' "$DIR/check-images.sh"
+    [ "$status" -eq 0 ]
+}
+
+@test "check-debug-mode.sh erkennt APP_ENV=dev in .env.local.php" {
+    # Regressionstest zu F101: .env.local.php schlaegt .env und .env.local.
+    # Vorher meldete das Skript hier "korrekt konfiguriert", Exit 0.
+    shop="$BATS_TEST_TMPDIR/shop"
+    mkdir -p "$shop"
+    printf 'APP_ENV=prod\nAPP_DEBUG=0\n' > "$shop/.env"
+    printf "<?php\nreturn array (\n  'APP_ENV' => 'dev',\n);\n" > "$shop/.env.local.php"
+    run bash "$DIR/check-debug-mode.sh" http://example.test "$shop"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *".env.local.php"* ]]
+}
+
+@test "check-debug-mode.sh quittiert einen Pfad ohne env-Dateien mit 69" {
+    # Regressionstest zu F101: ohne .env meldete das Skript vorher Exit 0.
+    shop="$BATS_TEST_TMPDIR/leer"
+    mkdir -p "$shop"
+    run bash "$DIR/check-debug-mode.sh" http://example.test "$shop"
+    [ "$status" -eq 69 ]
+}
+
+@test "check-debug-mode.sh prueft das Cache-Verzeichnis mit Hash-Suffix" {
+    # Regressionstest zu F102: Shopware 6.6 legt var/cache/prod_h<hash> an;
+    # die festen Pfade var/cache/dev und var/cache/prod trafen nie.
+    run bash -c "grep -nE 'var/cache/(dev|prod)\"' $DIR/check-debug-mode.sh"
+    [ "$status" -ne 0 ] || {
+        echo "fester Cache-Pfad gefunden: $output"
+        return 1
+    }
+    run grep -n 'compgen -G' "$DIR/check-debug-mode.sh"
+    [ "$status" -eq 0 ]
+}
+
+@test "analyze-bundles.sh zaehlt nicht in einer Subshell" {
+    # Regressionstest zu F103: "find ... | while read" erhoeht TOTAL_SIZE in
+    # einer Subshell; der Wert ging verloren, und die Zusammenfassung meldete
+    # eine Zahl, die nichts mit der Liste darueber zu tun hatte.
+    run bash -c "grep -nE 'find[^\n]*\\| *while read' $DIR/analyze-bundles.sh"
+    [ "$status" -ne 0 ] || {
+        echo "Pipeline in eine while-Schleife gefunden: $output"
+        return 1
+    }
+    run grep -nF 'done < <(find' "$DIR/analyze-bundles.sh"
+    [ "$status" -eq 0 ]
+}
+
+@test "check-compression.sh behauptet nichts ueber uebersprungene Ressourcen" {
+    # Regressionstest zu F104: ohne CSS/JS-URL im HTML meldete das Skript
+    # "HTML, CSS und JavaScript werden komprimiert ausgeliefert", Exit 0.
+    stub_dir="$BATS_TEST_TMPDIR/bin"
+    mkdir -p "$stub_dir"
+    cat > "$stub_dir/curl" <<'STUB'
+#!/bin/bash
+for a in "$@"; do
+    if [ "$a" = "-D" ]; then
+        printf 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Encoding: gzip\r\n\r\n'
+        exit 0
+    fi
+done
+echo "<html><head></head><body>nichts</body></html>"
+STUB
+    chmod +x "$stub_dir/curl"
+    PATH="$stub_dir:$PATH" run bash "$DIR/check-compression.sh" http://example.test
+    [ "$status" -ne 0 ]
+    [[ "$output" != *"HTML, CSS und JavaScript werden komprimiert ausgeliefert"* ]]
+}
+
+@test "detect-sync-calls.sh liest den Timeout-Wert, nicht die Zeilennummer" {
+    # Regressionstest zu F105: die erste Ziffernfolge der grep-Zeile war der
+    # Pfad oder die Zeilennummer — aus "'timeout' => 5" wurde "1000s".
+    # detect-sync-calls.sh filtert mit "grep --include" auf *.php. BusyBox-grep
+    # kennt die Option nicht; dort ist der Test gegenstandslos.
+    echo x > "$BATS_TEST_TMPDIR/probe.php"
+    grep -rq --include='*.php' x "$BATS_TEST_TMPDIR" 2>/dev/null \
+        || skip "grep ohne --include (BusyBox) — Skript setzt GNU-grep voraus"
+    shop="$BATS_TEST_TMPDIR/shop2"
+    mkdir -p "$shop/custom/plugins/Erp"
+    printf "<?php\n\n\n\n\n\n\n\n\n\$c = ['timeout' => 5];\n" \
+        > "$shop/custom/plugins/Erp/ErpClient.php"
+    run bash "$DIR/detect-sync-calls.sh" http://example.test "$shop"
+    [[ "$output" == *"ErpClient.php:10: 5s"* ]]
+    [[ "$output" != *"Warnung: Timeout > 10s"* ]]
+}
+
+@test "check-cdn.sh meldet kein fehlendes CDN unter einem CDN-Header" {
+    # Regressionstest zu F106: x-cache, x-cdn, x-vercel-cache und x-akamai-
+    # setzten CDN_DETECTED nicht — die Ausgabe zeigte den Header und darunter
+    # "Kein CDN erkannt".
+    stub_dir="$BATS_TEST_TMPDIR/bin2"
+    mkdir -p "$stub_dir"
+    cat > "$stub_dir/curl" <<'STUB'
+#!/bin/bash
+printf 'HTTP/1.1 200 OK\r\nX-Cache: HIT\r\nContent-Type: text/html\r\n\r\n'
+STUB
+    chmod +x "$stub_dir/curl"
+    PATH="$stub_dir:$PATH" run bash "$DIR/check-cdn.sh" http://example.test
+    [[ "$output" != *"Kein CDN erkannt"* ]]
+}
+
+@test "audit-preconnects.sh findet einen Preconnect mit href vor rel" {
+    # Regressionstest zu F107: das Muster verlangte rel vor href auf einer
+    # Zeile. Shopware umbricht Link-Attribute, und die Reihenfolge ist frei.
+    stub_dir="$BATS_TEST_TMPDIR/bin3"
+    mkdir -p "$stub_dir"
+    cat > "$stub_dir/curl" <<'STUB'
+#!/bin/bash
+for a in "$@"; do
+    if [ "$a" = "-D" ]; then printf 'HTTP/1.1 200 OK\r\n\r\n'; exit 0; fi
+done
+printf '%s\n' '<html><head>' '<link href="https://fonts.gstatic.com"' \
+    '      rel="preconnect" crossorigin>' '</head><body></body></html>'
+STUB
+    chmod +x "$stub_dir/curl"
+    PATH="$stub_dir:$PATH" run bash "$DIR/audit-preconnects.sh" http://example.test
+    [[ "$output" == *"fonts.gstatic.com"* ]]
+    [[ "$output" != *"fonts.gstatic.com (kein preconnect)"* ]]
+}
+
+@test "alle Skripte nennen als Default http://localhost, nicht https" {
+    # Regressionstest zu F108: drei Skripte setzten https://localhost, obwohl
+    # ihre Usage-Zeile http nennt — run-all reichte das an alle 20 weiter.
+    run bash -c "grep -nF 'SHOP_URL=\"\${1:-https://localhost}\"' $DIR/*.sh"
+    [ "$status" -ne 0 ] || {
+        echo "https-Default gefunden: $output"
+        return 1
+    }
+}
+
+@test "run-all-diagnostics.sh kennt keinen dritten Exit-Code" {
+    # Regressionstest zu F109: bei mehr als fuenf Funden lieferte das Skript
+    # Exit 2, was in der Exit-Code-Tabelle nicht vorkommt.
+    run bash -c "grep -vE '^[[:space:]]*#' $DIR/run-all-diagnostics.sh | grep -nE '^[[:space:]]*exit 2'"
+    [ "$status" -ne 0 ] || {
+        echo "exit 2 gefunden: $output"
+        return 1
+    }
+}
+
+@test "generate-report.sh entfernt ANSI-Sequenzen aus dem Markdown-Report" {
+    # Regressionstest zu F110: der Report enthielt 6390 Farbcodes.
+    run grep -n 'x1b' "$DIR/generate-report.sh"
+    [ "$status" -eq 0 ]
+}
+
+@test "config/php-opcache.ini setzt weder fast_shutdown noch JIT aktiv" {
+    # Regressionstest zu F111: opcache.fast_shutdown gibt es seit PHP 7.2
+    # nicht mehr, und die JIT-Empfehlung war unbelegt.
+    run bash -c "grep -vE '^[[:space:]]*;' $CONFIG/php-opcache.ini | grep -nE 'fast_shutdown|^opcache\.jit'"
+    [ "$status" -ne 0 ] || {
+        echo "gefunden: $output"
+        return 1
+    }
+}
+
+@test "config/php-opcache.ini empfiehlt keinen CLI-Reset nach dem Deploy" {
+    # Regressionstest zu F112: "php -r opcache_reset()" und "cache:clear"
+    # erreichen den FPM-OPcache nicht — und die Datei setzt enable_cli=0.
+    run grep -nF 'php -r "opcache_reset();"' "$CONFIG/php-opcache.ini"
+    [ "$status" -ne 0 ] || {
+        echo "gefunden: $output"
+        return 1
+    }
+    run grep -nF 'systemctl reload php8.3-fpm' "$CONFIG/php-opcache.ini"
+    [ "$status" -eq 0 ]
+}
+
+@test "config/apache-compression.conf setzt keinen SetOutputFilter DEFLATE" {
+    # Regressionstest zu F113: das komprimiert auch JPEG, PNG, PDF und ZIP
+    # und macht die Typenliste darunter wirkungslos.
+    run bash -c "grep -vE '^[[:space:]]*#' $CONFIG/apache-compression.conf | grep -nE 'SetOutputFilter +DEFLATE'"
+    [ "$status" -ne 0 ] || {
+        echo "gefunden: $output"
+        return 1
+    }
+}
+
+@test "config/nginx-gzip.conf nennt keinen MIME-Typ application/xml+rss" {
+    # Regressionstest zu F114: den Typ gibt es nicht, richtig ist
+    # application/rss+xml.
+    run grep -nF 'application/xml+rss' "$CONFIG/nginx-gzip.conf"
+    [ "$status" -ne 0 ] || {
+        echo "gefunden: $output"
+        return 1
+    }
+}
+
+@test "config/shopware-cache.yaml setzt keinen Cache-Adapter" {
+    # Regressionstest zu F115: config/packages/*.yaml wird alphabetisch
+    # geladen — eine aktive framework.cache-Zeile haette einen bestehenden
+    # Redis-Cache still auf das Dateisystem zurueckgeschaltet.
+    run bash -c "grep -vE '^[[:space:]]*#' $CONFIG/shopware-cache.yaml | grep -nE '^[[:space:]]*(framework:|app: cache\.adapter)'"
+    [ "$status" -ne 0 ] || {
+        echo "gefunden: $output"
+        return 1
+    }
+}
+
+@test "detect-n1-queries.sh raet den Slow-Log-Pfad nicht" {
+    # Regressionstest zu F116: /var/log/mysql/slow.log ist nicht der
+    # Standardwert — MySQL schreibt nach <hostname>-slow.log im Datenverzeichnis.
+    run bash -c "grep -vE '^[[:space:]]*#' $DIR/detect-n1-queries.sh | grep -nF '/var/log/mysql/slow.log'"
+    [ "$status" -ne 0 ] || {
+        echo "fester Pfad gefunden: $output"
+        return 1
+    }
+    run grep -nF 'slow_query_log_file' "$DIR/detect-n1-queries.sh"
+    [ "$status" -eq 0 ]
+}
+
+@test "die DATABASE_URL-Zerlegung haelt ein @ im Passwort aus" {
+    # Regressionstest zu F117: "${DB_REST%%@*}" bricht am ersten @, und die
+    # Prozentkodierung blieb stehen.
+    for s in diagnose-slow-queries.sh profile-cart.sh audit-themes.sh detect-n1-queries.sh; do
+        run bash -c "grep -nF 'DB_CRED=\"\${DB_REST%%@*}\"' $DIR/$s"
+        [ "$status" -ne 0 ] || {
+            echo "$s zerlegt am ersten @"
+            return 1
+        }
+        run grep -nF 'urldecode' "$DIR/$s"
+        [ "$status" -eq 0 ] || {
+            echo "$s dekodiert die Prozentkodierung nicht"
+            return 1
+        }
+    done
 }
