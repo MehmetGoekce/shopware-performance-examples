@@ -160,6 +160,47 @@ jobs:
             -v "$PWD/chapters/11-cdn-integration/config/nginx-cdn-headers.conf:/etc/nginx/ch11-cdn-headers.conf:ro" \
             nginx:alpine nginx -t
 
+      - name: Validate chapter 11 HTTP/3 config
+        run: |
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+            -keyout key.pem -out cert.pem -subj "/CN=shop.example" 2>/dev/null
+          mkdir -p tls && mv key.pem cert.pem tls/
+          cat > http3-test.conf <<'CONF'
+          events {}
+          http {
+              server {
+                  server_name shop.example;
+                  ssl_certificate     /etc/nginx/tls/cert.pem;
+                  ssl_certificate_key /etc/nginx/tls/key.pem;
+                  include /etc/nginx/ch11-http3.conf;
+                  location / { return 200 "ok"; }
+              }
+          }
+          CONF
+          docker run --rm \
+            -v "$PWD/http3-test.conf:/etc/nginx/nginx.conf:ro" \
+            -v "$PWD/chapters/11-cdn-integration/config/nginx-http3.conf:/etc/nginx/ch11-http3.conf:ro" \
+            -v "$PWD/tls:/etc/nginx/tls:ro" \
+            nginx:alpine nginx -t
+
+      - name: Validate chapter 11 Brotli config
+        run: |
+          cat > brotli-test.conf <<'CONF'
+          events {}
+          http {
+              include /etc/nginx/ch11-brotli.conf;
+              server {
+                  listen 8080;
+                  location / { return 200 "ok"; }
+              }
+          }
+          CONF
+          # Das offizielle nginx-Image bringt ngx_brotli nicht mit.
+          docker run --rm --entrypoint nginx \
+            -v "$PWD/brotli-test.conf:/etc/nginx/nginx.conf:ro" \
+            -v "$PWD/chapters/11-cdn-integration/config/nginx-brotli.conf:/etc/nginx/ch11-brotli.conf:ro" \
+            fholzer/nginx-brotli:latest -t
+
   bats:
     name: BATS Shell Tests
     runs-on: ubuntu-latest
