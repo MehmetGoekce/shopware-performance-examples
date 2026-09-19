@@ -20,12 +20,18 @@ declare(strict_types=1);
  * implement cache tags as an alternative solution". URLs muessen vollqualifiziert
  * sein (mit Schema und Host).
  *
+ * Alle Methoden geben bool zurueck und werfen nie. Das ist Absicht: der Aufrufer
+ * haengt an einem DAL-Write-Event (product.written feuert bei jeder Bestellung).
+ * Wuerde eine Cloudflare-Stoerung hier eine TransportException durchreichen,
+ * scheiterte der Write - aus einem CDN-Ausfall wuerde ein Shop-Ausfall.
+ *
  * @see https://developers.cloudflare.com/cache/how-to/purge-cache/
  * @see https://github.com/MehmetGoekce/shopware-performance-examples
  */
 
 namespace YourPlugin\Service;
 
+use Psr\Log\LoggerInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 class CloudflarePurgeService
@@ -40,6 +46,7 @@ class CloudflarePurgeService
 
     public function __construct(
         private readonly HttpClientInterface $httpClient,
+        private readonly LoggerInterface $logger,
         private readonly string $zoneId,
         private readonly string $apiToken
     ) {
@@ -126,26 +133,53 @@ class CloudflarePurgeService
      */
     private function dispatch(array $payload): bool
     {
-        $response = $this->httpClient->request(
-            'POST',
-            sprintf('%s/zones/%s/purge_cache', self::API_BASE, $this->zoneId),
-            [
-                'headers' => [
-                    'Authorization' => 'Bearer ' . $this->apiToken,
-                    'Content-Type' => 'application/json',
-                ],
-                'json' => $payload,
-            ]
-        );
+        // Symfony HttpClient arbeitet lazy: erst getStatusCode()/toArray()
+        // loest den Request wirklich aus und wirft bei DNS-, Verbindungs- oder
+        // TLS-Fehlern eine TransportException. Ohne dieses catch flaeche der
+        // Fehler bis in den DAL-Write hoch.
+        try {
+            $response = $this->httpClient->request(
+                'POST',
+                sprintf('%s/zones/%s/purge_cache', self::API_BASE, $this->zoneId),
+                [
+                    'headers' => [
+                        'Authorization' => 'Bearer ' . $this->apiToken,
+                        'Content-Type' => 'application/json',
+                    ],
+                    'json' => $payload,
+                ]
+            );
 
-        // Cloudflare antwortet auch bei fachlichen Fehlern mit 200 und
-        // "success": false - der Status allein reicht als Erfolgskriterium nicht.
-        if ($response->getStatusCode() !== 200) {
+            // Cloudflare antwortet auch bei fachlichen Fehlern mit 200 und
+            // "success": false - der Status allein reicht als Erfolgskriterium nicht.
+            if ($response->getStatusCode() !== 200) {
+                $this->logger->error('Cloudflare-Purge fehlgeschlagen', [
+                    'status' => $response->getStatusCode(),
+                    'payload' => array_keys($payload),
+                ]);
+
+                return false;
+            }
+
+            $body = $response->toArray(false);
+
+            if (($body['success'] ?? false) !== true) {
+                $this->logger->error('Cloudflare-Purge abgelehnt', [
+                    'errors' => $body['errors'] ?? [],
+                    'payload' => array_keys($payload),
+                ]);
+
+                return false;
+            }
+
+            return true;
+        } catch (\Throwable $e) {
+            $this->logger->error('Cloudflare-Purge nicht zustellbar', [
+                'error' => $e->getMessage(),
+                'payload' => array_keys($payload),
+            ]);
+
             return false;
         }
-
-        $body = $response->toArray(false);
-
-        return ($body['success'] ?? false) === true;
     }
 }

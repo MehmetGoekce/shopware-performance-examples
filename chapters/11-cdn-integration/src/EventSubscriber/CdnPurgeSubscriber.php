@@ -54,10 +54,20 @@ class CdnPurgeSubscriber implements EventSubscriberInterface
     }
 
     /**
-     * Kategorie-Writes treffen die Navigation; die Listing-Seiten selbst taggt
-     * Shopware nicht ("List-type routes are not tagged with all entities
-     * returned in the response ... These routes instead rely on their TTL").
-     * Deshalb wird hier nur invalidiert, was tatsaechlich getaggt ist.
+     * Die Tag-Namen stehen im Core, nicht im Handbuch, und keiner davon heisst
+     * schlicht "category-<id>":
+     *
+     *   CachedCategoryRoute::buildName()        -> category-route-<id>
+     *   ProductListingRoute::buildName()        -> product-listing-<id>
+     *   CachedProductListingRoute::buildName()  -> product-listing-route-<id>
+     *
+     * Wer "category-<id>" purgt, purgt ins Leere - der Tag existiert nicht.
+     * "navigation" dagegen schon, den traegt jede Seite mit Hauptnavigation.
+     *
+     * Die Produkte *innerhalb* einer Listing-Seite sind nicht einzeln getaggt
+     * ("List-type routes are not tagged with all entities returned in the
+     * response ... These routes instead rely on their TTL") - ein neues Produkt
+     * in einer Kategorie erscheint also erst nach Ablauf der TTL.
      *
      * @see https://developer.shopware.com/docs/concepts/framework/http_cache.html
      */
@@ -66,7 +76,9 @@ class CdnPurgeSubscriber implements EventSubscriberInterface
         $tags = ['navigation'];
 
         foreach ($event->getIds() as $id) {
-            $tags[] = 'category-' . $id;
+            $tags[] = 'category-route-' . $id;
+            $tags[] = 'product-listing-' . $id;
+            $tags[] = 'product-listing-route-' . $id;
         }
 
         $this->purgeService->purgeByTags($tags);
