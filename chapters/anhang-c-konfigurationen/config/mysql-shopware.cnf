@@ -22,27 +22,44 @@
 # InnoDB Buffer Pool
 # ==============================================================================
 
-# 70-80 % des RAM, wenn MySQL die Maschine fuer sich hat. 16 GB * 0,7 = 11 GB.
-# Teilt sich MySQL den Server mit PHP-FPM und Redis, ist eher ein Viertel
-# realistisch — dann hier 4G und den Rest den anderen Diensten lassen.
-innodb_buffer_pool_size = 11G
+# 4G ist der Wert fuer den 16-GB-Server aus dem Buch, auf dem AUCH PHP-FPM,
+# nginx und zwei Redis-Instanzen laufen. Rechnung fuer diese Maschine:
+#   MySQL 4 + PHP-FPM (50 Worker * ~80 MB) 4 + Redis-Cache 4 + Redis-Session 1
+#   = 13 GB, der Rest bleibt fuer OS und Dateisystem-Cache.
+# Die verbreiteten 70-80 % des RAM gelten fuer einen Server, auf dem MySQL
+# allein laeuft — dort waeren es 11G. Rechnen Sie nach, statt die Zahl zu
+# uebernehmen: ein Buffer Pool, der den Server ins Swappen bringt, ist
+# langsamer als ein kleiner.
+innodb_buffer_pool_size = 4G
 
-# Eine Instanz je GB, hoechstens 64. Wirkt erst ab 1 GB Poolgroesse.
-innodb_buffer_pool_instances = 11
+# Eine Instanz je GB, hoechstens 64. Geprueft: bei einem Pool unter 1 GB setzt
+# MySQL den Wert stillschweigend auf 1 zurueck (512M mit instances=8 ergab
+# innodb_buffer_pool_instances = 1).
+innodb_buffer_pool_instances = 4
 
 # ==============================================================================
 # Redo-Log
 # ==============================================================================
 
-# WICHTIG: innodb_log_file_size ist seit MySQL 8.0.30 abgekuendigt. Steht es
-# allein in der Konfiguration, protokolliert der Server MY-013907 — und
-# innodb_redo_log_capacity bleibt trotzdem auf dem Vorgabewert von 100 MB
-# stehen (in 8.0.46 nachgestellt). Der Wert wirkt also nicht, sondern nur die
-# Warnung erscheint.
+# WICHTIG: innodb_log_file_size ist seit MySQL 8.0.30 abgekuendigt — und die
+# Falle daran ist NICHT, dass es wirkungslos waere. Es wirkt, nur anders als
+# gemeint: MySQL rechnet
+#   innodb_redo_log_capacity = innodb_log_file_size * innodb_log_files_in_group
+# und der zweite Faktor ist ab Werk 2. Aus "innodb_log_file_size = 2G" wird
+# also ein 4-GB-Redo-Log.
 #
-# Richtig ist die neue Direktive. Als Anhaltswert etwa ein Viertel des Buffer
-# Pools, mindestens 512 MB.
-innodb_redo_log_capacity = 2G
+# Sichtbar ist das fast nirgends: SHOW VARIABLES LIKE 'innodb_redo_log_capacity'
+# zeigt weiter den Vorgabewert 104857600. Nur das Startlog (MY-013907) und
+# SHOW GLOBAL STATUS LIKE 'Innodb_redo_log_capacity_resized' nennen den echten
+# Wert — und auf der Platte liegen die Dateien. In 8.0.46 auf frischem Datadir
+# nachgestellt:
+#   innodb_log_file_size = 512M    -> 1,00 GB unter /var/lib/mysql/#innodb_redo
+#   innodb_redo_log_capacity = 512M -> 0,50 GB
+#   keines von beiden               -> 0,10 GB
+#
+# Richtig ist die neue Direktive: sie meint genau das, was dort steht.
+# Als Anhaltswert etwa ein Viertel des Buffer Pools, mindestens 512 MB.
+innodb_redo_log_capacity = 1G
 
 innodb_log_buffer_size = 64M
 

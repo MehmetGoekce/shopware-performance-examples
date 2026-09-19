@@ -1,7 +1,7 @@
 # Anhang C: Konfigurationen
 
-Die Vorlagen, die Anhang C des Buchs zeigt — jede hier im Container geprueft,
-jede mit einem Gate in der CI.
+Die Vorlagen, die Anhang C des Buchs zeigt — jede hier im Container eingespielt
+und laufen gelassen, nicht nur gelesen.
 
 Was hier **nicht** liegt, liegt bei dem Kapitel, das es erklaert. Zweimal
 dieselbe Konfiguration an zwei Stellen laeuft auseinander, und Anhaenge sind
@@ -16,23 +16,38 @@ die Stelle, an der das zuerst auffaellt:
 | Cache-Header vor einem CDN | `../11-cdn-integration/config/nginx-cdn-headers.conf` |
 | Redis-Instanzen, Sentinel | `../10-redis-sentinel/config/` |
 | `cache.yaml` (Redis als Application Cache) | `../07-shopware-cache/config/framework.yaml` |
-| `varnish.yaml`, `http_cache.yaml` | `../06-http-cache/config/` |
+| `http_cache.yaml` und `varnish.yaml` | `../06-http-cache/config/shopware.yaml` und `varnish.yaml` |
 
 ## Dateien
 
 | Datei | Ziel auf dem Server | Geprueft mit |
 |---|---|---|
-| `config/nginx-shopware.conf` | `/etc/nginx/sites-available/shopware.conf` | `nginx -t` (nginx 1.27) + Header-Abfrage am laufenden nginx |
+| `config/nginx-shopware.conf` | `/etc/nginx/sites-available/shopware.conf` | `nginx -t` (nginx 1.27.5) + Header- und ACME-Abfrage am laufenden nginx |
 | `config/php-fpm-pool.conf` | `/etc/php/8.3/fpm/pool.d/shopware.conf` | `php-fpm -t` + FastCGI-Request (`cgi-fcgi`) gegen `php:8.3-fpm` |
-| `config/mysql-shopware.cnf` | `/etc/mysql/mysql.conf.d/shopware.cnf` | `mysqld --validate-config` + Start von `mysql:8.0` mit `SHOW VARIABLES` |
-| `config/supervisor-shopware.conf` | `/etc/supervisor/conf.d/shopware-worker.conf` | `supervisord -n` startet alle drei Prozesse |
-| `config/env.local.example` | `<shop>/.env.local` | im Testshop (Shopware 6.6.10.6) eingespielt, Shop antwortet mit 200 |
+| `config/mysql-shopware.cnf` | `/etc/mysql/mysql.conf.d/shopware.cnf` | `mysqld --validate-config` + Start von `mysql:8.0` auf frischem Datadir, `SHOW VARIABLES` und Groesse von `#innodb_redo` |
+| `config/supervisor-shopware.conf` | `/etc/supervisor/conf.d/shopware-worker.conf` | `supervisord -n`, alle drei Prozesse erreichen RUNNING |
+| `config/env.local.example` | `<shop>/.env.local` | im Testshop (Shopware 6.6.10.6) eingespielt, Shop antwortet mit 200, Keys in beiden Redis-Instanzen |
+
+## Was die CI prueft — und was nicht
+
+Der Job `appendix-configs` ist ein **Syntax- und Start-Gate**, kein
+Verhaltens-Gate. Er faengt, was einen Dienst nicht starten laesst:
+
+| Schritt | Faengt | Faengt nicht |
+|---|---|---|
+| `nginx -t` + Laufzeitabfrage | Syntaxfehler, fehlende Direktiven, dazu die drei Fallen unten als echte HTTP-Antworten | semantische Fehler ausserhalb dieser drei Pruefungen, z. B. einen Socket-Pfad, der nicht zum FPM-Pool passt |
+| `php-fpm -t` | Tippfehler, unplausible `pm.*`-Kombinationen, fehlendes Log-Verzeichnis | ungueltige `php_value`-Werte (`memory_limit = 512Mib` geht durch) |
+| `mysqld --validate-config` | unbekannte Variablen und Tippfehler | Werte ausserhalb des gueltigen Bereichs (`instances = 999` geht durch) und **abgekuendigte** Direktiven — die Warnung MY-013907 erscheint erst beim echten Start |
+| `supervisord -n` | Parsefehler, `numprocs` ohne `process_name`, falscher PHP-Pfad, Programme, die nicht RUNNING erreichen | Tippfehler im Shopware-Befehl selbst: der Schritt stubt `php` und `bin/console` weg, ein `messenger:consume asyncc` besteht ihn |
+
+Fuer `config/env.local.example` gibt es kein Gate — die Datei wird von Hand im
+Testshop geprueft.
 
 ## Drei Fallen, die diese Vorlagen vermeiden
 
 **1. `expires` und `add_header Cache-Control` zusammen.** Beide Direktiven
 erzeugen je einen eigenen `Cache-Control`-Header. Die Antwort traegt ihn dann
-doppelt — nachgestellt an nginx 1.27:
+doppelt — nachgestellt an nginx 1.27.5:
 
 ```
 cache-control: max-age=31536000
@@ -43,12 +58,16 @@ cache-control: public, immutable
 nur, solange der innere Block keinen einzigen eigenen setzt. Mit einem
 eigenen `add_header` faellt die komplette geerbte Liste weg — die
 Security-Header des `server`-Blocks fehlen dann auf jeder CSS-, JS-, Font-
-und Bildantwort. `nginx-shopware.conf` wiederholt sie deshalb in jedem
-Asset-Block.
+und Bildantwort. `nginx-shopware.conf` wiederholt deshalb **alle drei** in
+jedem Asset-Block, auch `Referrer-Policy`.
 
-**3. `location ~ /\. { deny all; }` ohne Ausnahme.** Die Regel trifft auch
-`/.well-known/acme-challenge/`. Gemessen: 403 statt 200 — certbot kann das
-Zertifikat nicht mehr erneuern, das im selben `server`-Block eingebunden ist.
+**3. `location ~ /\. { deny all; }` trifft auch `/.well-known/`.** Gemessen:
+403 statt 200 — certbot kann das Zertifikat nicht mehr erneuern, das im
+selben `server`-Block eingebunden ist. Was den ACME-Block rettet, ist der
+Modifier `^~`, **nicht** seine Position im File: `^~` beendet die
+Location-Suche, bevor Regex-Locations geprueft werden. Mit `^~` antwortet die
+Challenge auch dann mit 200, wenn der Block hinter der Punkt-Regel steht —
+ohne `^~` bekommt sie 403, auch wenn er davor steht. Beides nachgestellt.
 
 ## Zwei Variablen, nicht eine
 
@@ -61,8 +80,26 @@ HTTP 500. Der Fehler steht nur im `var/log/prod-*.log`:
 Environment variable not found: "REDIS_SESSION_URL".
 ```
 
+## Das RAM-Budget geht auf
+
+Alle Zahlen gehoeren zu **einem** 16-GB-Server, auf dem alles zusammen laeuft:
+
+| Dienst | RAM |
+|---|---|
+| MySQL Buffer Pool | 4 GB |
+| PHP-FPM, 50 Worker à ~80 MB | 4 GB |
+| Redis Cache | 4 GB |
+| Redis Sessions | 1 GB |
+| **Summe** | **13 GB** |
+
+Der Rest bleibt fuer OS und Dateisystem-Cache. Die verbreiteten «70–80 % des
+RAM fuer den Buffer Pool» gelten fuer einen Server, auf dem MySQL allein
+laeuft — auf dieser Maschine waeren das 11 GB und der Server wuerde swappen.
+
 ## Versionen
 
 Geprueft am 2026-09-19 gegen Shopware 6.6.10.6 (`dockware/dev:6.6.10.6`),
-PHP 8.3.23, MySQL 8.0.46, Redis 7.4, nginx 1.27.5 und 1.24.0, supervisor 4.2.
-Vollstaendige Matrix: `../../COMPATIBILITY.md`.
+PHP 8.3.23, MySQL 8.0.46, Redis 7.4, nginx 1.27.5 und supervisor 4.3.0.
+Gegen nginx 1.24.0 wurde nur gegengeprueft, dass `http2 on;` dort nicht
+existiert — die Vorlage laeuft auf 1.24 erst nach der im Kopf beschriebenen
+Anpassung. Vollstaendige Matrix: `../../COMPATIBILITY.md`.
