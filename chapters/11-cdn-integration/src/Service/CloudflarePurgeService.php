@@ -153,7 +153,7 @@ class CloudflarePurgeService
             // Cloudflare antwortet auch bei fachlichen Fehlern mit 200 und
             // "success": false - der Status allein reicht als Erfolgskriterium nicht.
             if ($response->getStatusCode() !== 200) {
-                $this->logger->error('Cloudflare-Purge fehlgeschlagen', [
+                $this->logger->error('Cloudflare purge failed', [
                     'status' => $response->getStatusCode(),
                     'payload' => array_keys($payload),
                 ]);
@@ -164,7 +164,7 @@ class CloudflarePurgeService
             $body = $response->toArray(false);
 
             if (($body['success'] ?? false) !== true) {
-                $this->logger->error('Cloudflare-Purge abgelehnt', [
+                $this->logger->error('Cloudflare purge rejected', [
                     'errors' => $body['errors'] ?? [],
                     'payload' => array_keys($payload),
                 ]);
@@ -174,7 +174,7 @@ class CloudflarePurgeService
 
             return true;
         } catch (\Throwable $e) {
-            $this->logger->error('Cloudflare-Purge nicht zustellbar', [
+            $this->logger->error('Cloudflare purge undeliverable', [
                 'error' => $e->getMessage(),
                 'payload' => array_keys($payload),
             ]);
