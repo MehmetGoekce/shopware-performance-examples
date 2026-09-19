@@ -102,6 +102,8 @@ probe() {
 }
 
 PROBLEMS=0
+SKIPPED=0
+CHECKED=0
 
 report() {
     # $1 = Beschriftung, $2 = URL
@@ -109,8 +111,10 @@ report() {
     printf '   %-12s ' "${label}"
     if [[ -z "${url}" ]]; then
         echo "keine URL im HTML gefunden — uebersprungen"
+        SKIPPED=$((SKIPPED + 1))
         return
     fi
+    CHECKED=$((CHECKED + 1))
     info=$(probe "${url}")
     ct="${info%%|*}"
     ce="${info#*|}"
@@ -155,9 +159,23 @@ echo
 echo "=== Ergebnis ==="
 echo
 
-if [[ "${PROBLEMS}" -eq 0 ]]; then
+if [[ "${CHECKED}" -eq 0 ]]; then
+    echo "Keine der drei Ressourcen war pruefbar — nichts gemessen."
+    echo "Richtige URL? Ohne Host-Header antwortet Shopware mit"
+    echo "\"Sales Channel Not Found\" — und zwar als HTTP 200."
+    exit 69
+fi
+
+if [[ "${PROBLEMS}" -eq 0 && "${SKIPPED}" -eq 0 ]]; then
     echo "HTML, CSS und JavaScript werden komprimiert ausgeliefert."
     exit 0
+fi
+
+if [[ "${PROBLEMS}" -eq 0 ]]; then
+    echo "Pruefbar waren ${CHECKED} von 3 Ressourcen; diese werden komprimiert"
+    echo "ausgeliefert. Zu den uebrigen ${SKIPPED} (keine URL im HTML gefunden)"
+    echo "sagt dieser Lauf nichts."
+    exit 1
 fi
 
 cat <<'EOF'

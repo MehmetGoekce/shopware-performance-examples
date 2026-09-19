@@ -53,13 +53,41 @@ echo "=== N+1 Query Detection ==="
 echo "Shop: ${SHOP_PATH}"
 echo ""
 
+# DATABASE_URL lesen, damit der Slow-Log-Pfad bei MySQL erfragt werden kann.
+DB_URL=""
+for f in "${SHOP_PATH}/.env" "${SHOP_PATH}/.env.local"; do
+    [[ -f "$f" ]] || continue
+    line=$(grep -E '^DATABASE_URL=' "$f" | tail -1 || true)
+    [[ -n "${line}" ]] && DB_URL="${line#DATABASE_URL=}"
+done
+DB_URL="${DB_URL%\"}"; DB_URL="${DB_URL#\"}"
+
+if [[ -n "${DB_URL}" ]]; then
+    DB_REST="${DB_URL#*://}"
+    DB_CRED="${DB_REST%@*}"
+    DB_HOSTPART="${DB_REST##*@}"
+    DB_USER="${DB_CRED%%:*}"
+    DB_PASS="${DB_CRED#*:}"
+    urldecode() { printf '%b' "${1//%/\\x}"; }
+    DB_USER=$(urldecode "${DB_USER}")
+    DB_PASS=$(urldecode "${DB_PASS}")
+    DB_HOSTPORT="${DB_HOSTPART%%/*}"
+    DB_HOST="${DB_HOSTPORT%%:*}"
+    DB_PORT="${DB_HOSTPORT#*:}"
+    [[ "${DB_PORT}" == "${DB_HOST}" ]] && DB_PORT=3306
+fi
+
 ISSUES=0
 
 # Methode 1: Doctrine Query Log analysieren
 echo -e "${BLUE}1. Doctrine Query Log Analyse${NC}"
 
 LOG_FILE="${SHOP_PATH}/var/log/dev.log"
-PROFILER_DIR="${SHOP_PATH}/var/cache/dev/profiler"
+# Shopware 6.6 haengt einen Hash an das Cache-Verzeichnis: var/cache/dev_h<hash>.
+PROFILER_DIR=""
+for d in "${SHOP_PATH}"/var/cache/dev*/profiler; do
+    [[ -d "$d" ]] && PROFILER_DIR="$d" && break
+done
 
 if [[ -f "${LOG_FILE}" ]]; then
     echo "   Analysiere: ${LOG_FILE}"
@@ -91,8 +119,16 @@ fi
 echo ""
 echo -e "${BLUE}2. MySQL Slow Query Log${NC}"
 
-SLOW_LOG="/var/log/mysql/slow.log"
-if [[ -f "${SLOW_LOG}" ]]; then
+# Den Pfad nennt MySQL selbst. "/var/log/mysql/slow.log" ist NICHT der
+# Standardwert — ab Werk schreibt MySQL nach <hostname>-slow.log im
+# Datenverzeichnis.
+SLOW_LOG=""
+if command -v mysql > /dev/null 2>&1 && [[ -n "${DB_URL:-}" ]]; then
+    SLOW_LOG=$(MYSQL_PWD="${DB_PASS:-}" mysql -h"${DB_HOST:-127.0.0.1}" \
+        -P"${DB_PORT:-3306}" -u"${DB_USER:-root}" -N -B \
+        -e "SELECT @@global.slow_query_log_file;" 2>/dev/null || true)
+fi
+if [[ -n "${SLOW_LOG}" && -f "${SLOW_LOG}" ]]; then
     echo "   Analysiere: ${SLOW_LOG}"
 
     # Letzte 1000 Zeilen analysieren
@@ -106,7 +142,11 @@ if [[ -f "${SLOW_LOG}" ]]; then
         echo "${SLOW_PATTERNS}"
     fi
 else
-    echo -e "   ${YELLOW}Slow Query Log nicht gefunden${NC}"
+    if [[ -n "${SLOW_LOG}" ]]; then
+        echo -e "   ${YELLOW}Slow Query Log laut MySQL: ${SLOW_LOG} — nicht lesbar${NC}"
+    else
+        echo -e "   ${YELLOW}Slow Query Log nicht gefunden${NC}"
+    fi
     echo "   SET GLOBAL braucht SUPER/SYSTEM_VARIABLES_ADMIN und ist auf"
     echo "   Managed-MySQL nicht erlaubt. Das Log gehoert in die my.cnf."
     echo "   Ohne Sonderrechte geht es auch so:"
@@ -122,32 +162,41 @@ echo -e "${BLUE}3. Code-Analyse (typische N+1 Patterns)${NC}"
 if [[ -d "${SHOP_PATH}/custom/plugins" ]]; then
     echo "   Suche in custom/plugins..."
 
-    # Pattern 1: Loop mit einzelnen Repository-Calls
-    LOOP_QUERIES=$(grep -rn 'foreach.*\$.*repository->search' "${SHOP_PATH}/custom/plugins" 2>/dev/null | wc -l || true)
+    # Die Aufrufe stehen selten auf derselben Zeile wie das foreach.
+    # Deshalb mit Kontext suchen: ein Repository-Aufruf innerhalb von fuenf
+    # Zeilen nach einem foreach ist der Verdachtsfall.
+    LOOP_QUERIES=$(grep -rn -A5 --include='*.php' 'foreach' \
+        "${SHOP_PATH}/custom/plugins" 2>/dev/null \
+        | grep -cE '(repository|Repository)->(search|searchIds)\(' || true)
 
-    # Pattern 2: getEntity() in Loop
-    GET_ENTITY=$(grep -rn 'foreach.*getEntity\|foreach.*get(' "${SHOP_PATH}/custom/plugins" 2>/dev/null | \
-        grep -v 'getEntities\|getData' | wc -l || true)
+    GET_ENTITY=$(grep -rn -A5 --include='*.php' 'foreach' \
+        "${SHOP_PATH}/custom/plugins" 2>/dev/null \
+        | grep -E -e '->(getEntity|get)\(' \
+        | grep -vcE 'getEntities|getData' || true)
 
-    # Pattern 3: Fehlende Associations
-    MISSING_ASSOC=$(grep -rn 'Criteria()' "${SHOP_PATH}/custom/plugins" 2>/dev/null | \
-        grep -v 'addAssociation' | wc -l || true)
+    # Criteria ohne addAssociation im selben File — das ist schwaecher als
+    # die beiden oberen und geht deshalb nicht in die Bewertung ein.
+    MISSING_ASSOC=0
+    while IFS= read -r file; do
+        if ! grep -q 'addAssociation' "${file}" 2>/dev/null; then
+            MISSING_ASSOC=$((MISSING_ASSOC + 1))
+        fi
+    done < <(grep -rl --include='*.php' 'new Criteria(' \
+        "${SHOP_PATH}/custom/plugins" 2>/dev/null || true)
 
     echo ""
-    echo "   Potentielle N+1 Patterns:"
-    echo "   - Repository-Calls in Loops: ${LOOP_QUERIES}"
-    echo "   - getEntity() in Loops: ${GET_ENTITY}"
-    echo "   - Criteria ohne Association: ${MISSING_ASSOC}"
+    echo "   Verdachtsfaelle aus der Code-Suche:"
+    echo "   - Repository-Aufrufe nahe einem foreach: ${LOOP_QUERIES}"
+    echo "   - getEntity()/get() nahe einem foreach:   ${GET_ENTITY}"
+    echo "   - Dateien mit Criteria ohne Association:  ${MISSING_ASSOC}  (nur Hinweis)"
 
     if [[ "${LOOP_QUERIES}" -gt 0 ]] || [[ "${GET_ENTITY}" -gt 5 ]]; then
         ISSUES=$((ISSUES + 1))
         echo ""
-        echo -e "   ${YELLOW}Verdächtige Stellen gefunden${NC}"
-
-        # Beispiele zeigen
+        echo -e "   ${YELLOW}Verdaechtige Stellen — von Hand ansehen:${NC}"
         echo ""
-        echo "   Beispiele:"
-        grep -rn 'foreach.*\$.*repository->search' "${SHOP_PATH}/custom/plugins" 2>/dev/null | head -3
+        grep -rn -A5 --include='*.php' 'foreach' "${SHOP_PATH}/custom/plugins" 2>/dev/null \
+            | grep -E '(repository|Repository)->(search|searchIds)\(' | head -3 || true
     fi
 else
     echo "   custom/plugins nicht gefunden"
@@ -180,6 +229,15 @@ echo "=== Zusammenfassung ==="
 
 if [[ "${ISSUES}" -eq 0 ]]; then
     echo -e "${GREEN}Keine offensichtlichen N+1 Probleme erkannt.${NC}"
+    echo
+    echo "Das ist eine Textsuche im eigenen Plugin-Code, kein Beweis. Ein"
+    echo "N+1 zeigt sich daran, dass die Zahl der Abfragen mit der Zahl der"
+    echo "Datensaetze waechst. Dafuer dieselbe Seite einmal mit einem und"
+    echo "einmal mit zwanzig Produkten abrufen und dazwischen vergleichen:"
+    echo "  SELECT SUM(COUNT_STAR) FROM performance_schema."
+    echo "  events_statements_summary_by_digest WHERE SCHEMA_NAME = 'shopware';"
+    echo "(vorher mit TRUNCATE TABLE performance_schema."
+    echo "events_statements_summary_by_digest zuruecksetzen)."
     echo ""
     echo "Hinweis: Für detaillierte Analyse:"
     echo "  1. APP_ENV=dev setzen"

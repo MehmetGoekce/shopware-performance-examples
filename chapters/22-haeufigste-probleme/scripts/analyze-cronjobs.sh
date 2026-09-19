@@ -64,7 +64,16 @@ echo
 
 ISSUES=0
 
-echo "1. Crontab-Eintraege"
+# Abschnitte fortlaufend nummerieren. Fest verdrahtete Nummern springen,
+# sobald ein Abschnitt uebersprungen wird (1 -> 2 -> 4).
+SECTION_NO=0
+section() {
+    SECTION_NO=$((SECTION_NO + 1))
+    echo "${SECTION_NO}. $1"
+}
+
+
+section "Crontab-Eintraege"
 if [[ -n "${CRONTAB_FILE:-}" ]]; then
     CRON=$(cat "${CRONTAB_FILE}" 2>/dev/null || true)
     echo "   Quelle: ${CRONTAB_FILE}"
@@ -79,7 +88,7 @@ if [[ -z "${SHOPWARE_LINES}" ]]; then
 else
     printf '%s\n' "${SHOPWARE_LINES}" | sed 's/^/   /'
     echo
-    echo "2. Bewertung der Zeilen"
+    section "Bewertung der Zeilen"
 
     while IFS= read -r line; do
         [[ -z "${line}" ]] && continue
@@ -121,7 +130,7 @@ else
 fi
 
 echo
-echo "3. Laufende Hintergrundprozesse"
+section "Laufende Hintergrundprozesse"
 # Auf php-Prozesse einschraenken. Ein blosses "bin/console scheduled-task:run"
 # als Muster trifft auch Shells, die diese Zeichenkette nur als Argument tragen
 # (etwa ein Editor oder dieses Skript in einer Pipeline).
@@ -149,7 +158,7 @@ fi
 
 if [[ -f "${SHOP_PATH}/bin/console" ]]; then
     echo
-    echo "4. Faellige Scheduled Tasks laut Datenbank"
+    section "Faellige Scheduled Tasks laut Datenbank"
     if OVERDUE=$(php "${SHOP_PATH}/bin/console" scheduled-task:list 2>/dev/null); then
         printf '%s\n' "${OVERDUE}" | head -25 | sed 's/^/   /'
     else

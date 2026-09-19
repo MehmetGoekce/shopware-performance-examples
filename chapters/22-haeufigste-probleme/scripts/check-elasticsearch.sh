@@ -83,7 +83,15 @@ ES_URL=$(env_value OPENSEARCH_URL)
 ES_PREFIX=$(env_value SHOPWARE_ES_INDEX_PREFIX)
 ES_PREFIX="${ES_PREFIX:-sw}"
 
-echo "1. Konfiguration in .env / .env.local"
+# Abschnitte fortlaufend nummerieren. Fest verdrahtete Nummern springen,
+# sobald ein Abschnitt uebersprungen wird (1 -> 2 -> 4).
+SECTION_NO=0
+section() {
+    SECTION_NO=$((SECTION_NO + 1))
+    echo "${SECTION_NO}. $1"
+}
+
+section "Konfiguration in .env / .env.local"
 echo "   SHOPWARE_ES_ENABLED          = ${ES_ENABLED:-(nicht gesetzt)}"
 echo "   SHOPWARE_ES_INDEXING_ENABLED = ${ES_INDEXING:-(nicht gesetzt)}"
 echo "   OPENSEARCH_URL               = ${ES_URL:-(nicht gesetzt)}"
@@ -106,13 +114,14 @@ esac
 
 ISSUES=0
 
+
 if [[ "${ES_ENABLED}" != "1" ]]; then
     echo "   Die Suche laeuft NICHT ueber Elasticsearch."
     ISSUES=$((ISSUES + 1))
 fi
 
 echo
-echo "2. Cluster unter ${ES_BASE}"
+section "Cluster unter ${ES_BASE}"
 if ROOT=$(curl -sS --connect-timeout 5 "${ES_BASE}" 2>/dev/null) && [[ -n "${ROOT}" ]]; then
     VERSION=$(printf '%s' "${ROOT}" | grep -oE '"number"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | cut -d'"' -f4)
     DISTRO=$(printf '%s' "${ROOT}" | grep -oE '"distribution"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | cut -d'"' -f4)
@@ -130,7 +139,7 @@ if ROOT=$(curl -sS --connect-timeout 5 "${ES_BASE}" 2>/dev/null) && [[ -n "${ROO
     fi
 
     echo
-    echo "3. Shopware-Indizes (Praefix ${ES_PREFIX})"
+    section "Shopware-Indizes (Praefix ${ES_PREFIX})"
     INDICES=$(curl -sS "${ES_BASE}/_cat/indices/${ES_PREFIX}*?h=index,docs.count,store.size" 2>/dev/null || true)
     if [[ -z "${INDICES}" ]]; then
         echo "   Keine Indizes mit diesem Praefix."
@@ -146,7 +155,7 @@ fi
 
 if [[ -f "${SHOP_PATH}/bin/console" ]]; then
     echo
-    echo "4. Sicht von Shopware aus"
+    section "Sicht von Shopware aus"
     if STATUS=$(php "${SHOP_PATH}/bin/console" es:status 2>&1); then
         printf '%s\n' "${STATUS}" | head -20 | sed 's/^/   /'
     else

@@ -77,7 +77,10 @@ PLUGIN_JSON=$(php "${SHOP_PATH}/bin/console" plugin:list --json 2>/dev/null || t
 if [[ -z "${PLUGIN_JSON}" ]] || ! printf '%s' "${PLUGIN_JSON}" | jq -e 'type == "array"' >/dev/null 2>&1; then
     echo "Plugin-Liste konnte nicht gelesen werden." >&2
     echo "Gegenprobe: php ${SHOP_PATH}/bin/console plugin:list" >&2
-    exit 1
+    # 69 = Voraussetzung fehlt (kein php, kein jq, falscher SHOP_PATH).
+    # Ein Exit 1 hiesse "etwas gefunden" und waere im Sammellauf
+    # nicht von einem echten Fund zu unterscheiden.
+    exit 69
 fi
 
 TOTAL=$(printf '%s' "${PLUGIN_JSON}" | jq 'length')

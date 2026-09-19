@@ -90,7 +90,9 @@ run_check() {
 
     echo
     echo '```'
-    printf '%s\n' "${output}"
+    # Die Einzelskripte faerben ihre Ausgabe mit ANSI-Sequenzen. In einer
+    # Markdown-Datei sind das Steuerzeichen, kein Text.
+    printf '%s\n' "${output}" | sed -E $'s/\x1b\\[[0-9;]*m//g'
     echo '```'
     echo
     echo "---"

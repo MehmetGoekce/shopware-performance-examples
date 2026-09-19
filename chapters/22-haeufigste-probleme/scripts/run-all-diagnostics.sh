@@ -39,7 +39,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Parameter
-SHOP_URL="${1:-https://localhost}"
+SHOP_URL="${1:-http://localhost}"
 SHOP_PATH="${2:-.}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -183,11 +183,11 @@ echo "Zu jedem Punkt steht die Erklaerung in Kapitel 22 des Buchs."
 echo "Professionelles Audit: memotech.ch/performance-check"
 echo ""
 
-# Exit-Code basierend auf Ergebnis
-if [[ ${#FAILED[@]} -gt 5 ]]; then
-    exit 2  # Kritisch
-elif [[ ${#FAILED[@]} -gt 0 ]]; then
-    exit 1  # Warnungen
+# Exit-Code wie bei den Einzelskripten: 0 unauffaellig, 1 etwas gefunden.
+# Kein dritter Code fuer "viele Funde" — die Zahl steht in der Liste oben,
+# und CI-Pipelines pruefen ueblicherweise nur auf 0 oder nicht 0.
+if [[ ${#FAILED[@]} -gt 0 ]]; then
+    exit 1
 else
-    exit 0  # Alles OK
+    exit 0
 fi

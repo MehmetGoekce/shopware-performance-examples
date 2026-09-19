@@ -79,7 +79,9 @@ echo
 echo "1. Erster Request..."
 if ! HEADERS_1=$(fetch_headers "${SHOP_URL}"); then
     echo "   Shop nicht erreichbar: ${SHOP_URL}" >&2
-    exit 1
+    # 69 = Voraussetzung fehlt. Ein Exit 1 waere im Sammellauf nicht von
+    # einem echten Fund zu unterscheiden.
+    exit 69
 fi
 STATUS_1=$(printf '%s\n' "${HEADERS_1}" | grep -c '^HTTP/' || true)
 CACHE_CONTROL=$(header_value "${HEADERS_1}" "cache-control")
@@ -184,4 +186,8 @@ echo "Age-Header vorhanden (${AGE_1:-0} -> ${AGE_2:-0}), aber nicht gewachsen."
 echo "Moegliche Gruende: der Eintrag wurde gerade erst erzeugt, die TTL ist"
 echo "abgelaufen, oder jeder Request erzeugt einen eigenen Cache-Key"
 echo "(z. B. durch Tracking-Parameter — siehe shopware.http_cache.ignored_url_parameters)."
-exit 0
+echo
+echo "Der zweite Fall ist die zweite Ursache aus Problem 2 und waere ein"
+echo "echter Fund. Dieser Lauf kann die drei Faelle nicht auseinanderhalten:"
+echo "zwei Abrufe mit laengerer Pause wiederholen."
+exit 1

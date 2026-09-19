@@ -172,15 +172,25 @@ TIMEOUT_CONFIG=$(grep -rn "timeout" "${SHOP_PATH}/custom/plugins" --include="*.p
 
 if [[ -n "${TIMEOUT_CONFIG}" ]]; then
     echo "   Timeout-Konfigurationen gefunden:"
-    echo "${TIMEOUT_CONFIG}" | while read -r line; do
+    while IFS= read -r line; do
         FILE=$(echo "${line}" | cut -d':' -f1 | xargs basename)
-        TIMEOUT=$(echo "${line}" | grep -oE "[0-9]+" | head -1)
-        echo "   - ${FILE}: ${TIMEOUT}s"
+        LINENO_HIT=$(echo "${line}" | cut -d':' -f2)
+        # Nur den Code hinter "datei:zeile:" ansehen. Sonst ist die erste
+        # Ziffernfolge die Zeilennummer oder ein Teil des Pfades.
+        CODE=$(echo "${line}" | cut -d':' -f3-)
+        TIMEOUT=$(echo "${CODE}" | grep -oE "['\"](timeout|connect_timeout)['\"][^0-9]*([0-9]+)" \
+            | grep -oE "[0-9]+$" | head -1 || true)
 
-        if [[ -n "${TIMEOUT}" ]] && [[ "${TIMEOUT}" -gt 10 ]]; then
-            echo -e "     ${YELLOW}Warnung: Timeout > 10s${NC}"
+        if [[ -n "${TIMEOUT}" ]]; then
+            echo "   - ${FILE}:${LINENO_HIT}: ${TIMEOUT}s"
+            if [[ "${TIMEOUT}" -gt 10 ]]; then
+                echo -e "     ${YELLOW}Warnung: Timeout > 10s${NC}"
+            fi
+        else
+            # Variabler oder berechneter Wert — Zeile nennen, nicht raten.
+            echo "   - ${FILE}:${LINENO_HIT}: Wert nicht ablesbar, von Hand nachsehen"
         fi
-    done
+    done <<< "${TIMEOUT_CONFIG}"
 else
     echo -e "   ${YELLOW}Keine expliziten Timeouts gefunden${NC}"
     echo "   Empfehlung: Immer Timeouts für externe Calls setzen"

@@ -172,7 +172,9 @@ echo
 
 if [[ "${CHECKED}" -eq 0 ]]; then
     echo "Keine Asset-URLs im HTML gefunden — nichts zu pruefen."
-    exit 1
+    echo "Richtige URL? Ohne Host-Header antwortet Shopware mit"
+    echo "\"Sales Channel Not Found\" — und zwar als HTTP 200."
+    exit 69
 fi
 
 if [[ "${PROBLEMS}" -eq 0 ]]; then

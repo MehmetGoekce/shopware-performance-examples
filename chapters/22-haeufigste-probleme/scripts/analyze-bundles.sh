@@ -65,13 +65,16 @@ echo -e "${BLUE}=== Lokale Bundle-Analyse ===${NC}"
 echo ""
 
 if [[ -d "${SHOP_PATH}/public/bundles" ]]; then
-    echo "Bundle-Größen (komprimiert):"
+    # Rohe Dateigroessen auf der Platte, nicht die uebertragenen. Und
+    # public/bundles enthaelt auch Administration und Installer — Dateien,
+    # die eine Storefront-Seite nie laedt. Diese Liste ist eine Bestandsauf-
+    # nahme; gezaehlt wird weiter unten, was die Startseite wirklich holt.
+    echo "Groesse auf der Platte (alle Bundles, auch Administration):"
     echo ""
 
-    find "${SHOP_PATH}/public/bundles" -name "*.js" -type f 2>/dev/null | while read -r file; do
+    while IFS= read -r file; do
         SIZE_BYTES=$(stat -c%s "${file}" 2>/dev/null || stat -f%z "${file}" 2>/dev/null || echo "0")
         SIZE_KB=$((SIZE_BYTES / 1024))
-        TOTAL_SIZE=$((TOTAL_SIZE + SIZE_KB))
 
         BASENAME=$(basename "${file}")
 
@@ -82,7 +85,7 @@ if [[ -d "${SHOP_PATH}/public/bundles" ]]; then
         else
             echo -e "  ${GREEN}${SIZE_KB} KB${NC} - ${BASENAME}"
         fi
-    done
+    done < <(find "${SHOP_PATH}/public/bundles" -name "*.js" -type f 2>/dev/null)
 fi
 
 # Methode 2: Remote-Analyse via curl
@@ -136,7 +139,7 @@ fi
 echo ""
 echo "=== Zusammenfassung ==="
 echo ""
-echo "Gesamt-JavaScript: ~${TOTAL_SIZE} KB"
+echo "Von der Startseite geladenes JavaScript, uebertragen: ~${TOTAL_SIZE} KB"
 echo ""
 
 if [[ "${TOTAL_SIZE}" -gt "${TOTAL_THRESHOLD}" ]]; then
