@@ -4,6 +4,30 @@
 # Kapitel 22: Die 20 häufigsten Performance-Probleme
 #
 
+set -euo pipefail
+
+usage() {
+    cat <<'USAGE'
+Usage: check-debug-mode.sh [SHOP_URL] [SHOP_PATH]
+
+Prueft, ob der Shop in der prod-Umgebung laeuft.
+
+Argumente:
+  SHOP_URL    Basis-URL des Shops. Default: http://localhost
+  SHOP_PATH   Wurzel der Shopware-Installation. Default: aktuelles Verzeichnis
+USAGE
+}
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    usage
+    exit 0
+fi
+
+if [[ $# -gt 2 ]]; then
+    usage >&2
+    exit 64
+fi
+
 SHOP_PATH="${2:-.}"
 
 echo "=== Problem 13: Debug-Modus Status ==="
@@ -14,8 +38,8 @@ PROBLEMS_FOUND=0
 # Check .env
 echo "1. .env Datei prüfen..."
 if [[ -f "${SHOP_PATH}/.env" ]]; then
-    APP_ENV=$(grep "^APP_ENV=" "${SHOP_PATH}/.env" | cut -d'=' -f2)
-    APP_DEBUG=$(grep "^APP_DEBUG=" "${SHOP_PATH}/.env" | cut -d'=' -f2)
+    APP_ENV=$(grep "^APP_ENV=" "${SHOP_PATH}/.env" | cut -d'=' -f2 || true)
+    APP_DEBUG=$(grep "^APP_DEBUG=" "${SHOP_PATH}/.env" | cut -d'=' -f2 || true)
 
     echo "   APP_ENV=${APP_ENV}"
     echo "   APP_DEBUG=${APP_DEBUG}"
@@ -45,8 +69,8 @@ fi
 echo ""
 echo "2. .env.local prüfen..."
 if [[ -f "${SHOP_PATH}/.env.local" ]]; then
-    LOCAL_ENV=$(grep "^APP_ENV=" "${SHOP_PATH}/.env.local" 2>/dev/null | cut -d'=' -f2)
-    LOCAL_DEBUG=$(grep "^APP_DEBUG=" "${SHOP_PATH}/.env.local" 2>/dev/null | cut -d'=' -f2)
+    LOCAL_ENV=$(grep "^APP_ENV=" "${SHOP_PATH}/.env.local" 2>/dev/null | cut -d'=' -f2 || true)
+    LOCAL_DEBUG=$(grep "^APP_DEBUG=" "${SHOP_PATH}/.env.local" 2>/dev/null | cut -d'=' -f2 || true)
 
     if [[ -n "${LOCAL_ENV}" ]]; then
         echo "   APP_ENV=${LOCAL_ENV} (überschreibt .env)"
@@ -68,12 +92,12 @@ fi
 echo ""
 echo "3. Cache-Verzeichnis prüfen..."
 if [[ -d "${SHOP_PATH}/var/cache/dev" ]]; then
-    DEV_SIZE=$(du -sh "${SHOP_PATH}/var/cache/dev" 2>/dev/null | cut -f1)
+    DEV_SIZE=$(du -sh "${SHOP_PATH}/var/cache/dev" 2>/dev/null | cut -f1 || true)
     echo "   ⚠ var/cache/dev existiert: ${DEV_SIZE}"
     echo "     Hinweis: Dev-Cache sollte in Produktion nicht existieren"
 fi
 if [[ -d "${SHOP_PATH}/var/cache/prod" ]]; then
-    PROD_SIZE=$(du -sh "${SHOP_PATH}/var/cache/prod" 2>/dev/null | cut -f1)
+    PROD_SIZE=$(du -sh "${SHOP_PATH}/var/cache/prod" 2>/dev/null | cut -f1 || true)
     echo "   ✓ var/cache/prod existiert: ${PROD_SIZE}"
 fi
 
@@ -92,11 +116,23 @@ APP_ENV=prod
 APP_DEBUG=0
 EOF
     echo ""
-    echo "2. Cache leeren:"
-    echo "   bin/console cache:clear --env=prod"
+    echo "   ACHTUNG: existiert eine .env.local.php (erzeugt von"
+    echo "   'composer dump-env prod'), hat sie Vorrang und .env.local wird"
+    echo "   ignoriert. Dann dort aendern oder die Datei neu erzeugen."
+    echo ""
+    echo "2. Cache leeren. In Deployment-Skripten cache:clear:all statt"
+    echo "   cache:clear, weil die Cache-Hashes je nach Plugin-Zustand"
+    echo "   abweichen koennen:"
+    echo "   bin/console cache:clear:all"
     echo ""
     echo "3. Dev-Cache entfernen:"
     echo "   rm -rf var/cache/dev"
+    echo ""
+    echo "4. Der Wechsel nach prod allein reicht nicht — Assets und Theme"
+    echo "   muessen fuer die neue Umgebung erzeugt werden:"
+    echo "   bin/console assets:install"
+    echo "   bin/console theme:compile --keep-assets --sync"
+    echo "   bin/console cache:warmup"
     echo ""
     exit 1
 else

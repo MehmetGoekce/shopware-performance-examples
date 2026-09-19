@@ -1,204 +1,202 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
-# Problem 15: Langsame Cronjobs blockieren
-# Kapitel 22: Die 20 häufigsten Performance-Probleme
+# analyze-cronjobs.sh
 #
-# Analysiert Cronjob-Scheduling und identifiziert Performance-Probleme.
+# Problem 15: Langsame Cronjobs blockieren.
+# Kapitel 22: Die 20 haeufigsten Performance-Probleme
 #
-# Verwendung: ./analyze-cronjobs.sh [SHOP_PATH]
+# Der haeufigste Fehler in Shopware-Crontabs ist nicht die Uhrzeit, sondern
+# die Annahme, "bin/console scheduled-task:run" sei ein Einmal-Befehl.
+# Er ist ein Dauerlaeufer: der Prozess schleift und kehrt nicht zurueck.
+# Als taeglicher Cronjob gestartet, kommt jeden Tag ein weiterer Prozess dazu,
+# der nie endet.
 #
+# Zwei weitere Klassiker, die dieses Skript sucht:
+#   - relative Pfade: Cron startet im Home-Verzeichnis, dort gibt es kein
+#     bin/console. Die Zeile scheitert mit "bin/console: not found",
+#     und zwar still, wenn niemand die Cron-Mails liest.
+#   - fehlende Worker: scheduled-task:run stellt Aufgaben nur in die Queue.
+#     Ohne "messenger:consume" arbeitet sie niemand ab.
+#
+# Verwendung:
+#   ./analyze-cronjobs.sh [SHOP_URL] [SHOP_PATH]
+#
+# Exit-Codes:
+#   0 = nichts Auffaelliges
+#   1 = Auffaelligkeiten gefunden
+#   64 = Aufruffehler
 
-set -e
+set -euo pipefail
 
-SHOP_PATH="${1:-.}"
+usage() {
+    cat <<'USAGE'
+Usage: analyze-cronjobs.sh [SHOP_URL] [SHOP_PATH]
 
-# Farben
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
+Prueft Crontab-Eintraege und Hintergrundprozesse rund um Shopware.
 
-# Peak-Traffic Zeiten (zu vermeiden)
-PEAK_START=9
-PEAK_END=18
+Argumente:
+  SHOP_URL    Wird nicht ausgewertet; nur der Einheitlichkeit halber.
+  SHOP_PATH   Wurzel der Shopware-Installation. Default: aktuelles Verzeichnis
 
-echo "=== Cronjob Analyse ==="
-echo "Shop: ${SHOP_PATH}"
-echo ""
+Umgebungsvariablen:
+  CRONTAB_FILE  Statt der Crontab des aufrufenden Benutzers diese Datei
+                auswerten. Nuetzlich fuer Tests und fuer /etc/cron.d/*.
+USAGE
+}
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    usage
+    exit 0
+fi
+
+if [[ $# -gt 2 ]]; then
+    usage >&2
+    exit 64
+fi
+
+# Aufrufkonvention aller Skripte dieses Kapitels: $1 = SHOP_URL, $2 = SHOP_PATH.
+# Dieses Skript braucht nur den Pfad; $1 wird bewusst nicht ausgewertet,
+# damit run-all-diagnostics.sh alle Skripte gleich aufrufen kann.
+SHOP_PATH="${2:-.}"
+
+echo "=== Problem 15: Cronjobs und Hintergrundprozesse ==="
+echo
 
 ISSUES=0
 
-# Check 1: System Crontab
-echo -e "${BLUE}1. System Crontab${NC}"
-
-CRONTAB_ENTRIES=$(crontab -l 2>/dev/null | grep -v "^#" | grep -v "^$" || echo "")
-
-if [[ -n "${CRONTAB_ENTRIES}" ]]; then
-    echo "   Gefundene Cronjobs:"
-    echo ""
-
-    echo "${CRONTAB_ENTRIES}" | while read -r line; do
-        # Extrahiere Stunde (zweites Feld bei Standard-Cron)
-        HOUR=$(echo "${line}" | awk '{print $2}')
-
-        # Prüfe ob numerisch und in Peak-Zeit
-        if [[ "${HOUR}" =~ ^[0-9]+$ ]]; then
-            if [[ "${HOUR}" -ge "${PEAK_START}" ]] && [[ "${HOUR}" -le "${PEAK_END}" ]]; then
-                echo -e "   ${YELLOW}⚠ Peak-Zeit:${NC} ${line}"
-                ISSUES=$((ISSUES + 1))
-            else
-                echo -e "   ${GREEN}✓${NC} ${line}"
-            fi
-        elif [[ "${HOUR}" = "*" ]]; then
-            echo -e "   ${YELLOW}⚠ Läuft stündlich:${NC} ${line}"
-        else
-            echo "   ${line}"
-        fi
-    done
+echo "1. Crontab-Eintraege"
+if [[ -n "${CRONTAB_FILE:-}" ]]; then
+    CRON=$(cat "${CRONTAB_FILE}" 2>/dev/null || true)
+    echo "   Quelle: ${CRONTAB_FILE}"
 else
-    echo "   Keine Cronjobs in crontab gefunden"
+    CRON=$(crontab -l 2>/dev/null || true)
 fi
 
-# Check 2: Shopware Scheduled Tasks
-echo ""
-echo -e "${BLUE}2. Shopware Scheduled Tasks${NC}"
+SHOPWARE_LINES=$(printf '%s\n' "${CRON}" | grep -E 'bin/console' | grep -vE '^[[:space:]]*#' || true)
 
-if [[ -f "${SHOP_PATH}/bin/console" ]]; then
-    # Liste scheduled tasks
-    TASKS=$(php "${SHOP_PATH}/bin/console" scheduled-task:list 2>/dev/null || echo "")
+if [[ -z "${SHOPWARE_LINES}" ]]; then
+    echo "   Keine Shopware-Zeilen in der Crontab."
+else
+    printf '%s\n' "${SHOPWARE_LINES}" | sed 's/^/   /'
+    echo
+    echo "2. Bewertung der Zeilen"
 
-    if [[ -n "${TASKS}" ]]; then
-        echo "   Aktive Tasks:"
-        echo "${TASKS}" | head -20
+    while IFS= read -r line; do
+        [[ -z "${line}" ]] && continue
+        cmd="${line#* * * * * }"
 
-        # Zähle überfällige Tasks
-        OVERDUE=$(echo "${TASKS}" | grep -c "overdue" 2>/dev/null || echo "0")
-
-        if [[ "${OVERDUE}" -gt 0 ]]; then
-            echo ""
-            echo -e "   ${RED}${OVERDUE} überfällige Task(s)!${NC}"
+        # Relativer Pfad zu bin/console — aber nur, wenn die Zeile nicht
+        # vorher ins Shop-Verzeichnis wechselt. "cd /var/www/shop && php
+        # bin/console ..." ist korrekt, auch wenn der Konsolenpfad relativ ist.
+        if printf '%s' "${cmd}" | grep -qE '(^|[[:space:]])bin/console' \
+           && ! printf '%s' "${cmd}" | grep -qE '(^|[[:space:]])cd[[:space:]]+[^[:space:]]+[[:space:]]*&&'; then
+            echo "   Relativer Pfad \"bin/console\":"
+            echo "     ${line}"
+            echo "     Cron startet im Home-Verzeichnis. Diese Zeile scheitert mit"
+            echo "     \"bin/console: not found\". Absoluten Pfad benutzen oder ein"
+            echo "     \"cd ${SHOP_PATH} &&\" voranstellen."
             ISSUES=$((ISSUES + 1))
         fi
-    else
-        echo "   Konnte Tasks nicht auflisten"
-    fi
-else
-    echo "   Shopware Console nicht verfügbar"
+
+        # scheduled-task:run ohne Begrenzung?
+        if printf '%s' "${cmd}" | grep -q 'scheduled-task:run'; then
+            if ! printf '%s' "${cmd}" | grep -qE '\-\-no-wait|--time-limit|-t[[:space:]=]'; then
+                echo "   scheduled-task:run ohne --no-wait und ohne --time-limit:"
+                echo "     ${line}"
+                echo "     Der Prozess endet nie. Bei jedem Cron-Lauf kommt einer dazu."
+                ISSUES=$((ISSUES + 1))
+            fi
+        fi
+
+        # messenger:consume ohne Begrenzung?
+        if printf '%s' "${cmd}" | grep -q 'messenger:consume'; then
+            if ! printf '%s' "${cmd}" | grep -qE '\-\-time-limit|-t[[:space:]=]'; then
+                echo "   messenger:consume ohne --time-limit:"
+                echo "     ${line}"
+                echo "     Gehoert unter systemd oder supervisor, nicht in die Crontab."
+                ISSUES=$((ISSUES + 1))
+            fi
+        fi
+    done <<< "${SHOPWARE_LINES}"
 fi
 
-# Check 3: Message Queue Worker
-echo ""
-echo -e "${BLUE}3. Message Queue Status${NC}"
+echo
+echo "3. Laufende Hintergrundprozesse"
+# Auf php-Prozesse einschraenken. Ein blosses "bin/console scheduled-task:run"
+# als Muster trifft auch Shells, die diese Zeichenkette nur als Argument tragen
+# (etwa ein Editor oder dieses Skript in einer Pipeline).
+count_php_processes() {
+    pgrep -fc "(^|/)php[0-9.]* .*bin/console $1" 2>/dev/null || true
+}
+RUNNING_TASKS=$(count_php_processes 'scheduled-task:run')
+RUNNING_TASKS="${RUNNING_TASKS:-0}"
+RUNNING_WORKERS=$(count_php_processes 'messenger:consume')
+RUNNING_WORKERS="${RUNNING_WORKERS:-0}"
 
-# Prüfe ob Worker laufen
-WORKER_COUNT=$(pgrep -f "messenger:consume" 2>/dev/null | wc -l || echo "0")
-echo "   Aktive Worker-Prozesse: ${WORKER_COUNT}"
+echo "   scheduled-task:run:  ${RUNNING_TASKS}"
+echo "   messenger:consume:   ${RUNNING_WORKERS}"
 
-if [[ "${WORKER_COUNT}" -eq 0 ]]; then
-    echo -e "   ${YELLOW}Keine Worker aktiv!${NC}"
-    echo "   Empfehlung: Supervisor für messenger:consume einrichten"
+if [[ "${RUNNING_TASKS}" -gt 1 ]]; then
+    echo "   Mehr als ein Runner. Genau das passiert, wenn er per Cron gestartet"
+    echo "   wird: die Prozesse stapeln sich."
+    ISSUES=$((ISSUES + 1))
+fi
+if [[ "${RUNNING_WORKERS}" -eq 0 ]]; then
+    echo "   Kein Worker aktiv. Alles, was in die Queue geht — Cache-Invalidierung,"
+    echo "   Indizierung, Mails —, bleibt liegen."
     ISSUES=$((ISSUES + 1))
 fi
 
-# Queue-Größe prüfen (wenn Redis)
-if command -v redis-cli &> /dev/null; then
-    QUEUE_SIZE=$(redis-cli LLEN messenger_messages 2>/dev/null || echo "?")
-    if [[ "${QUEUE_SIZE}" != "?" ]]; then
-        echo "   Queue-Größe: ${QUEUE_SIZE}"
-
-        if [[ "${QUEUE_SIZE}" -gt 1000 ]]; then
-            echo -e "   ${RED}Queue zu voll (> 1000)!${NC}"
-            ISSUES=$((ISSUES + 1))
-        fi
-    fi
-fi
-
-# Check 4: Supervisor-Konfiguration
-echo ""
-echo -e "${BLUE}4. Supervisor Konfiguration${NC}"
-
-SUPERVISOR_CONF="/etc/supervisor/conf.d"
-
-if [[ -d "${SUPERVISOR_CONF}" ]]; then
-    SHOPWARE_SUPERVISOR=$(ls "${SUPERVISOR_CONF}"/*shopware* 2>/dev/null | head -1 || echo "")
-
-    if [[ -n "${SHOPWARE_SUPERVISOR}" ]]; then
-        echo -e "   ${GREEN}Supervisor-Konfiguration gefunden${NC}"
-        echo "   Datei: ${SHOPWARE_SUPERVISOR}"
-
-        # Worker-Anzahl
-        NUMPROCS=$(grep "numprocs" "${SHOPWARE_SUPERVISOR}" 2>/dev/null | head -1)
-        echo "   ${NUMPROCS}"
-    else
-        echo -e "   ${YELLOW}Keine Shopware Supervisor-Konfiguration${NC}"
-    fi
-else
-    echo "   Supervisor nicht installiert"
-fi
-
-# Check 5: Indexer-Jobs
-echo ""
-echo -e "${BLUE}5. Indexer Status${NC}"
-
 if [[ -f "${SHOP_PATH}/bin/console" ]]; then
-    # Indexer-Liste
-    INDEXERS=$(php "${SHOP_PATH}/bin/console" dal:refresh:index --list 2>/dev/null | grep -E "^\s*-" || echo "")
-
-    if [[ -n "${INDEXERS}" ]]; then
-        INDEX_COUNT=$(echo "${INDEXERS}" | wc -l)
-        echo "   Registrierte Indexer: ${INDEX_COUNT}"
-
-        # Prüfe letzte Indexierung
-        if [[ -f "${SHOP_PATH}/var/log/prod.log" ]]; then
-            LAST_INDEX=$(grep "Indexing" "${SHOP_PATH}/var/log/prod.log" 2>/dev/null | tail -1)
-            if [[ -n "${LAST_INDEX}" ]]; then
-                echo "   Letzte Indexierung: $(echo "${LAST_INDEX}" | cut -d' ' -f1-2)"
-            fi
-        fi
+    echo
+    echo "4. Faellige Scheduled Tasks laut Datenbank"
+    if OVERDUE=$(php "${SHOP_PATH}/bin/console" scheduled-task:list 2>/dev/null); then
+        printf '%s\n' "${OVERDUE}" | head -25 | sed 's/^/   /'
+    else
+        echo "   scheduled-task:list nicht verfuegbar — Tabelle scheduled_task"
+        echo "   direkt ansehen (Spalten next_execution_time, status)."
     fi
 fi
 
-# Check 6: Cleanup-Jobs
-echo ""
-echo -e "${BLUE}6. Cleanup-Jobs${NC}"
-
-# Prüfe ob Cleanup konfiguriert ist
-echo -n "   Cart Cleanup... "
-if crontab -l 2>/dev/null | grep -q "cart:cleanup"; then
-    echo -e "${GREEN}konfiguriert${NC}"
-else
-    echo -e "${YELLOW}nicht gefunden${NC}"
-    echo "   Empfehlung: bin/console cart:cleanup regelmäßig ausführen"
-fi
-
-echo -n "   Log Rotation... "
-if [[ -f "/etc/logrotate.d/shopware" ]] || [[ -f "${SHOP_PATH}/logrotate.conf" ]]; then
-    echo -e "${GREEN}konfiguriert${NC}"
-else
-    echo -e "${YELLOW}nicht gefunden${NC}"
-fi
-
-# Zusammenfassung
-echo ""
-echo "=== Zusammenfassung ==="
+echo
+echo "=== Ergebnis ==="
+echo
 
 if [[ "${ISSUES}" -eq 0 ]]; then
-    echo -e "${GREEN}Cronjob-Konfiguration OK.${NC}"
+    echo "Nichts Auffaelliges."
     exit 0
-else
-    echo -e "${YELLOW}${ISSUES} Problem(e) gefunden.${NC}"
-    echo ""
-    echo "Empfohlene Optimierungen:"
-    echo ""
-    echo "  1. Cronjobs in Low-Traffic-Zeiten verschieben:"
-    echo "     0 3 * * * /var/www/shop/bin/console scheduled-task:run"
-    echo ""
-    echo "  2. Message Queue Worker einrichten:"
-    echo "     supervisor mit messenger:consume konfigurieren"
-    echo ""
-    echo "  3. Regelmäßige Cleanups:"
-    echo "     0 4 * * * bin/console cart:cleanup"
-    echo "     0 5 * * 0 bin/console dal:refresh:index"
-    exit 1
 fi
+
+cat <<'EOF'
+So gehoert es aufgesetzt — als Dienst, nicht als Cronjob:
+
+  # /etc/systemd/system/shopware-scheduler.service
+  [Service]
+  User=www-data
+  WorkingDirectory=/var/www/shop
+  ExecStart=/usr/bin/php bin/console scheduled-task:run --time-limit=3600
+  Restart=always
+
+  # /etc/systemd/system/shopware-worker@.service
+  [Service]
+  User=www-data
+  WorkingDirectory=/var/www/shop
+  ExecStart=/usr/bin/php bin/console messenger:consume async --time-limit=3600 --memory-limit=256M
+  Restart=always
+
+Das --time-limit ist kein Umweg, sondern Absicht: der Prozess beendet sich
+regelmaessig selbst und wird neu gestartet, damit Speicher nicht endlos
+waechst und neuer Code nach einem Deploy wirklich geladen wird.
+
+Wenn es unbedingt Cron sein muss, dann mit --no-wait und absolutem Pfad:
+
+  */5 * * * * cd /var/www/shop && /usr/bin/php bin/console scheduled-task:run --no-wait
+
+Aber Achtung: --no-wait stellt die faelligen Aufgaben nur in die Queue.
+Ohne laufenden Worker arbeitet sie trotzdem niemand ab.
+
+Und noch etwas: die Ausfuehrungszeit einzelner Aufgaben verschiebt man NICHT
+ueber die Cron-Zeile. Sie ergibt sich aus run_interval und
+next_execution_time in der Tabelle scheduled_task.
+EOF
+exit 1

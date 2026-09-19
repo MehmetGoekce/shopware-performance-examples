@@ -8,7 +8,30 @@
 # Verwendung: ./check-cdn.sh [SHOP_URL] [SHOP_PATH]
 #
 
-set -e
+set -euo pipefail
+
+usage() {
+    cat <<'USAGE'
+Usage: check-cdn.sh [SHOP_URL] [SHOP_PATH]
+
+Prueft, ob vor dem Shop ein CDN arbeitet und wie weit Shopwares
+cdn.url-Einstellung reicht.
+
+Argumente:
+  SHOP_URL    Basis-URL des Shops. Default: http://localhost
+  SHOP_PATH   Wurzel der Shopware-Installation. Default: aktuelles Verzeichnis
+USAGE
+}
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    usage
+    exit 0
+fi
+
+if [[ $# -gt 2 ]]; then
+    usage >&2
+    exit 64
+fi
 
 SHOP_URL="${1:-https://localhost}"
 SHOP_PATH="${2:-.}"
@@ -117,27 +140,40 @@ fi
 echo ""
 echo -e "${BLUE}3. Shopware CDN-Konfiguration${NC}"
 
-if [[ -f "${SHOP_PATH}/config/packages/shopware.yaml" ]]; then
-    if grep -q "cdn:" "${SHOP_PATH}/config/packages/shopware.yaml"; then
-        CDN_URL=$(grep -A2 "cdn:" "${SHOP_PATH}/config/packages/shopware.yaml" | grep "url:" | awk '{print $2}' | tr -d '"' | tr -d "'")
-        if [[ -n "${CDN_URL}" ]]; then
-            echo -e "   ${GREEN}CDN URL konfiguriert: ${CDN_URL}${NC}"
-        else
-            echo -e "   ${YELLOW}CDN-Block vorhanden aber keine URL${NC}"
-        fi
+# In einer Standardinstallation gibt es keine config/packages/shopware.yaml;
+# die Datei liegt im Core-Bundle. Eigene Werte stehen, wenn ueberhaupt, in
+# einer selbst angelegten Datei unter config/packages/.
+CDN_FILES=$(grep -rl "cdn:" "${SHOP_PATH}/config/packages/" 2>/dev/null || true)
+if [[ -n "${CDN_FILES}" ]]; then
+    echo "   Eigene CDN-Konfiguration gefunden in:"
+    printf '%s\n' "${CDN_FILES}" | sed 's/^/     /'
+    CDN_URL=$(grep -rhA2 "cdn:" "${SHOP_PATH}/config/packages/" 2>/dev/null \
+        | grep -E "^\s*url:" | head -1 | awk '{print $2}' | tr -d "\"'" || true)
+    if [[ -n "${CDN_URL}" ]]; then
+        echo -e "   ${GREEN}shopware.cdn.url = ${CDN_URL}${NC}"
     else
-        echo -e "   ${YELLOW}Keine CDN-Konfiguration in shopware.yaml${NC}"
+        echo -e "   ${YELLOW}cdn-Block vorhanden, aber keine url gesetzt${NC}"
     fi
 else
-    echo "   shopware.yaml nicht gefunden"
+    echo "   Keine eigene CDN-Konfiguration unter config/packages/."
+    echo "   Das ist der Auslieferungszustand — shopware.cdn.url ist nicht gesetzt."
 fi
+echo
+echo "   Zur Reichweite von shopware.cdn.url: der Key setzt ausschliesslich"
+echo "   shopware.filesystem.public.url, also die URLs fuer Medien und"
+echo "   Thumbnails. Die Filesysteme theme, asset und sitemap bekommen im"
+echo "   selben Compiler-Pass ausdruecklich url = '' und bleiben damit auf der"
+echo "   APP_URL. CSS, JS und Fonts kommen also weiter vom Origin, solange"
+echo "   nicht auch shopware.filesystem.theme.url und .asset.url gesetzt sind."
+echo "   Und: der Key laedt nichts hoch. Er aendert nur die erzeugten URLs —"
+echo "   davor muss ein Pull-Proxy stehen oder das Filesystem auf S3 zeigen." 
 
 # Check 4: Response-Zeit vergleichen
 echo ""
 echo -e "${BLUE}4. Response-Zeit Test${NC}"
 
 # Origin TTFB
-ORIGIN_TIME=$(curl -sI -o /dev/null -w "%{time_starttransfer}" "${SHOP_URL}" 2>/dev/null)
+ORIGIN_TIME=$(curl -sS -o /dev/null -L -w "%{time_starttransfer}" "${SHOP_URL}" 2>/dev/null || echo "?")
 echo "   Origin TTFB: ${ORIGIN_TIME}s"
 
 # Wenn CDN erkannt, auch CDN-Zeit messen

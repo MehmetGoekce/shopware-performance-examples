@@ -8,7 +8,30 @@
 # Verwendung: ./audit-preconnects.sh [SHOP_URL]
 #
 
-set -e
+set -euo pipefail
+
+usage() {
+    cat <<'USAGE'
+Usage: audit-preconnects.sh [SHOP_URL] [SHOP_PATH]
+
+Prueft, welche fremden Domains die Startseite einbindet und ob dafuer
+preconnect- oder dns-prefetch-Hinweise gesetzt sind.
+
+Argumente:
+  SHOP_URL    Basis-URL des Shops. Default: http://localhost
+  SHOP_PATH   Wurzel der Shopware-Installation. Default: aktuelles Verzeichnis
+USAGE
+}
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    usage
+    exit 0
+fi
+
+if [[ $# -gt 2 ]]; then
+    usage >&2
+    exit 64
+fi
 
 SHOP_URL="${1:-https://localhost}"
 
@@ -47,13 +70,13 @@ ISSUES=0
 
 # HTML und Headers holen
 HTML=$(curl -sL "${SHOP_URL}" 2>/dev/null)
-HEADERS=$(curl -sI "${SHOP_URL}" 2>/dev/null)
+HEADERS=$(curl -sS -o /dev/null -D - -L "${SHOP_URL}" 2>/dev/null || true)
 
 # Vorhandene Preconnects finden
 echo -e "${BLUE}1. Vorhandene Preconnects${NC}"
 
-PRECONNECTS=$(echo "${HTML}" | grep -oE 'rel="preconnect"[^>]*href="[^"]*"' | grep -oE 'href="[^"]*"' | sed 's/href="//g' | sed 's/"//g')
-DNS_PREFETCH=$(echo "${HTML}" | grep -oE 'rel="dns-prefetch"[^>]*href="[^"]*"' | grep -oE 'href="[^"]*"' | sed 's/href="//g' | sed 's/"//g')
+PRECONNECTS=$(echo "${HTML}" | grep -oE 'rel="preconnect"[^>]*href="[^"]*"' | grep -oE 'href="[^"]*"' | sed 's/href="//g' | sed 's/"//g' || true)
+DNS_PREFETCH=$(echo "${HTML}" | grep -oE 'rel="dns-prefetch"[^>]*href="[^"]*"' | grep -oE 'href="[^"]*"' | sed 's/href="//g' | sed 's/"//g' || true)
 
 if [[ -n "${PRECONNECTS}" ]]; then
     echo "   Preconnects gefunden:"
@@ -81,7 +104,7 @@ EXTERNAL_DOMAINS=$(echo "${HTML}" | grep -oE '(src|href)="https?://[^/"]*' | \
     sed 's/src="//g' | sed 's/href="//g' | \
     sed 's|https\?://||g' | \
     sort -u | \
-    grep -v "$(echo "${SHOP_URL}" | sed 's|https\?://||g' | cut -d'/' -f1)")
+    grep -v "$(echo "${SHOP_URL}" | sed 's|https\?://||g' | cut -d'/' -f1)" || true)
 
 MISSING_PRECONNECTS=()
 
@@ -111,7 +134,12 @@ for known in "${KNOWN_THIRD_PARTY[@]}"; do
 done
 
 if [[ ${#RECOMMENDATIONS[@]} -eq 0 ]]; then
-    echo -e "   ${GREEN}Alle bekannten Third-Party-Domains haben preconnect${NC}"
+    if [[ -z "${EXTERNAL_DOMAINS}" ]]; then
+        echo "   Die Seite bindet keine fremden Domains ein — dann ist auch kein"
+        echo "   Preconnect noetig. Das ist der beste Fall."
+    else
+        echo -e "   ${GREEN}Alle erkannten Third-Party-Domains haben preconnect${NC}"
+    fi
 fi
 
 # Zusammenfassung und Code-Empfehlung
@@ -127,19 +155,49 @@ else
     echo "Empfohlene Ergänzungen in <head>:"
     echo ""
 
+    # crossorigin gehoert NUR an Preconnects fuer CORS-anonyme Abrufe, also
+    # vor allem Schriftdateien. Wer es ueberall anhaengt, oeffnet eine zweite,
+    # ungenutzte Verbindung statt die bestehende wiederzuverwenden — genau das
+    # Gegenteil dessen, was der Preconnect bewirken soll.
+    emit_preconnect() {
+        case "$1" in
+            fonts.gstatic.com|*.fontawesome.com|use.typekit.net|fonts.googleapis.com/s/*)
+                echo "<link rel=\"preconnect\" href=\"https://$1\" crossorigin>" ;;
+            *)
+                echo "<link rel=\"preconnect\" href=\"https://$1\">" ;;
+        esac
+    }
+
     for domain in "${MISSING_PRECONNECTS[@]}"; do
-        echo "<link rel=\"preconnect\" href=\"https://${domain}\" crossorigin>"
+        emit_preconnect "${domain}"
     done
 
     for rec in "${RECOMMENDATIONS[@]}"; do
         if ! printf '%s\n' "${MISSING_PRECONNECTS[@]}" | grep -q "^${rec}$"; then
-            echo "<link rel=\"preconnect\" href=\"https://${rec}\" crossorigin>"
+            emit_preconnect "${rec}"
         fi
     done
 
     echo ""
-    echo "Für weniger kritische Domains:"
+    echo "Bei Google Fonts braucht es BEIDE Zeilen: das Stylesheet kommt von"
+    echo "fonts.googleapis.com, die Schriftdateien von fonts.gstatic.com —"
+    echo "und nur die zweite Verbindung braucht crossorigin:"
+    echo ""
+    echo "<link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">"
+    echo "<link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>"
+    echo ""
+    echo "Schneller als jeder Preconnect ist allerdings, die Schriften selbst"
+    echo "auszuliefern — das spart die fremde Verbindung ganz und erspart die"
+    echo "datenschutzrechtliche Diskussion gleich mit."
+    echo ""
+    echo "Für weniger kritische Domains reicht:"
     echo "<link rel=\"dns-prefetch\" href=\"https://example.com\">"
+    echo ""
+    echo "In Shopware kommt das nicht per Hand in den <head>, sondern ueber ein"
+    echo "Theme- oder Plugin-Template:"
+    echo "  src/Resources/views/storefront/layout/meta.html.twig"
+    echo "  {% sw_extends '@Storefront/storefront/layout/meta.html.twig' %}"
+    echo "  {% block layout_head_meta_tags %}{{ parent() }} ... {% endblock %}"
 
     exit 1
 fi

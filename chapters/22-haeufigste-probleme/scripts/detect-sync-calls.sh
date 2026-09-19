@@ -5,12 +5,38 @@
 #
 # Erkennt synchrone externe API-Calls die das Rendering blockieren.
 #
-# Verwendung: ./detect-sync-calls.sh [SHOP_PATH]
+# Verwendung: ./detect-sync-calls.sh [SHOP_URL] [SHOP_PATH]
 #
 
-set -e
+set -euo pipefail
 
-SHOP_PATH="${1:-.}"
+usage() {
+    cat <<'USAGE'
+Usage: detect-sync-calls.sh [SHOP_URL] [SHOP_PATH]
+
+Sucht in custom/plugins nach synchronen Aufrufen externer Dienste, die
+das Rendern aufhalten koennen.
+
+Argumente:
+  SHOP_URL    Basis-URL des Shops. Default: http://localhost
+  SHOP_PATH   Wurzel der Shopware-Installation. Default: aktuelles Verzeichnis
+USAGE
+}
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    usage
+    exit 0
+fi
+
+if [[ $# -gt 2 ]]; then
+    usage >&2
+    exit 64
+fi
+
+# Aufrufkonvention aller Skripte dieses Kapitels: $1 = SHOP_URL, $2 = SHOP_PATH.
+# Dieses Skript braucht nur den Pfad; $1 wird bewusst nicht ausgewertet,
+# damit run-all-diagnostics.sh alle Skripte gleich aufrufen kann.
+SHOP_PATH="${2:-.}"
 
 # Farben
 RED='\033[0;31m'
@@ -48,7 +74,7 @@ for dir in "${SEARCH_DIRS[@]}"; do
         echo "   Suche in: ${dir}"
 
         for pattern in "${SYNC_PATTERNS[@]}"; do
-            MATCHES=$(grep -rln "${pattern}" "${dir}" --include="*.php" 2>/dev/null | head -10)
+            MATCHES=$(grep -rln "${pattern}" "${dir}" --include="*.php" 2>/dev/null | head -10 || true)
 
             if [[ -n "${MATCHES}" ]]; then
                 echo ""
@@ -91,13 +117,13 @@ INTEGRATION_PATTERNS=(
 )
 
 for pattern in "${INTEGRATION_PATTERNS[@]}"; do
-    FOUND=$(find "${SHOP_PATH}/custom/plugins" -iname "*${pattern}*" -type d 2>/dev/null | head -1)
+    FOUND=$(find "${SHOP_PATH}/custom/plugins" -iname "*${pattern}*" -type d 2>/dev/null | head -1 || true)
 
     if [[ -n "${FOUND}" ]]; then
         echo -e "   ${YELLOW}Integration gefunden:${NC} ${pattern}"
 
         # Prüfe ob async
-        ASYNC_CHECK=$(grep -rl "MessageBus\|dispatch\|async" "${FOUND}" --include="*.php" 2>/dev/null | wc -l)
+        ASYNC_CHECK=$(grep -rl "MessageBus\|dispatch\|async" "${FOUND}" --include="*.php" 2>/dev/null | wc -l || true)
 
         if [[ "${ASYNC_CHECK}" -gt 0 ]]; then
             echo -e "   ${GREEN}   → Async-Pattern erkannt${NC}"
@@ -121,14 +147,14 @@ PAYMENT_PATTERNS=(
 )
 
 for pattern in "${PAYMENT_PATTERNS[@]}"; do
-    PAYMENT_PLUGIN=$(find "${SHOP_PATH}/custom/plugins" -iname "*${pattern}*" -type d 2>/dev/null | head -1)
+    PAYMENT_PLUGIN=$(find "${SHOP_PATH}/custom/plugins" -iname "*${pattern}*" -type d 2>/dev/null | head -1 || true)
 
     if [[ -n "${PAYMENT_PLUGIN}" ]]; then
         echo "   ${pattern} Integration gefunden"
 
         # Zahlungen sollten nicht im Storefront synchron sein
         STOREFRONT_CALLS=$(grep -rl "StorefrontController\|PageLoader" "${PAYMENT_PLUGIN}" --include="*.php" 2>/dev/null | \
-            xargs grep -l "HttpClient\|request(" 2>/dev/null | wc -l)
+            xargs grep -l "HttpClient\|request(" 2>/dev/null | wc -l || true)
 
         if [[ "${STOREFRONT_CALLS}" -gt 0 ]]; then
             echo -e "   ${YELLOW}   → HTTP-Calls in Storefront-Context${NC}"
@@ -142,7 +168,7 @@ echo -e "${BLUE}4. Timeout-Konfiguration${NC}"
 
 # Suche nach Timeout-Konfigurationen
 TIMEOUT_CONFIG=$(grep -rn "timeout" "${SHOP_PATH}/custom/plugins" --include="*.php" 2>/dev/null | \
-    grep -E "['\"](timeout|connect_timeout)['\"]" | head -5)
+    grep -E "['\"](timeout|connect_timeout)['\"]" | head -5 || true)
 
 if [[ -n "${TIMEOUT_CONFIG}" ]]; then
     echo "   Timeout-Konfigurationen gefunden:"
@@ -164,8 +190,8 @@ fi
 echo ""
 echo -e "${BLUE}5. Async Message Handler${NC}"
 
-ASYNC_HANDLERS=$(grep -rln "MessageHandlerInterface\|#\[AsMessageHandler\]" "${SHOP_PATH}/custom/plugins" --include="*.php" 2>/dev/null | wc -l)
-SYNC_SERVICES=$(grep -rln "implements.*Service\|class.*Service" "${SHOP_PATH}/custom/plugins" --include="*.php" 2>/dev/null | wc -l)
+ASYNC_HANDLERS=$(grep -rln "MessageHandlerInterface\|#\[AsMessageHandler\]" "${SHOP_PATH}/custom/plugins" --include="*.php" 2>/dev/null | wc -l || true)
+SYNC_SERVICES=$(grep -rln "implements.*Service\|class.*Service" "${SHOP_PATH}/custom/plugins" --include="*.php" 2>/dev/null | wc -l || true)
 
 echo "   Async Message Handler: ${ASYNC_HANDLERS}"
 echo "   Service-Klassen: ${SYNC_SERVICES}"
@@ -187,11 +213,21 @@ else
     echo ""
     echo "Empfohlene Lösungen:"
     echo ""
-    echo "  1. Caching für externe Daten:"
-    echo '     ${cache}->get("erp_stock_${id}", fn() => ${erp}->getStock(${id}), 300);'
+    echo "  1. Caching für externe Daten."
+    echo "     ACHTUNG: der dritte Parameter von CacheInterface::get() ist \$beta"
+    echo "     (Stampede-Schutz), KEINE Lebensdauer. Ein \"..., 300)\" setzt also"
+    echo "     keine 5 Minuten, sondern gar kein Ablaufdatum — der Wert bleibt"
+    echo "     dann fuer immer im Pool. Die TTL gehoert in den Callback:"
+    echo ""
+    echo '     use Symfony\\Contracts\\Cache\\ItemInterface;'
+    echo ""
+    echo '     $stock = $cache->get("erp_stock_" . $productId, function (ItemInterface $item) use ($erp, $productId) {'
+    echo '         $item->expiresAfter(300);'
+    echo '         return $erp->getStock($productId);'
+    echo '     });'
     echo ""
     echo "  2. Message Queue verwenden:"
-    echo '     ${bus}->dispatch(new SyncErpMessage(${product}Id));'
+    echo '     $bus->dispatch(new SyncErpStockMessage($productId));'
     echo ""
     echo "  3. Timeouts setzen (max 5s für Storefront):"
     echo "     'timeout' => 5,"

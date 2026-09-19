@@ -8,9 +8,36 @@
 # Verwendung: ./analyze-bundles.sh [SHOP_URL] [SHOP_PATH]
 #
 
-set -e
+set -euo pipefail
 
-SHOP_URL="${1:-https://localhost}"
+usage() {
+    cat <<'USAGE'
+Usage: analyze-bundles.sh [SHOP_URL] [SHOP_PATH]
+
+Misst die uebertragene Groesse der JavaScript-Dateien, die die Startseite
+einbindet, und die der kompilierten Bundles auf der Platte.
+
+Argumente:
+  SHOP_URL    Startseite des Shops. Default: http://localhost
+  SHOP_PATH   Wurzel der Shopware-Installation. Default: aktuelles Verzeichnis
+
+Gemessen wird die komprimierte Groesse per GET — die bestimmt die
+Uebertragungszeit. Ein Content-Length aus einem HEAD-Request ist dafuer
+unbrauchbar: bei chunked Transfer fehlt er ganz.
+USAGE
+}
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    usage
+    exit 0
+fi
+
+if [[ $# -gt 2 ]]; then
+    usage >&2
+    exit 64
+fi
+
+SHOP_URL="${1:-http://localhost}"
 SHOP_PATH="${2:-.}"
 
 # Farben
@@ -79,10 +106,13 @@ if [[ -n "${HTML}" ]]; then
             js_url="${SHOP_URL}${js_url}"
         fi
 
-        # Größe via HEAD Request
-        SIZE_HEADER=$(curl -sI "${js_url}" 2>/dev/null | grep -i "content-length" | awk '{print $2}' | tr -d '\r')
+        # Tatsaechlich uebertragene Groesse per GET messen. Content-Length aus
+        # einem HEAD-Request taugt nicht: bei chunked Transfer fehlt der Header
+        # ganz, und er beschreibt nicht die komprimierte Uebertragung.
+        SIZE_HEADER=$(curl -sS -o /dev/null -L -H 'Accept-Encoding: gzip, br' \
+            -w '%{size_download}' "${js_url}" 2>/dev/null || echo 0)
 
-        if [[ -n "${SIZE_HEADER}" ]]; then
+        if [[ "${SIZE_HEADER}" -gt 0 ]]; then
             SIZE_KB=$((SIZE_HEADER / 1024))
             TOTAL_SIZE=$((TOTAL_SIZE + SIZE_KB))
 
