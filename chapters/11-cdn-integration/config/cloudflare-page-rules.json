@@ -95,7 +95,7 @@
     "create_via_api": "curl -X POST 'https://api.cloudflare.com/client/v4/zones/{zone_id}/pagerules' -H 'Authorization: Bearer {token}' -H 'Content-Type: application/json' -d '{rule}'",
     "max_rules_free": 3,
     "max_rules_pro": 20,
-    "priority": "Niedrigere Zahl = höhere Priorität"
+    "priority": "Hoehere Zahl = hoehere Prioritaet (Cloudflare-API: \"A higher number indicates a higher priority\"). Hier ohne Wirkung, weil sich die drei Muster nicht ueberlappen."
   },
   "_hinweis_nachfolger": "Page Rules sind der aeltere Mechanismus; Cloudflare empfiehlt Cache Rules. Fuer neue Setups dort beginnen: https://developers.cloudflare.com/cache/how-to/cache-rules/",
   "_hinweis_pfade": "Die Muster decken /admin/ ab, nicht den Einstieg /admin ohne Slash - bei Bedarf \"*shop.de/admin*\" verwenden."

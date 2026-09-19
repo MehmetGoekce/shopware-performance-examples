@@ -1,6 +1,6 @@
 {
   "_comment": "Bunny CDN Pull Zone - via API oder Dashboard. IgnoreQueryStrings MUSS false bleiben: Shopware versioniert Bundle-Assets ueber einen Query-String (?<lastModified>), Theme-CSS ebenfalls (?<ts>). Mit true liefert Bunny nach einem Plugin-Update das alte JS aus - bei einer Edge-Rule mit 31536000 s bis zu ein Jahr lang.",
-  "_documentation": "https://docs.bunny.net/docs/getting-started",
+  "_documentation": "https://bunny.net/docs/cdn/",
   "pull_zone": {
     "Name": "shopware-shop",
     "OriginUrl": "https://origin.shop.de",
@@ -11,11 +11,11 @@
     "_comment_zones": "EU-only für DACH-fokussierte Shops günstiger",
     "CacheControlMaxAgeOverride": -1,
     "CacheControlPublicMaxAgeOverride": -1,
-    "_comment_cache": "-1 = Origin Cache-Control Header respektieren",
+    "_comment_cache": "-1 uebernimmt in der Praxis den Cache-Control-Header des Origins. Die Bunny-API-Doku beschreibt die Bedeutung von -1 nicht - nicht verifiziert.",
     "EnableCacheSlice": false,
-    "EnableQueryStringSort": true,
+    "EnableQueryStringOrdering": true,
     "QueryStringVaryParameters": [],
-    "_comment_query": "Query-Strings ignorieren für bessere Hit-Rate",
+    "_comment_query": "Leere Liste = kein Parameter wird aus dem Cache-Key entfernt. Der Query-String bleibt Teil des Schluessels - Pflicht fuer /bundles/ und /theme/, die Shopware nur darueber versioniert.",
     "IgnoreQueryStrings": false,
     "EnableWebPVary": true,
     "EnableAvifVary": true,
@@ -32,7 +32,7 @@
     "BlockedCountries": [],
     "BlockedReferrers": [],
     "EnableOriginShield": true,
-    "OriginShieldZone": "DE",
+    "OriginShieldZoneCode": "DE",
     "_comment_shield": "Origin Shield reduziert Origin-Requests drastisch",
     "EnableTLS1": false,
     "EnableTLS1_1": false,
@@ -69,8 +69,9 @@
   },
   "edge_rules": [
     {
-      "_comment": "Checkout/Account vom Caching ausschließen",
+      "_comment": "Checkout/Account vom Caching ausschliessen. ActionType 3 = OverrideCacheTime; 0 Sekunden umgeht den Edge-Cache (\"if set to 0 it will bypass edge cache, if we don\u0027t already have the content cached on our edge\") - bereits gecachte Antworten kommen weiter aus dem Cache, die Regel wirkt nur nach vorn.",
       "ActionType": 3,
+      "ActionParameter1": "0",
       "Triggers": [
         {
           "Type": 0,
@@ -87,8 +88,8 @@
       "Enabled": true
     },
     {
-      "_comment": "Statische Assets lange cachen",
-      "ActionType": 2,
+      "_comment": "Statische Assets lange cachen. ActionType 3 = OverrideCacheTime in Sekunden. ActionType 2 waere OriginUrl - damit haette diese Regel den Origin auf die Zeichenkette \"31536000\" umgebogen und die Zone zerlegt.",
+      "ActionType": 3,
       "ActionParameter1": "31536000",
       "Triggers": [
         {
@@ -108,6 +109,7 @@
   "_api_example": {
     "create_pull_zone": "curl -X POST 'https://api.bunny.net/pullzone' -H 'AccessKey: YOUR_API_KEY' -H 'Content-Type: application/json' -d '{pull_zone}'",
     "purge_cache": "curl -X POST 'https://api.bunny.net/pullzone/{id}/purgeCache' -H 'AccessKey: YOUR_API_KEY'",
+    "statistics": "curl -X GET 'https://api.bunny.net/statistics?pullZone={id}&dateFrom=2026-09-01&dateTo=2026-09-18' -H 'AccessKey: YOUR_API_KEY'",
     "purge_url": "curl -X POST 'https://api.bunny.net/purge?url=https://cdn.shop.de/path' -H 'AccessKey: YOUR_API_KEY'"
   },
   "_hinweis_webp": "EnableWebPVary/EnableAvifVary steuern nur den Cache-Key (Vary auf Accept). Die Konvertierung selbst macht der Bunny Optimizer, ein separat zu buchendes Feature - nicht gegen die Bunny-API-Doku verifiziert."
