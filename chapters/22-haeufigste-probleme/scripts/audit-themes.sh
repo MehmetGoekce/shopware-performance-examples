@@ -75,11 +75,17 @@ if [[ -z "${DB_URL}" ]]; then
 fi
 
 # mysql://user:pass@host:port/name
+# Benutzerteil am LETZTEN @ abtrennen: ein "@" im Passwort ist in der
+# DSN prozentkodiert, manche Installationen schreiben es aber roh.
 DB_REST="${DB_URL#*://}"
-DB_CRED="${DB_REST%%@*}"
-DB_HOSTPART="${DB_REST#*@}"
+DB_CRED="${DB_REST%@*}"
+DB_HOSTPART="${DB_REST##*@}"
 DB_USER="${DB_CRED%%:*}"
 DB_PASS="${DB_CRED#*:}"
+# Prozentkodierung aufloesen (@ : / # stehen als %40 %3A %2F %23).
+urldecode() { printf '%b' "${1//%/\\x}"; }
+DB_USER=$(urldecode "${DB_USER}")
+DB_PASS=$(urldecode "${DB_PASS}")
 DB_HOSTPORT="${DB_HOSTPART%%/*}"
 DB_NAME="${DB_HOSTPART#*/}"
 DB_NAME="${DB_NAME%%\?*}"
@@ -189,11 +195,15 @@ else
 
     echo
     echo "   Groesste Einzeldateien:"
-    find "${THEME_DIR}" -type f \( -name '*.css' -o -name '*.js' \) -printf '%s %p\n' 2>/dev/null \
-        | sort -rn | head -5 \
-        | while read -r bytes path; do
-            printf '     %6s KB  %s\n' "$(( bytes / 1024 ))" "${path#"${THEME_DIR}"/}"
-        done
+    # head am Ende einer langen Pipeline schickt sort ein SIGPIPE; unter
+    # "set -euo pipefail" bricht das Skript dann mit 141 ab, bevor das
+    # Ergebnis steht. Deshalb erst vollstaendig sortieren, dann kuerzen.
+    THEME_FILES=$(find "${THEME_DIR}" -type f \( -name '*.css' -o -name '*.js' \) \
+        -printf '%s %p\n' 2>/dev/null | sort -rn || true)
+    printf '%s\n' "${THEME_FILES}" | head -5 | while read -r bytes path; do
+        [[ -z "${bytes}" ]] && continue
+        printf '     %6s KB  %s\n' "$(( bytes / 1024 ))" "${path#"${THEME_DIR}"/}"
+    done
 fi
 
 echo
@@ -226,14 +236,18 @@ Ansatzpunkte — mit den Befehlen, die es wirklich gibt:
 
     bin/console theme:compile --keep-assets --sync
 
-  Das -k laesst die alten Assets stehen, bis die neuen geschrieben sind —
-  auf einem Live-Shop ist das der Unterschied zwischen einem kurzen Fenster
-  mit 404-Assets und keinem. Das --sync erzwingt die synchrone Kompilierung;
+  Das -k ueberspringt den Asset-Schritt ganz: public/theme/<theme-id>/ wird
+  weder geloescht noch neu befuellt. Ohne -k loescht der Befehl das
+  Verzeichnis zuerst und schreibt es dann neu — in diesem Fenster laufen
+  Schrift- und Icon-Requests ins Leere. Wer an den Assets etwas geaendert
+  hat, muss also ohne -k kompilieren, am besten ausserhalb der Stosszeit.
+  Das kompilierte CSS/JS ist davon nicht betroffen: es landet ohnehin unter
+  einem neuen Seed-Pfad. Das --sync erzwingt die synchrone Kompilierung;
   ohne das laeuft sie je nach Systemeinstellung
   core.storefrontSettings.asyncThemeCompilation ueber die Queue und braucht
   einen laufenden Worker.
 
-  Alte Asset-Verzeichnisse verschwinden bei einem theme:compile OHNE -k.
-  Das gehoert in ein Wartungsfenster, nicht in den laufenden Betrieb.
+  Kurz: -k ist schnell und beruehrt die Assets nicht, ohne -k werden sie
+  neu geschrieben — mit einer Luecke dazwischen.
 EOF
 exit 1

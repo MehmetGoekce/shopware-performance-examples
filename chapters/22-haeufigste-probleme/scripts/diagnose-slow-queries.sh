@@ -97,11 +97,20 @@ if [[ -z "${DB_URL}" ]]; then
     exit 1
 fi
 
+# Der Benutzerteil wird am LETZTEN @ abgetrennt: ein "@" im Passwort ist
+# in der DSN prozentkodiert, manche Installationen schreiben es aber roh.
 DB_REST="${DB_URL#*://}"
-DB_CRED="${DB_REST%%@*}"
-DB_HOSTPART="${DB_REST#*@}"
+DB_CRED="${DB_REST%@*}"
+DB_HOSTPART="${DB_REST##*@}"
 DB_USER="${DB_CRED%%:*}"
 DB_PASS="${DB_CRED#*:}"
+
+# Prozentkodierung aufloesen — Passwoerter mit @ : / # stehen in der DSN
+# als %40 %3A %2F %23.
+urldecode() { printf '%b' "${1//%/\\x}"; }
+DB_USER=$(urldecode "${DB_USER}")
+DB_PASS=$(urldecode "${DB_PASS}")
+
 DB_HOSTPORT="${DB_HOSTPART%%/*}"
 DB_NAME="${DB_HOSTPART#*/}"; DB_NAME="${DB_NAME%%\?*}"
 DB_HOST="${DB_HOSTPORT%%:*}"
@@ -117,6 +126,14 @@ echo "=== Problem 1: Langsame Datenbankabfragen ==="
 echo
 echo "Datenbank: ${DB_USER}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
 echo
+
+# Verbindung einmal mit sichtbarer Fehlermeldung pruefen. Sonst sieht ein
+# Zugangsfehler genauso aus wie "performance_schema nicht aktiv".
+if ! MYSQL_PWD="${DB_PASS}" mysql -h"${DB_HOST}" -P"${DB_PORT}" -u"${DB_USER}" \
+        -N -B -e "SELECT 1" > /dev/null; then
+    echo "Keine Verbindung zur Datenbank (Meldung oben)." >&2
+    exit 69
+fi
 
 ISSUES=0
 

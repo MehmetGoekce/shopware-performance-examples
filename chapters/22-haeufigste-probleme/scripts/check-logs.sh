@@ -50,7 +50,12 @@ echo "   ${LOG_DIR}: ${TOTAL_SIZE}"
 echo ""
 echo "2. Größte Log-Dateien..."
 echo ""
-du -ah "${LOG_DIR}"/*.log 2>/dev/null | sort -rh | head -10 | while read -r size file; do
+# Erst vollstaendig sortieren, dann kuerzen: ein head am Pipeline-Ende
+# schickt sort ein SIGPIPE, und unter "set -euo pipefail" bricht das
+# Skript daran ab (Exit 141).
+LOG_SIZES=$(du -ah "${LOG_DIR}"/*.log 2>/dev/null | sort -rh || true)
+printf '%s\n' "${LOG_SIZES}" | head -10 | while read -r size file; do
+    [[ -z "${file}" ]] && continue
     echo "   ${size}  $(basename "${file}")"
 done
 
