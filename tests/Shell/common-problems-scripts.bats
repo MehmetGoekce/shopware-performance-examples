@@ -618,3 +618,18 @@ STUB
     run grep -q 'Xdebug' "$CONFIG/php-opcache.ini"
     [ "$status" -eq 0 ]
 }
+
+@test "config/php-opcache.ini nennt den stillen Fall jit_buffer_size=0" {
+    # Regressionstest zur Review-Runde: Bei pcov/Xdebug gibt es eine Warnung
+    # (sie landet nur auf stderr des Masters). Ganz ohne Warnung bleibt
+    # opcache.jit=tracing ohne Buffer - die Vorgabe ist 0, dann laeuft kein
+    # JIT, und ini_get() meldet trotzdem den konfigurierten Wert.
+    run grep -q 'jit_buffer_size fehlt' "$CONFIG/php-opcache.ini"
+    [ "$status" -eq 0 ]
+    # Die Bedingung fuer pcov/Xdebug muss die aktive Einstellung nennen,
+    # nicht bloss "geladen": mit xdebug.mode=off laeuft der JIT.
+    run grep -q 'xdebug.mode=off' "$CONFIG/php-opcache.ini"
+    [ "$status" -eq 0 ]
+    run grep -q 'pcov.enabled=1' "$CONFIG/php-opcache.ini"
+    [ "$status" -eq 0 ]
+}
