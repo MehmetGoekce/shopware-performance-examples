@@ -95,9 +95,10 @@ Requests serialisiert — der `files`-Save-Handler sperrt die Session.
 SHOP=/var/www/shopware
 PHPV=8.3   # "php -v" zeigt die installierte Version
 
-# OPcache
-sudo cp config/php-opcache.ini /etc/php/${PHPV}/fpm/conf.d/10-opcache.ini
-sudo chmod 644 /etc/php/${PHPV}/fpm/conf.d/10-opcache.ini
+# OPcache — NICHT nach 10-opcache.ini kopieren, das ist der Symlink der
+# Distribution und traegt als einziger zend_extension=opcache.so.
+sudo cp config/php-opcache.ini /etc/php/${PHPV}/fpm/conf.d/99-shopware-opcache.ini
+sudo chmod 644 /etc/php/${PHPV}/fpm/conf.d/99-shopware-opcache.ini
 sudo systemctl reload php${PHPV}-fpm
 
 # Kompression, Nginx

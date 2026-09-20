@@ -181,7 +181,8 @@ fi
 echo "${PROBLEMS} Punkt(e) zu verbessern. Vorlage: config/php-opcache.ini"
 echo
 cat <<'EOF'
-; /etc/php/8.3/fpm/conf.d/10-opcache.ini
+; /etc/php/8.3/fpm/conf.d/99-shopware-opcache.ini
+; (nicht 10-opcache.ini — das ist der Symlink der Distribution)
 opcache.enable=1
 opcache.memory_consumption=256
 opcache.interned_strings_buffer=16
