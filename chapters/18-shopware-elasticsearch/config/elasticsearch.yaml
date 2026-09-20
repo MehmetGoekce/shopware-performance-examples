@@ -1,51 +1,67 @@
-# Shopware 6 Elasticsearch/OpenSearch Configuration
-#
-# This configuration optimizes Elasticsearch for production use.
+# Shopware 6 Elasticsearch/OpenSearch — was wirklich in eine eigene YAML gehoert
 #
 # Place in: config/packages/elasticsearch.yaml
 #
-# Requirements:
-# - Elasticsearch 7.x or OpenSearch 2.x
-# - For Shopware 6.6+: OpenSearch required for Advanced Search 2.0
+# WICHTIG, und der haeufigste Irrtum: Das Bundle konfiguriert sich in
+# Shopware 6.5-6.7 ueber UMGEBUNGSVARIABLEN, nicht ueber eine eigene YAML.
+# Eine Standardinstallation hat keine config/packages/elasticsearch.yaml.
+# In die .env.local gehoeren:
+#
+#   OPENSEARCH_URL=http://localhost:9200
+#   SHOPWARE_ES_ENABLED=1
+#   SHOPWARE_ES_INDEXING_ENABLED=1
+#   SHOPWARE_ES_INDEX_PREFIX=sw
+#   SHOPWARE_ES_THROW_EXCEPTION=1
+#   SHOPWARE_ES_INDEXING_BATCH_SIZE=100
+#
+# Mehrere Knoten: OPENSEARCH_URL=http://a:9200,http://b:9200 — als EIN String
+# mit Komma. `hosts` ist im Bundle ein scalarNode; eine YAML-Liste bricht den
+# Container-Build mit «Invalid type for path "elasticsearch.hosts". Expected
+# "scalar", but got "array"». (Configuration.php:22; ClientFactory macht
+# explode(',', $hosts).)
+#
+# ELASTICSEARCH_URL gibt es nicht. Der Name kommt aus keiner Shopware-Version;
+# bis 6.4 hiess die Variable SHOPWARE_ES_HOSTS, seit 6.5.0.0 OPENSEARCH_URL.
+# Wer ELASTICSEARCH_URL in eine eigene YAML schreibt, bekommt KEINEN Fehler
+# beim cache:clear — erst der erste Zugriff wirft
+# «Environment variable not found: "ELASTICSEARCH_URL"».
+#
+# SHOPWARE_ES_INDEX_PREFIX ohne Unterstrich! Shopware haengt ihn selbst an
+# (ElasticsearchHelper::getIndexName). 'sw_' ergibt den Alias sw__product.
+#
+# Was hier steht, ist genau das, was die Umgebungsvariablen NICHT abdecken:
+# search.timeout, index_settings und analysis.
+#
+# Getestet gegen Shopware 6.6.10.6 und Elasticsearch 8.15.3.
 
 elasticsearch:
-    # Enable Elasticsearch
-    enabled: true
-
-    # ES/OpenSearch hosts
-    hosts:
-        - '%env(ELASTICSEARCH_URL)%'
-
-    # Enable indexing (set false for read-only replicas)
-    indexing_enabled: true
-
-    # Index prefix for multi-shop setups
-    # Results in: sw_product, sw_category, etc.
-    index_prefix: 'sw_'
-
-    # Request timeout in seconds
-    # Increase for large catalogs (100k+ products)
+    # search.timeout ist NICHT env-gebunden — das Bundle liefert 5s fest aus
+    # (Resources/config/packages/elasticsearch.yaml:8-9). Ihn zu heben ist
+    # einer der wenigen Gruende, ueberhaupt eine eigene YAML anzulegen.
+    # Der Wert braucht eine Zeiteinheit; `timeout: 30` auf dieser Ebene ist
+    # kein gueltiger Schluessel («Unrecognized option "timeout"»).
     search:
-        timeout: 30
+        timeout: '30s'
 
     # ============================================
     # Index Settings
     # ============================================
-    # These settings are applied when creating new indices
-
+    # Gilt beim ANLEGEN eines Index. Shopware legt bei jedem `es:index` einen
+    # neuen Index <alias>_<timestamp> an, also greift das bei jedem Reindex.
     index_settings:
-        # Single-node setup: 1 shard, 0 replicas
-        # Multi-node: Adjust based on cluster size
+        # Shopwares Default ist 3/3 (nicht 1/0), beide mit
+        # `@deprecated tag:v6.7.0 - change default value to null`.
+        # Drei Replicas lassen einen Einzelknoten-Cluster dauerhaft auf
+        # `yellow` stehen — auf einem Knoten gehoert hier 0 hin.
         number_of_shards: 1
         number_of_replicas: 0
 
-        # Refresh interval
-        # Higher = better indexing performance, slower search updates
-        # Production: 5s-30s
-        # Bulk import: -1 (disabled)
+        # ACHTUNG: Nur fuer die Dauer des Aufbaus wirksam. Nach dem
+        # Alias-Swap setzt CreateAliasTaskHandler refresh_interval auf null
+        # (= ES-Default 1s) zurueck, nicht auf den hier gesetzten Wert.
+        # (CreateAliasTaskHandler.php:105-111.)
         refresh_interval: '5s'
 
-        # Merge policy for optimal segment count
         merge:
             policy:
                 floor_segment: '2mb'
@@ -54,30 +70,37 @@ elasticsearch:
             scheduler:
                 max_thread_count: 2
 
-        # Translog settings for durability
         translog:
-            # 'async' for better performance
-            # 'request' for guaranteed durability
+            # 'async' handelt Haltbarkeit gegen Durchsatz. Fuer einen
+            # Suchindex vertretbar: Verlust bedeutet Reindex, nicht Datenverlust.
             durability: 'async'
-            # Flush threshold
             flush_threshold_size: '512mb'
 
         # ============================================
-        # Analysis Configuration
+        # Analysis — bewusst HIER und nicht auf der obersten Ebene
         # ============================================
-        # German language optimization
-
+        # Es gibt den Knoten `elasticsearch.analysis`. Er ist aber
+        # performNoDeepMerging() (Configuration.php:48): wer ihn benutzt,
+        # ERSETZT Shopwares kompletten analysis-Block — also
+        # sw_lowercase_normalizer, sw_whitespace_analyzer, sw_ngram_analyzer,
+        # sw_english_analyzer, sw_german_analyzer und deren Filter. Die
+        # mitgelieferten dynamic_templates verweisen auf
+        # sw_lowercase_normalizer; jede Index-Erstellung scheitert dann mit
+        #   HTTP 400 — normalizer [sw_lowercase_normalizer] not found
+        #             for field [__dynamic__keywords]
+        #
+        # `index_settings` dagegen merged tief und wird als settings.index
+        # geschickt. Elasticsearch liest `index.analysis.*` und `analysis.*`
+        # als denselben Namensraum — eigene Analyzer landen also NEBEN
+        # Shopwares eigenen statt an deren Stelle. Gemessen: der Index traegt
+        # danach german_analyzer UND alle vier sw_*-Analyzer.
+        #
+        # Wer den Block trotzdem auf elasticsearch.analysis legen will, muss
+        # Shopwares Definitionen aus
+        # vendor/shopware/elasticsearch/Resources/config/packages/elasticsearch.yaml
+        # wortgleich mitschreiben.
         analysis:
             analyzer:
-                # Default analyzer for text fields
-                default:
-                    type: 'custom'
-                    tokenizer: 'standard'
-                    filter:
-                        - 'lowercase'
-                        - 'german_normalization'
-                        - 'german_stemmer'
-
                 # German-specific analyzer
                 german_analyzer:
                     type: 'custom'
@@ -104,24 +127,25 @@ elasticsearch:
                         - 'lowercase'
 
             filter:
-                # German stopwords
                 german_stop:
                     type: 'stop'
                     stopwords: '_german_'
 
-                # German stemmer (light version for better precision)
+                # light_german statt german: weniger aggressiv, bessere Praezision
                 german_stemmer:
                     type: 'stemmer'
                     language: 'light_german'
 
-                # Edge n-grams for autocomplete
                 edge_ngram_filter:
                     type: 'edge_ngram'
                     min_gram: 2
                     max_gram: 15
                     preserve_original: true
 
-                # Synonym filter (customize for your domain)
+                # Synonyme: absichtlich NICHT in einer Analyzer-Kette oben.
+                # Ein synonym-Filter ohne Analyzer, der ihn benutzt, ist
+                # wirkungslos — er muss in den filter-Block des Analyzers,
+                # in dem er greifen soll. Als Vorlage zum Einhaengen:
                 german_synonyms:
                     type: 'synonym'
                     synonyms:
@@ -134,7 +158,7 @@ elasticsearch:
 # ============================================
 # Hinweis: Elasticsearch ist ein separates Bundle mit Root-Key 'elasticsearch',
 # NICHT unter 'shopware.elasticsearch'.
-# Search-Boost-Werte werden über die Admin-Oberfläche konfiguriert
+# Search-Boost-Werte werden ueber die Admin-Oberflaeche konfiguriert
 # (Einstellungen > Suche > Suchverhalten).
 shopware:
     # Admin worker (DISABLE in production!)
@@ -142,13 +166,3 @@ shopware:
     admin_worker:
         enable_admin_worker: false
         poll_interval: 30000
-
-# ============================================
-# Environment Variables
-# ============================================
-# Add to .env:
-#
-# ELASTICSEARCH_URL=http://localhost:9200
-#
-# For OpenSearch with auth:
-# ELASTICSEARCH_URL=https://admin:admin@localhost:9200

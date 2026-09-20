@@ -1,118 +1,103 @@
 # JVM Configuration for Elasticsearch/OpenSearch
 #
-# CRITICAL: This file determines ES performance!
-#
 # Place in: /etc/elasticsearch/jvm.options.d/custom.options (ES)
 #        or /etc/opensearch/jvm.options.d/custom.options (OpenSearch)
 #
-# The 50% Rule:
-# - Set heap to 50% of available RAM
-# - Never exceed 31-32 GB (Compressed OOPs limit)
-# - Always set Xms = Xmx (same value!)
-
+# NIE die mitgelieferte jvm.options ersetzen — immer eine eigene Datei unter
+# jvm.options.d/ anlegen. Die Hauptdatei wird beim Paket-Update ueberschrieben.
+#
+# Getestet: Start mit Elasticsearch 8.15.3.
+#
 # ============================================
 # Heap Size
 # ============================================
-# ADJUST BASED ON YOUR SERVER RAM!
 #
-# Server RAM | Heap Size
-# -----------|----------
-# 8 GB       | 4g
-# 16 GB      | 8g
-# 32 GB      | 16g
-# 64 GB      | 31g (max recommended)
-
-# For 16 GB RAM server:
+# Zuerst die Frage, ob hier ueberhaupt etwas hingehoert: Seit ES 7.11 setzt
+# Elasticsearch den Heap SELBST, abgeleitet aus dem verfuegbaren Speicher und
+# den Rollen des Knotens. Die mitgelieferte jvm.options sagt es so:
+#
+#   "The heap size is automatically configured by Elasticsearch based on the
+#    available memory in your system and the roles each node is configured to
+#    fulfill."
+#
+# Ein fester Wert lohnt sich, wenn der Knoten sich die Maschine mit anderen
+# Diensten teilt — auf einem Shopware-Server also fast immer, weil dort auch
+# MySQL, PHP-FPM und Redis liegen. Dann gilt:
+#
+# - Heap = rund die Haelfte des Speichers, den der Knoten fuer sich hat.
+#   Die andere Haelfte braucht Lucene fuer den Dateisystem-Cache.
+# - Xms = Xmx, immer.
+# - Obergrenze ist NICHT 31 oder 32 GB. Elastic dokumentiert:
+#     "The exact threshold varies but 26GB is safe on most systems and can be
+#      as large as 30GB on some systems."
+#   Oberhalb dieser Schwelle verliert die JVM die komprimierten Zeiger
+#   (Compressed OOPs) — 26 GB mit OOPs ist dann schneller als 40 GB ohne.
+#   Ob die eigene Maschine 26 oder 30 GB vertraegt, zeigt beim Start die Zeile
+#   "heap size [...], compressed ordinary object pointers [true|false]".
+#   Quelle: https://www.elastic.co/guide/en/elasticsearch/reference/current/advanced-configuration.html
+#
+# Server-RAM fuer den ES-Knoten | Heap
+# ------------------------------|------
+# 8 GB                          | 4g
+# 16 GB                         | 8g
+# 32 GB                         | 16g
+# 64 GB und mehr                | 26g  (Obergrenze, nicht 31g)
+#
+# ACHTUNG: Die beiden Zeilen unten sind das Beispiel fuer einen Knoten mit
+# 16 GB. Wer die Datei unveraendert auf einen 8-GB-Server legt, gibt der JVM
+# den gesamten Speicher.
 -Xms8g
 -Xmx8g
 
 # ============================================
 # Garbage Collector
 # ============================================
-# G1GC recommended for Elasticsearch 7.x+
-
-# Use G1GC
+# G1GC ist seit ES 7.x der Default und steht bereits in der mitgelieferten
+# jvm.options. Die Zeile hier ist Absicherung, kein Tuning.
 -XX:+UseG1GC
 
-# G1GC settings
--XX:G1HeapRegionSize=16m
--XX:MaxGCPauseMillis=200
--XX:G1ReservePercent=25
--XX:InitiatingHeapOccupancyPercent=30
+# Bewusst NICHT gesetzt: -XX:G1ReservePercent, -XX:InitiatingHeapOccupancyPercent,
+# -XX:G1HeapRegionSize, -XX:MaxGCPauseMillis. Elasticsearch 8.15 liefert keine
+# davon mehr aus (7.x tat es noch). Wer sie setzt, uebersteuert die Ergonomie
+# der JVM mit Werten aus einer aelteren Generation — ohne eigene Messung ist
+# das Verschlechtern mit Zusatzschritten.
 
 # ============================================
-# Memory Optimization
+# Memory
 # ============================================
-
-# Pre-touch memory pages (reduces latency)
+# Speicherseiten vorab anfassen: gleichmaessigere Latenz, dafuer ein
+# spuerbar laengerer Start (die JVM schreibt den ganzen Heap einmal durch).
+# Nur zusammen mit Xms = Xmx sinnvoll.
 -XX:+AlwaysPreTouch
-
-# Disable explicit GC calls
--XX:+DisableExplicitGC
-
-# String deduplication (reduces memory)
--XX:+UseStringDeduplication
 
 # ============================================
 # Error Handling
 # ============================================
-
-# Heap dump on OOM
+# Beide stehen schon in der mitgelieferten jvm.options; hier nur, damit die
+# Pfade zur eigenen Installation passen.
 -XX:+HeapDumpOnOutOfMemoryError
 -XX:HeapDumpPath=/var/log/elasticsearch/
-
-# Exit on OOM (let systemd restart)
 -XX:+ExitOnOutOfMemoryError
 
 # ============================================
-# JIT Compiler
+# Performance Tuning (auskommentiert)
 # ============================================
 
-# Reserve code cache
--XX:ReservedCodeCacheSize=512m
-
-# ============================================
-# Logging
-# ============================================
-
-# GC logging (for debugging)
-# -Xlog:gc*,gc+age=trace,safepoint:file=/var/log/elasticsearch/gc.log:utctime,pid,tags:filecount=32,filesize=64m
-
-# ============================================
-# Performance Tuning
-# ============================================
-
-# Use large pages if available
-# Requires: vm.nr_hugepages in sysctl
+# Large Pages — braucht vm.nr_hugepages im sysctl
 # -XX:+UseLargePages
-
-# Optimize for throughput (not latency)
-# -XX:+UseParallelGC
-
-# ============================================
-# Java Version Specific
-# ============================================
-
-# For Java 17+
---add-opens java.base/java.lang=ALL-UNNAMED
---add-opens java.base/java.util=ALL-UNNAMED
 
 # ============================================
 # NOTES
 # ============================================
 #
-# 1. Why max 31GB?
-#    Above 32GB, JVM loses Compressed OOPs optimization
-#    31GB with OOPs is often FASTER than 40GB without
+# 1. Aktuelle Werte pruefen:
+#    curl -s localhost:9200/_nodes/jvm | jq '.nodes[].jvm | {version, mem}'
 #
-# 2. Why Xms = Xmx?
-#    Prevents heap resizing during operation
-#    Reduces GC overhead and latency spikes
-#
-# 3. How to check current settings?
-#    curl -s localhost:9200/_nodes/stats/jvm | jq
-#
-# 4. Monitoring heap usage:
+# 2. Heap-Auslastung beobachten (unter 85 % halten):
 #    curl -s localhost:9200/_nodes/stats/jvm | \
 #      jq '.nodes[].jvm.mem.heap_used_percent'
-#    Keep below 85%!
+#
+# 3. Ob die Speichersperre wirklich greift (bootstrap.memory_lock):
+#    curl -s 'localhost:9200/_nodes?filter_path=**.mlockall'
+#    Antwortet das mit false, ist die Zeile in elasticsearch.yml wirkungslos —
+#    dann fehlt LimitMEMLOCK=infinity im systemd-Override.

@@ -4,6 +4,31 @@
 # Place in: /etc/elasticsearch/elasticsearch.yml (ES)
 #        or /etc/opensearch/opensearch.yml (OpenSearch)
 #
+# Getestet: Start mit Elasticsearch 8.15.3, unveraendert ausser den
+# beiden path.*-Zeilen, die zur Installationsart passen muessen.
+#
+# ZWEI Dinge vorweg, die einen Start kosten, wenn man sie nicht kennt:
+#
+# 1. In diese Datei duerfen KEINE Index-Level-Settings. Alles, was mit
+#    `index.` beginnt — Slow-Log-Schwellen, number_of_shards,
+#    merge.scheduler.max_thread_count — laesst den Node mit
+#    «node settings must not contain any index level settings» und
+#    Exit-Code 1 gar nicht erst starten. Das gilt seit ES 5.x.
+#    Index-Level-Settings gehen ueber die _settings-API oder ueber ein
+#    Index-Template; fuer Shopware-Indizes ueber
+#    elasticsearch.index_settings in config/packages/elasticsearch.yaml
+#    (siehe elasticsearch.yaml in diesem Ordner). Der Slow-Log-Block, der
+#    frueher hier stand, steht deshalb jetzt in slowlog-settings.sh.
+#
+# 2. Elasticsearch 8.x SCHREIBT beim ersten Start in diese Datei. Es haengt
+#    einen Block «BEGIN SECURITY AUTO CONFIGURATION» an, schaltet
+#    xpack.security.enabled: true und erzeugt TLS-Keystores. Wer die Datei
+#    schreibgeschuetzt einhaengt (Container, read-only rootfs), bekommt
+#    beim Start «FileSystemException … Device or resource busy». Und alle
+#    curl-Beispiele gegen http://localhost:9200 ohne Zugangsdaten schlagen
+#    danach fehl — der Node spricht https und verlangt das generierte
+#    elastic-Passwort.
+#
 # Documentation:
 # - https://www.elastic.co/guide/en/elasticsearch/reference/current/settings.html
 # - https://opensearch.org/docs/latest/install-and-configure/configuring-opensearch/
@@ -25,6 +50,9 @@ node.roles: [master, data, ingest]
 # ============================================
 # Paths
 # ============================================
+# Diese beiden Werte gelten fuer die .deb/.rpm-Installation. Im offiziellen
+# Docker-Image liegen sie unter /usr/share/elasticsearch/{data,logs} — dort
+# faellt der Node sonst mit «AccessDeniedException: /var/log/elasticsearch».
 
 # Data directory (use fast SSD!)
 path.data: /var/lib/elasticsearch
@@ -65,22 +93,47 @@ discovery.type: single-node
 # Memory
 # ============================================
 
-# Lock memory (prevents swapping)
-# Requires: LimitMEMLOCK=infinity in systemd
+# Lock memory (prevents swapping).
+#
+# ACHTUNG, hier gehen Erwartung und Wirkung auseinander:
+#
+# - Mit discovery.type: single-node (also in der Konfiguration oben) sind
+#   die Bootstrap-Checks AUS. Fehlt das memlock-Limit, startet der Node
+#   trotzdem und loggt nur
+#     WARN  Unable to lock JVM Memory: error=12, reason=Cannot allocate memory
+#   Der Schutz vor Swapping ist dann NICHT da, obwohl die Zeile gesetzt ist.
+#   Nachpruefen: GET /_nodes?filter_path=**.mlockall
+#
+# - Sobald der Node in den Mehrknoten-Betrieb geht (discovery.type raus,
+#   cluster.initial_master_nodes gesetzt, non-loopback network.host),
+#   greifen die Bootstrap-Checks und er startet GAR NICHT mehr — gemessen
+#   Exit-Code 78, und zwar an zwei Checks gleichzeitig.
+#
+# Voraussetzungen auf dem Host, beide noetig:
+#   /etc/systemd/system/elasticsearch.service.d/override.conf:
+#       [Service]
+#       LimitMEMLOCK=infinity
+#   /etc/sysctl.d/99-elasticsearch.conf:
+#       vm.max_map_count=262144      # Default 65530 ist zu niedrig
+#   danach: sysctl --system && systemctl daemon-reload
 bootstrap.memory_lock: true
 
 # ============================================
 # Thread Pools
 # ============================================
-
-# Search thread pool
-thread_pool:
-    search:
-        size: 4
-        queue_size: 1000
-    write:
-        size: 4
-        queue_size: 1000
+#
+# HARTE GRENZE: thread_pool.<pool>.size darf hoechstens 1 + Anzahl
+# Prozessoren sein. Auf einem 2-Kern-Server bricht ein fester Wert 4 den
+# Start ab: «Failed to parse value [4] for setting [thread_pool.write.size]
+# must be <= 3», Exit 1. Deshalb stehen hier KEINE festen Groessen — die
+# Defaults leiten sich von der Kernzahl ab und sind fuer Shopware richtig.
+#
+# Wer trotzdem setzen will, nimmt Werte, die auf der kleinsten Maschine im
+# Cluster passen:
+#   thread_pool.search.size: 3      # nur bei >= 2 Kernen
+#
+# queue_size dagegen ist frei. Der Default fuer write ist 10000; ihn zu
+# SENKEN ist fuer den Bulk-Reindex aus 18.7 das Gegenteil von hilfreich.
 
 # ============================================
 # Indexing
@@ -104,26 +157,11 @@ indices:
             size: 2%
 
 # ============================================
-# Slow Log (for debugging)
+# Slow Log
 # ============================================
-
-# Search slow log thresholds
-index.search.slowlog.threshold.query.warn: 2s
-index.search.slowlog.threshold.query.info: 1s
-index.search.slowlog.threshold.query.debug: 500ms
-index.search.slowlog.threshold.query.trace: 200ms
-
-# Fetch slow log thresholds
-index.search.slowlog.threshold.fetch.warn: 1s
-index.search.slowlog.threshold.fetch.info: 500ms
-index.search.slowlog.threshold.fetch.debug: 200ms
-index.search.slowlog.threshold.fetch.trace: 100ms
-
-# Indexing slow log thresholds
-index.indexing.slowlog.threshold.index.warn: 10s
-index.indexing.slowlog.threshold.index.info: 5s
-index.indexing.slowlog.threshold.index.debug: 2s
-index.indexing.slowlog.threshold.index.trace: 500ms
+# Bewusst NICHT hier — siehe Punkt 1 im Kopf dieser Datei.
+# scripts/slowlog-settings.sh setzt dieselben Schwellen ueber die
+# _settings-API auf den Shopware-Indizes.
 
 # ============================================
 # Security (OpenSearch)
