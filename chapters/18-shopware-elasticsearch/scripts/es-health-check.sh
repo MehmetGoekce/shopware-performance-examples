@@ -16,6 +16,15 @@
 set -euo pipefail
 
 # Parse arguments
+# Alles ausser --help/-h wurde frueher stillschweigend ignoriert und der volle
+# Check lief trotzdem — ein Tippfehler in einer Cron-Zeile blieb damit
+# unsichtbar. Die uebrigen Skripte dieses Ordners brechen mit Exit 2 ab.
+if [[ $# -gt 0 && "${1}" != "--help" && "${1}" != "-h" ]]; then
+    echo "Unbekanntes Argument: ${1}" >&2
+    echo "Aufruf: $0 [--help]" >&2
+    exit 2
+fi
+
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
     echo "Usage: $0 [options]"
     echo ""

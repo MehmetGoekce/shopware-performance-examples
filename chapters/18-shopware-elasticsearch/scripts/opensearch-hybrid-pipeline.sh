@@ -37,6 +37,21 @@
 #           ./opensearch-hybrid-pipeline.sh
 set -euo pipefail
 
+# Der --help-Zweig MUSS vor die ${MODEL_ID:?}-Expansion. Stand er dahinter,
+# antwortete `--help` mit «MODEL_ID: Set MODEL_ID to a deployed ...» statt mit
+# der Hilfe.
+case "${1:-}" in
+    -h|--help)
+        sed -n '/^# Usage:/,/^#           \.\/opensearch-hybrid-pipeline\.sh/p' "$0" \
+            | sed 's/^# \{0,1\}//'
+        exit 0
+        ;;
+    ?*)
+        echo "Unbekannte Option: $1" >&2
+        exit 2
+        ;;
+esac
+
 OS_URL="${OS_URL:-http://localhost:9200}"
 MODEL_ID="${MODEL_ID:?Set MODEL_ID to a deployed ml-commons text-embedding model}"
 INDEX="${INDEX:-sw_product_neural}"

@@ -12,6 +12,17 @@
 #   ./es-index-stats.sh
 #   ./es-index-stats.sh sw_product
 #   ./es-index-stats.sh --detailed
+#   ./es-index-stats.sh sw_product --detailed
+#
+# Environment:
+#   ES_URL         Default http://localhost:9200
+#   INDEX_PREFIX   Default sw   (ohne Unterstrich — Shopware haengt ihn an)
+#   DETAILED       true schaltet die Feld-Mappings zu (wie --detailed)
+#
+# Exit codes:
+#   0  Kennzahlen ausgegeben
+#   1  Cluster nicht erreichbar oder Ziel existiert nicht
+#   2  Falscher Aufruf
 #
 
 set -euo pipefail
@@ -21,7 +32,7 @@ ES_URL="${ES_URL:-http://localhost:9200}"
 # OHNE Unterstrich — Shopware haengt ihn selbst an
 # (ElasticsearchHelper::getIndexName). Ein Prefix 'sw_' erzeugt sw__product.
 INDEX_PREFIX="${INDEX_PREFIX:-sw}"
-INDEX="${1:-}"
+INDEX="${INDEX:-}"
 DETAILED="${DETAILED:-false}"
 
 # Parse arguments
@@ -42,6 +53,8 @@ for arg in "$@"; do
             exit 0
             ;;
         -*)
+            echo "Unbekannte Option: ${arg}" >&2
+            exit 2
             ;;
         *)
             if [[ -z "${INDEX}" ]]; then
@@ -62,6 +75,23 @@ if [[ -n "${INDEX}" ]]; then
     TARGET="${INDEX}"
 else
     TARGET="${INDEX_PREFIX}_*"
+fi
+
+# Erst pruefen, dann rechnen. Ohne diese beiden Zeilen stirbt das Skript bei
+# einem nicht existierenden Ziel mitten im zweiten Abschnitt mit dem rohen
+# `jq: error … null (null) has no keys` und einem Exit-Code, den es nirgends
+# dokumentiert. es-benchmark.sh macht es an dieser Stelle richtig.
+if ! curl -sf --connect-timeout 5 -o /dev/null "${ES_URL}/_cluster/health"; then
+    echo "Cluster unter ${ES_URL} nicht erreichbar." >&2
+    exit 1
+fi
+# -f ist hier wesentlich: Bei einem konkreten, nicht existierenden Index
+# antwortet _cat mit 404 UND einem Fehlerrumpf — ohne -f waere die Ausgabe
+# nicht leer und der Check liefe durch. Ein Platzhalter, der nichts trifft,
+# antwortet dagegen mit 200 und leerem Rumpf.
+if ! curl -sf "${ES_URL}/_cat/indices/${TARGET}?h=index" 2>/dev/null | grep -q .; then
+    echo "Kein Index passt auf '${TARGET}'." >&2
+    exit 1
 fi
 
 echo -e "${BLUE}============================================${NC}"
@@ -142,10 +172,10 @@ if [[ "${DETAILED}" = "true" ]]; then
 
     curl -s "${ES_URL}/${TARGET}/_mapping" 2>/dev/null | jq -r '
         to_entries[] |
-        .key as ${index} |
+        .key as $index |
         .value.mappings.properties // {} |
         to_entries[] |
-        "\(${index})|\(.key)|\(.value.type // "object")"
+        "\($index)|\(.key)|\(.value.type // "object")"
     ' | sort | while IFS='|' read -r index field type; do
         printf "   %-30s %-25s %s\n" "${index}" "${field}" "${type}"
     done
@@ -153,7 +183,7 @@ if [[ "${DETAILED}" = "true" ]]; then
 fi
 
 # Search performance
-echo -e "${YELLOW}4. Search Performance${NC}"
+echo -e "${YELLOW}5. Search Performance${NC}"
 echo "-------------------------------------------"
 SEARCH_STATS=$(curl -s "${ES_URL}/${TARGET}/_stats/search" 2>/dev/null)
 
@@ -200,10 +230,15 @@ echo ""
 
 # Summary
 echo -e "${BLUE}============================================${NC}"
-TOTAL_SIZE=$(curl -s "${ES_URL}/_cat/indices/${TARGET}?h=store.size&bytes=b" 2>/dev/null | awk '{sum+=$1} END {print sum}')
-TOTAL_DOCS=$(curl -s "${ES_URL}/_cat/indices/${TARGET}?h=docs.count" 2>/dev/null | awk '{sum+=$1} END {print sum}')
-TOTAL_SIZE_MB=$((TOTAL_SIZE / 1024 / 1024))
+TOTAL_SIZE=$(curl -s "${ES_URL}/_cat/indices/${TARGET}?h=store.size&bytes=b" 2>/dev/null | awk '{sum+=$1} END {print sum+0}')
+TOTAL_LUCENE=$(curl -s "${ES_URL}/_cat/indices/${TARGET}?h=docs.count" 2>/dev/null | awk '{sum+=$1} END {print sum+0}')
+# Ganzzahldivision meldete fuer 105 kB "0 MB". Und die Zahl aus docs.count
+# heisst Lucene-Dokumente, nicht Dokumente — genau die Verwechslung, gegen die
+# dieses Skript weiter oben anschreibt. Die Entitaetszahl liefert _count.
+TOTAL_SIZE_MB=$(awk -v b="${TOTAL_SIZE}" 'BEGIN { printf "%.1f", b / 1024 / 1024 }')
+ENTITIES=$(curl -s "${ES_URL}/${INDEX_PREFIX}_product/_count" 2>/dev/null | jq -r '.count // "n/a"')
 
-echo "Total Documents: ${TOTAL_DOCS}"
-echo "Total Size:      ${TOTAL_SIZE_MB} MB"
+echo "Total Lucene-Docs: ${TOTAL_LUCENE}   (inkl. nested — nicht die Entitaetszahl)"
+echo "Produkte (_count): ${ENTITIES}"
+echo "Total Size:        ${TOTAL_SIZE_MB} MB"
 echo ""

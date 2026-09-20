@@ -192,6 +192,75 @@ DIC
     [[ "$output" == *"Usage:"* ]]
 }
 
+@test "extract-dictionary.sh: kodiert eine ISO-8859-1-Quelle nach UTF-8 um" {
+    # Die echte Quelle (de_DE_frami.dic) ist ISO-8859-1. Ohne iconv ist das
+    # Ergebnis kein gueltiges UTF-8 — und genau das verlangt Elasticsearch.
+    command -v iconv > /dev/null 2>&1 || skip "iconv fehlt in dieser Umgebung"
+    printf 'Ä\n' | LC_ALL=C.UTF-8 sed 's/.*/\L&/' | grep -q 'ä' || skip "sed ohne \\L auf UTF-8"
+
+    printf '2\nAermel/N\n' > "$TMP/latin.dic"
+    printf 'Zwiebel/N\n' | iconv -f UTF-8 -t ISO-8859-1 >> "$TMP/latin.dic"
+    printf '\xc4rmel/N\n' >> "$TMP/latin.dic"
+
+    run env OUT="$TMP/latin.txt" "$DIR/extract-dictionary.sh" "$TMP/latin.dic"
+    [ "$status" -eq 0 ]
+    run iconv -f UTF-8 -t UTF-8 "$TMP/latin.txt"
+    [ "$status" -eq 0 ]
+    run grep -cx 'ärmel' "$TMP/latin.txt"
+    [ "$output" = "1" ]
+}
+
+@test "extract-dictionary.sh: Hunspell-Kommentarzeilen landen nicht in der Liste" {
+    # BusyBox sed kennt kein \L und macht aus "schuh" ein "Lschuh" — die
+    # Gegenprobe des Skripts schlaegt dann zu Recht an. Also auch hier skippen,
+    # statt den Test dort rot zu faerben.
+    printf 'Ä\n' | LC_ALL=C.UTF-8 sed 's/.*/\L&/' | grep -q 'ä' || skip "sed ohne \\L auf UTF-8"
+    printf '3\n# This is the dictionary file of the de_DE Hunspell dictionary\nschuh/N\njacke/N\n' \
+        > "$TMP/comment.dic"
+    run env OUT="$TMP/comment.txt" "$DIR/extract-dictionary.sh" "$TMP/comment.dic"
+    [ "$status" -eq 0 ]
+    run grep -c '^#' "$TMP/comment.txt"
+    [ "$output" = "0" ]
+    run grep -cx 'schuh' "$TMP/comment.txt"
+    [ "$output" = "1" ]
+}
+
+@test "es-index-stats.sh: --detailed wird nicht als Indexname verschluckt" {
+    # INDEX="${1:-}" nahm das erste Argument bedingungslos; das Skript fragte
+    # dann _cat/indices/--detailed ab und lieferte leere Tabellen.
+    #
+    # Ohne require_jq waere dieser Test im BusyBox-Image gruen, ohne gelaufen
+    # zu sein: das Skript stirbt dort mit 127, und die Negativ-Zusicherung
+    # trifft dann trivial zu.
+    require_jq
+    run "$DIR/es-index-stats.sh" --detailed
+    [[ "$output" == *"Target:  sw_*"* ]]
+    [[ "$output" != *"Target:  --detailed"* ]]
+}
+
+@test "es-index-stats.sh: unbekannte Option endet mit 2" {
+    run "$DIR/es-index-stats.sh" --quatsch
+    [ "$status" -eq 2 ]
+}
+
+@test "es-health-check.sh: unbekanntes Argument endet mit 2 statt durchzulaufen" {
+    run "$DIR/es-health-check.sh" --quatsch
+    [ "$status" -eq 2 ]
+
+    run "$DIR/es-health-check.sh" --help
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Usage:"* ]]
+}
+
+@test "opensearch-hybrid-pipeline.sh: --help antwortet vor der MODEL_ID-Pruefung" {
+    run "$DIR/opensearch-hybrid-pipeline.sh" --help
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Usage:"* ]]
+
+    run "$DIR/opensearch-hybrid-pipeline.sh" --quatsch
+    [ "$status" -eq 2 ]
+}
+
 @test "alle Kapitel-18-Skripte sind ausfuehrbar" {
     for script in "$DIR"/*.sh; do
         [ -x "$script" ] || fail "nicht ausfuehrbar: $script"

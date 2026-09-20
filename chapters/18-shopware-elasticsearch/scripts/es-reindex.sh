@@ -112,6 +112,14 @@ curl -s "${ES_URL}/_cat/indices/${INDEX_GLOB}?v&h=index,docs.count,store.size" |
 echo ""
 
 if [[ "${FORCE}" != "true" ]]; then
+    # Ohne Terminal (Cron, CI, </dev/null) liefert read bei EOF 1, und mit
+    # set -e endet das Skript an dieser Stelle WORTLOS mit Exit 1 — also mit
+    # dem Code, den der Kopf dieses Skripts fuer «Cluster nicht erreichbar»
+    # vergibt. Lieber laut abbrechen und auf --force zeigen.
+    if [[ ! -t 0 ]]; then
+        echo -e "${RED}Kein Terminal fuer die Rueckfrage. Mit --force aufrufen.${NC}" >&2
+        exit 2
+    fi
     read -r -p "Vollreindex starten? Das dauert je nach Katalog mehrere Minuten. [y/N] " -n 1 REPLY
     echo
     if [[ ! ${REPLY} =~ ^[Yy]$ ]]; then
@@ -137,6 +145,15 @@ if [[ "${PARALLEL}" = "true" ]]; then
 
     # messenger:count gibt es nicht. Der Befehl heisst messenger:stats und
     # liefert mit --format=json {"transports":{"async":{"count":N}}}.
+    #
+    # EINSCHRAENKUNG: Gezaehlt wird der GANZE async-Transport, nicht nur die
+    # Elasticsearch-Nachrichten. Auf einem Shop mit anderer Hintergrundlast
+    # laeuft diese Schleife deshalb bis QUEUE_TIMEOUT und meldet Exit 1,
+    # obwohl der Reindex laengst durch ist. Dass der Transport der richtige
+    # ist, stimmt (ElasticsearchIndexingMessage implements AsyncMessageInterface)
+    # — nur ist er nicht exklusiv. Wer das genauer braucht, prueft stattdessen
+    # elasticsearch_index_task, also dieselbe Bedingung wie
+    # CreateAliasTaskHandler.
     WAITED=0
     while true; do
         QUEUE_SIZE="$(bin/console messenger:stats async --format=json 2>/dev/null \

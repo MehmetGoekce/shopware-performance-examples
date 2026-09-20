@@ -171,15 +171,18 @@ elasticsearch:
         de: 'german_analyzer'
 
 # ============================================
-# Shopware Configuration
+# Was hier bewusst NICHT steht
 # ============================================
-# Hinweis: Elasticsearch ist ein separates Bundle mit Root-Key 'elasticsearch',
-# NICHT unter 'shopware.elasticsearch'.
-# Search-Boost-Werte werden ueber die Admin-Oberflaeche konfiguriert
-# (Einstellungen > Suche > Suchverhalten).
-shopware:
-    # Admin worker (DISABLE in production!)
-    # Use CLI workers instead
-    admin_worker:
-        enable_admin_worker: false
-        poll_interval: 30000
+# Ein `shopware:`-Block. Elasticsearch ist ein eigenes Bundle mit dem Root-Key
+# 'elasticsearch', NICHT unter 'shopware.elasticsearch' — und was unter
+# `shopware:` gehoert, gehoert in config/packages/shopware.yaml, nicht hierher.
+#
+# In der ersten Fassung stand hier `admin_worker.poll_interval: 30000`. Der
+# Schluessel ist ein integerNode in SEKUNDEN (Configuration.php), Shopwares
+# Vorgabe ist 20 mit dem Kommentar «This has to be lower than PHP's
+# max_execution_time (default: 30s)». 30000 waere also nicht «30 Sekunden»,
+# sondern gut achteinhalb Stunden.
+#
+# Search-Boost-Werte gehoeren ohnehin nicht in eine YAML, sondern in den Admin
+# (Einstellungen > Shop > Suche); gespeichert werden sie in
+# product_search_config_field.ranking.

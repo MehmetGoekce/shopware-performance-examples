@@ -46,3 +46,7 @@ test-results/
 # Package locks
 composer.lock
 .twig-cs-fixer.cache
+
+# Generiertes Artefakt von chapters/18-shopware-elasticsearch/scripts/extract-dictionary.sh
+de_dictionary.txt
+de_dictionary.txt.part

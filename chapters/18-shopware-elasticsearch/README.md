@@ -3,10 +3,23 @@
 Companion-Code zum Buch **«Shop-Performance in 30 Tagen»**.
 
 Getestet gegen **Shopware 6.6.10.6** (Dockware, PHP 8.3, MySQL 8.0) und
-**Elasticsearch 8.15.3**. Jede Datei in diesem Ordner ist gegen diesen Aufbau
-gelaufen — bis auf `scripts/opensearch-hybrid-pipeline.sh`, das am Quelltext
-und an der OpenSearch-Dokumentation belegt, aber **nicht gefahren** ist.
-Die Datei sagt das in ihrem Kopfkommentar noch einmal.
+**Elasticsearch 8.15.3**.
+
+Was das genau heisst, weil eine Pauschalaussage hier in die Irre führt:
+
+- **Gefahren und gemessen:** die sechs PHP-Klassen (byte-gleich als Plugin im
+  Testshop installiert), `config/elasticsearch.yaml`,
+  `config/dictionary-decompounder-analyzer.yaml`,
+  `config/dense-vector-mapping.json`, `config/hybrid-rrf-query.json` und alle
+  Skripte ausser dem OpenSearch-Gegenstück.
+- **Gestartet, aber nicht im Testaufbau in Gebrauch:**
+  `config/elasticsearch.yml` und `config/jvm.options`. Der Testknoten läuft
+  ohne Bind-Mount, mit `xpack.security.enabled=false` und einem Heap aus
+  `ES_JAVA_OPTS`. Beide Dateien sind gegen einen eigenen Node gestartet
+  worden, nicht gegen den, an dem die übrigen Messungen entstanden sind.
+- **Nicht gefahren:** `scripts/opensearch-hybrid-pipeline.sh` — am Quelltext
+  und an der OpenSearch-Dokumentation belegt, aber nie gegen OpenSearch
+  ausgeführt. Die Datei sagt das in ihrem Kopfkommentar noch einmal.
 
 Elasticsearch 7.x und OpenSearch 2.x sind ebenfalls **ungetestet**. Wo etwas
 versionsabhängig ist, steht es an der Datei.
@@ -89,7 +102,7 @@ oder `xpack.security.enabled: false` bewusst setzen.
 ### 2. Heap setzen
 
 ```bash
-# /etc/elasticsearch/jvm.options.d/heap.options
+# /etc/elasticsearch/jvm.options.d/custom.options
 -Xms4g
 -Xmx4g
 ```
@@ -123,8 +136,8 @@ gebraucht und gehört, wenn überhaupt, **nach** den Reindex.
 | `es-reindex.sh` | Reindex inkl. Warteschlange, Alias-Schwenk und Aufräumen. |
 | `es-index-stats.sh` | Kennzahlen je Index, Entitätszahl über `_count`. |
 | `es-benchmark.sh` | Acht Abfragetypen gegen den Produktindex, Wanduhr- und Serverzeit getrennt. |
-| `slowlog-settings.sh` | Slow-Log-Schwellen setzen (`set`) und zurücknehmen (`reset`). |
-| `extract-dictionary.sh` | Baut `de_dictionary.txt` aus dem LibreOffice-Wörterbuch, klein geschrieben. |
+| `slowlog-settings.sh` | Slow-Log-Schwellen setzen (ohne Argument) und zurücknehmen (`--reset`). |
+| `extract-dictionary.sh` | Baut `de_dictionary.txt` aus `de_DE_frami.dic` (LibreOffice), nach UTF-8 umkodiert und klein geschrieben. |
 | `opensearch-hybrid-pipeline.sh` | OpenSearch-Gegenstück zur Hybridabfrage. **Ungetestet.** |
 
 ```bash
@@ -176,8 +189,12 @@ Zwei weitere Punkte aus dem Test:
 
 Siehe Heap oben. `bootstrap.memory_lock: true` wirkt nur, wenn der Prozess
 die Sperre auch setzen darf (`ulimit -l unlimited`, im Container
-`--ulimit memlock=-1:-1`); im Einzelknoten-Testaufbau lief der Node ohne die
-Sperre weiter, ohne das zu melden.
+`--ulimit memlock=-1:-1`). Im Einzelknoten-Betrieb sind die Bootstrap-Checks
+aus: Der Node startet dann trotzdem und **meldet es** — `WARN Unable to lock
+JVM Memory: error=12, reason=Cannot allocate memory`, allerdings nur als
+Warnung. Der Schutz vor Swapping fehlt dabei, obwohl die Zeile gesetzt ist;
+nachprüfen mit `GET /_nodes?filter_path=**.mlockall`. Im Mehrknoten-Betrieb
+greifen die Checks, und derselbe Aufbau startet gar nicht mehr (Exit 78).
 
 ## PHP-Klassen
 
@@ -252,13 +269,29 @@ Beschneidung ab.
 # danach voller Reindex (18.11), sonst greift der Analyzer nicht
 ```
 
-Die Wortliste **muss klein geschrieben sein**: Der `dictionary_decompounder`
-vergleicht ohne Rücksicht auf Gross-/Kleinschreibung nicht — mit den
-Hunspell-Stämmen («Schuhe») feuert er nie. Das Skript erzwingt das und prüft
-danach gegen, weil `tr` Umlaute byteweise stehen lässt.
+Die Wortliste **muss klein geschrieben und UTF-8 sein**. Beides erzwingt das
+Skript und prüft es danach gegen:
 
-Zweite Falle: die Reihenfolge der Filter. Erst zerlegen, dann stemmen. Die
-umgekehrte Reihenfolge verliert «Jacke» aus «Winterjacke» (gemessen).
+- Der `dictionary_decompounder` vergleicht ohne Rücksicht auf Gross- und
+  Kleinschreibung nicht — mit den rohen Hunspell-Stämmen («Schuh») feuert er
+  nie ein einziges Teilwort (gemessen: «Kinderschuhe» → `[kinderschuh]`).
+  `tr` taugt dafür nicht, es lässt Umlaute byteweise stehen.
+- Die Quelldatei ist **ISO-8859-1**, nicht UTF-8. Ohne `iconv` ist das
+  Ergebnis kein gültiges UTF-8 — und genau das verlangt Elasticsearch.
+
+Zweite Falle: die Reihenfolge der Filter. Erst zerlegen, dann stemmen — die
+Empfehlung stimmt, die frühere Begründung nicht. «Jacke» geht in der
+umgekehrten Reihenfolge **nicht** verloren; die Anfrage wird ja ebenfalls
+gestemmt. Was bricht, ist die Gegenrichtung: Mit Stemmer zuerst steht
+`winter` im Index, die Anfrage «Winter» kommt aber als `wint` an, weil der
+Stemmer dort vor dem Decompounder läuft und ein Wort mit vier Zeichen nicht
+mehr zerlegt wird. Beides gemessen, mit der Wortliste, die
+`extract-dictionary.sh` wirklich erzeugt.
+
+Dritte Falle, die nur die echte Liste zeigt: Bei rund 163 000 Stämmen und
+`min_subword_size: 3` fällt Unsinn an — «Kinderschuhe» ergibt
+`[kinderschuh, kind, kind, ind, ind, der, schuh]`, weil «ind» und «der» eigene
+Stämme sind. Wer das nicht will, hebt `min_subword_size` auf 4 und misst nach.
 
 ### Vektor- und Hybridsuche (18.12, Ausblick)
 

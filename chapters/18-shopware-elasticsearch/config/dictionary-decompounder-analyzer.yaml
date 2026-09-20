@@ -23,12 +23,36 @@
 #   kleine Liste: "Kinderschuhe" -> [kinderschuh, kind, schuh, schuh]
 # extract-dictionary.sh erledigt das und bricht ab, wenn es nicht gelingt.
 #
-# ZUR REIHENFOLGE unten: Der Decompounder steht bewusst VOR dem Stemmer.
-# Andersherum — wie es in 18.5 frueher stand — zerlegt er bereits gestemmte
-# Wortformen, und die Bestandteile stehen so nicht im Woerterbuch. Gemessen
-# an "Winterjacke": Decompounder zuerst ergibt [winterjack, wint, jack],
-# Stemmer zuerst ergibt [winterjack, winter] — "Jacke" faellt weg, weil die
-# gestemmte Form "jack" in der Liste fehlt.
+# ZUR REIHENFOLGE unten: Der Decompounder steht bewusst VOR dem Stemmer —
+# die Empfehlung stimmt, die Begruendung in der ersten Fassung nicht.
+#
+# Dort stand, Stemmer-zuerst verliere "Jacke" aus "Winterjacke". Mit der
+# Wortliste, die extract-dictionary.sh aus dem LibreOffice-Woerterbuch baut,
+# stimmt das nicht: dort steht "jacke" drin, und eine Suche nach "Jacke"
+# trifft in BEIDEN Reihenfolgen, weil der Stemmer die Anfrage ebenfalls auf
+# "jack" bringt.
+#
+# Was wirklich bricht, ist die andere Richtung — gemessen gegen ES 8.15.3 mit
+# derselben Kette auf Index- und Abfrageseite:
+#
+#   Decompounder zuerst: "Winterjacke" -> [winterjack, wint, jack]
+#     Anfrage "Jacke"  -> [jack]   Treffer
+#     Anfrage "Winter" -> [wint]   Treffer
+#   Stemmer zuerst:      "Winterjacke" -> [winterjack, winter, jack]
+#     Anfrage "Jacke"  -> [jack]   Treffer
+#     Anfrage "Winter" -> [wint]   KEIN Treffer
+#
+# Im Index steht dann "winter", die Anfrage kommt als "wint" an: Der Stemmer
+# laeuft auf der Anfrage vor dem Decompounder, und ein Wort mit vier Zeichen
+# zerlegt der Decompounder wegen min_word_size nicht mehr. Index- und
+# Abfrageseite driften auseinander — und zwar lautlos.
+#
+# Noch ein Effekt der echten Liste, den eine Spielzeugliste nicht zeigt:
+# Bei 163 000 Staemmen und min_subword_size 3 faellt reichlich Unsinn an.
+# "Kinderschuhe" ergibt [kinderschuh, kind, kind, ind, ind, der, schuh] —
+# "ind" und "der" stehen als eigene Staemme in der Liste. Das kostet
+# Indexgroesse und erzeugt Zufallstreffer; wer das nicht will, hebt
+# min_subword_size auf 4 und misst nach.
 #
 # Und noch ein betrieblicher Punkt: index.analysis.* ist ein STATISCHES
 # Setting. Ein neuer Analyzer laesst sich an einem offenen Index nicht
