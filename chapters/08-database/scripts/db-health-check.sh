@@ -91,8 +91,8 @@ SERVER_VERSION=$(query_value "SELECT @@version")
 echo "Server: ${SERVER_VERSION}"
 
 if [[ "$SERVER_VERSION" == *MariaDB* ]]; then
-    status_fail "MariaDB erkannt - dieses Skript liest performance_schema.global_status, das es dort nicht gibt."
-    echo "Auf MariaDB stattdessen information_schema.global_status verwenden (siehe buffer-pool-check.sql)."
+    status_fail "MariaDB erkannt - dieses Skript liest @@innodb_buffer_pool_instances, das es dort seit 10.6 nicht mehr gibt."
+    echo "Die Hit-Rate-Abfrage selbst laeuft auch auf MariaDB, sofern performance_schema = ON gesetzt ist."
     exit 2
 fi
 

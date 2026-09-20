@@ -5,8 +5,8 @@ declare(strict_types=1);
 /**
  * Beispiel: Caching fuer teure Datenbank-Abfragen
  *
- * Shopware 6.6 cached KEINE DAL-Queries pro Criteria. Die gecachte
- * Entity-Repository-Schicht wurde mit 6.5 entfernt; gecacht wird auf Ebene der
+ * Shopware 6.6 cached KEINE DAL-Queries pro Criteria. Der DAL-Cache wurde mit
+ * 6.4 entfernt (UPGRADE-6.4.md, "DAL cache removed"); gecacht wird auf Ebene der
  * Store-API-Routen (Cached*Route-Dekoratoren) und im HTTP-Cache. Wer ein
  * Ergebnis zwischenspeichern will, das keiner Store-API-Route entspricht, muss
  * das selbst tun - dafuer ist diese Klasse das Beispiel:
@@ -17,11 +17,27 @@ declare(strict_types=1);
  * WICHTIG: Cache Arrays, keine Entity-Objekte! Entities sind zu gross
  * und enthalten Referenzen die nicht serialisiert werden koennen.
  *
- * Der Cache-Pool ist als TagAwareCacheInterface typisiert, nicht als
- * CacheItemPoolInterface: tag() gibt es nur auf Symfonys CacheItem, und
- * CacheItemPoolInterface::getItem() verspricht nur ein Psr\Cache\CacheItemInterface.
- * Mit dem falschen Typehint schlaegt die statische Analyse an, und zur Laufzeit
- * haengt es daran, welcher Service tatsaechlich injiziert wurde.
+ * Der Cache-Pool ist als TagAwareAdapterInterface typisiert. Das ist die einzige
+ * Schnittstelle, die beides zusagt, was diese Klasse braucht: die PSR-6-Methoden
+ * getItem()/save() und Tag-Faehigkeit. CacheItemPoolInterface allein reicht
+ * nicht, weil getItem() dort nur ein Psr\Cache\CacheItemInterface verspricht -
+ * und tag() gibt es nur auf Symfonys CacheItem.
+ *
+ * WICHTIG: TagAwareAdapterInterface ist in Shopware 6.6 NICHT autowirebar. Es
+ * gibt keinen Alias dafuer, und ein Intersection-Typehint
+ * "CacheItemPoolInterface&TagAwareCacheInterface" scheitert ebenfalls - die
+ * beiden Interfaces zeigen auf verschiedene Services (cache.app gegen
+ * cache.app.taggable), Symfony quittiert das mit einer
+ * AutowiringFailedException. Verdrahten Sie den Service deshalb ausdruecklich:
+ *
+ *   <service id="App\Service\CachedProductService">
+ *       <argument type="service" id="product.repository"/>
+ *       <argument type="service" id="cache.object"/>
+ *       <argument type="service" id="Shopware\Core\Framework\Adapter\Cache\CacheInvalidator"/>
+ *   </service>
+ *
+ * cache.object ist Shopwares CacheDecorator und implementiert
+ * TagAwareAdapterInterface.
  *
  * @package App\Service
  */
@@ -38,9 +54,8 @@ use Shopware\Core\Framework\DataAbstractionLayer\Search\Filter\EqualsFilter;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\Filter\RangeFilter;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\Sorting\FieldSorting;
 use Shopware\Core\System\SalesChannel\SalesChannelContext;
+use Symfony\Component\Cache\Adapter\TagAwareAdapterInterface;
 use Symfony\Component\Cache\CacheItem;
-use Symfony\Contracts\Cache\TagAwareCacheInterface;
-use Psr\Cache\CacheItemPoolInterface;
 
 class CachedProductService
 {
@@ -48,7 +63,7 @@ class CachedProductService
 
     public function __construct(
         private readonly EntityRepository $productRepository,
-        private readonly CacheItemPoolInterface&TagAwareCacheInterface $cache,
+        private readonly TagAwareAdapterInterface $cache,
         private readonly CacheInvalidator $cacheInvalidator
     ) {
     }

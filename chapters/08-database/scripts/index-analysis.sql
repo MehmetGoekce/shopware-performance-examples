@@ -205,7 +205,8 @@ SELECT
 -- View blendet PRIMARY und UNIQUE aus und kann deshalb keinen
 -- Primaerschluessel zum Loeschen vorschlagen.
 --
--- statements_with_full_table_scans gibt es nur auf MySQL.
+-- statements_with_full_table_scans bringt MariaDB 10.11 ebenfalls mit; die View
+-- fuellt sich dort erst mit performance_schema = ON.
 
 SELECT '=== Nie genutzte Indizes (sys-Schema) ===' AS '';
 

@@ -49,8 +49,9 @@ SELECT
     ROUND(@@innodb_buffer_pool_size / @@innodb_buffer_pool_instances / 1024 / 1024, 2) AS 'Per Instance (MB)',
     ROUND(@@innodb_redo_log_capacity / 1024 / 1024, 0) AS 'Redo-Log (MB, gemeldet)';
 
-SELECT 'Hinweis: steht innodb_log_file_size in der Konfiguration, ist das echte' AS '';
-SELECT 'Redo-Log das Doppelte des gemeldeten Werts. Gegenprobe auf dem Server:' AS '';
+SELECT 'Hinweis (MySQL): steht innodb_log_file_size in der Konfiguration, ist' AS '';
+SELECT 'das echte Redo-Log das Doppelte des gemeldeten Werts. Auf MariaDB meint' AS '';
+SELECT 'innodb_log_file_size genau das, was dort steht. Gegenprobe am Server:' AS '';
 SELECT '  du -sh /var/lib/mysql/#innodb_redo' AS '';
 
 -- ==============================================================================
@@ -133,19 +134,23 @@ LIMIT 10;
 -- ==============================================================================
 -- MARIADB-FASSUNG
 -- ==============================================================================
--- MariaDB 10.11 kennt @@innodb_buffer_pool_instances nicht mehr (mit 10.6
--- entfernt) und hat performance_schema ab Werk aus. Die Statuswerte stehen
--- dort in information_schema.global_status, das es auf MySQL 8.0 nicht gibt.
--- Es gibt also keine Query, die auf beiden Systemen laeuft.
+-- Drei Dinge unterscheiden MariaDB 10.11:
+--   1. @@innodb_buffer_pool_instances gibt es dort seit 10.6 nicht mehr.
+--   2. @@innodb_redo_log_capacity gibt es dort ueberhaupt nicht.
+--   3. performance_schema ist ab Werk AUS.
+-- An 1. und 2. scheitert Abschnitt 1 dieses Skripts mit ERROR 1193 - nicht an
+-- der Hit-Rate.
 --
---   SELECT ROUND(@@innodb_buffer_pool_size / 1024 / 1024 / 1024, 2) AS 'Buffer Pool (GB)';
+-- Die Hit-Rate-Query selbst laeuft auf BEIDEN Systemen unveraendert, sobald
+-- performance_schema eingeschaltet ist: MariaDB 10.11 hat
+-- performance_schema.global_status sehr wohl (gemessen: 390 Zeilen, Hit-Rate
+-- 83,8816). Nur umgekehrt geht es nicht - information_schema.global_status
+-- gibt es ausschliesslich auf MariaDB.
 --
---   SELECT ROUND((1 - (
---       (SELECT variable_value FROM information_schema.global_status
---        WHERE variable_name = 'Innodb_buffer_pool_reads') /
---       NULLIF((SELECT variable_value FROM information_schema.global_status
---               WHERE variable_name = 'Innodb_buffer_pool_read_requests'), 0)
---   )) * 100, 4) AS 'Hit Rate (%)';
+-- Fuer MariaDB Abschnitt 1 also so verkuerzen:
+--
+--   SELECT ROUND(@@innodb_buffer_pool_size / 1024 / 1024 / 1024, 2) AS 'Buffer Pool (GB)',
+--          ROUND(@@innodb_log_file_size / 1024 / 1024, 0) AS 'Redo-Log (MB)';
 --
 -- Das sys-Schema bringt MariaDB 10.11 dagegen mit - inklusive
 -- schema_unused_indexes, schema_redundant_indexes und schema_index_statistics.

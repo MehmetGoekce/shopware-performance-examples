@@ -247,6 +247,44 @@ LOG
     [[ "$output" == *"Keine Zusatzfelder im Log"* ]]
 }
 
+@test "slow query analysis counts only SELECTs that really have no WHERE" {
+    # Das alte Muster "^SELECT [^;]*FROM [^;]*;$" zaehlte jede einzeilige
+    # SELECT-Zeile mit, weil [^;]* die WHERE-Klausel mitfrisst.
+    cat > "$TMP/where.log" <<'LOG'
+# Query_time: 2.000000  Lock_time: 0.000000 Rows_sent: 1  Rows_examined: 5
+SELECT id FROM product WHERE id = 1;
+# Query_time: 2.000000  Lock_time: 0.000000 Rows_sent: 1  Rows_examined: 5
+SELECT * FROM product;
+# Query_time: 2.000000  Lock_time: 0.000000 Rows_sent: 1  Rows_examined: 5
+SELECT a FROM t WHERE x=1 AND y=2;
+# Query_time: 2.000000  Lock_time: 0.000000 Rows_sent: 1  Rows_examined: 5
+SELECT b FROM u;
+LOG
+    run "$DIR/slow-query-analyze.sh" "$TMP/where.log"
+    [ "$status" -eq 0 ]
+    # vier SELECTs, davon genau zwei ohne WHERE
+    [ "$(printf '%s\n' "$output" | grep -c 'Queries ohne WHERE: *2$')" -eq 1 ]
+}
+
+@test "slow query analysis sorts the rows-examined ranking descending" {
+    cat > "$TMP/rank.log" <<'LOG'
+# Query_time: 2.000000  Lock_time: 0.000000 Rows_sent: 1  Rows_examined: 5
+SELECT id FROM product WHERE id = 1;
+# Query_time: 3.000000  Lock_time: 0.000000 Rows_sent: 2  Rows_examined: 900000
+SELECT id FROM product WHERE stock > 0;
+# Query_time: 3.000000  Lock_time: 0.000000 Rows_sent: 3  Rows_examined: 77;
+SELECT id FROM category;
+LOG
+    run "$DIR/slow-query-analyze.sh" "$TMP/rank.log"
+    [ "$status" -eq 0 ]
+    # die groesste Zahl muss vor der kleinsten stehen
+    ranking=$(printf '%s\n' "$output" | grep 'gelesen,')
+    first=$(printf '%s\n' "$ranking" | head -1)
+    last=$(printf '%s\n' "$ranking" | tail -1)
+    [[ "$first" == 900000* ]]
+    [[ "$last" != 900000* ]]
+}
+
 @test "slow query analysis ranks by rows examined" {
     cat > "$TMP/rows.log" <<'LOG'
 # Query_time: 2.000000  Lock_time: 0.000000 Rows_sent: 1  Rows_examined: 5

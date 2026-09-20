@@ -224,7 +224,10 @@ echo ""
 
 printf "%-44s %s\n" "SELECT * Queries:" "$(count_matches "SELECT \*" "${SLOW_LOG}")"
 printf "%-44s %s\n" "LIKE mit fuehrender Wildcard:" "$(count_matches "LIKE '%" "${SLOW_LOG}")"
-printf "%-44s %s\n" "Queries ohne WHERE:" "$(count_matches "^SELECT [^;]*FROM [^;]*;$" "${SLOW_LOG}")"
+# grep -c mit zwei Mustern geht nicht; "ohne WHERE" heisst: SELECT-Zeile, in der
+# kein WHERE vorkommt. Das alte Muster "^SELECT [^;]*FROM [^;]*;$" zaehlte jede
+# einzeilige SELECT-Zeile, weil [^;]* die WHERE-Klausel mitfrisst.
+printf "%-44s %s\n" "Queries ohne WHERE:" "$(grep -e '^SELECT' "${SLOW_LOG}" | grep -vic 'where' || true)"
 
 # Zusatzfelder erkennen wir am Log selbst, nicht an der Serverkonfiguration -
 # das Log kann aelter sein als die aktuelle Einstellung.

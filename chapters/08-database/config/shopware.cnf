@@ -1,5 +1,12 @@
-# MySQL/MariaDB Konfiguration fuer Shopware 6
+# MySQL-8.0-Konfiguration fuer Shopware 6
 # Kapitel 8: Datenbank-Optimierung
+#
+# NUR FUER MySQL 8.0. An innodb_redo_log_capacity scheitert MariaDB 10.11 hart -
+# mariadbd startet nicht, sondern beendet sich mit
+#   [ERROR] mariadbd: unknown variable 'innodb_redo_log_capacity=1G'
+# innodb_buffer_pool_instances nimmt MariaDB als Startoption zwar an, die
+# Variable gibt es dort seit 10.6 aber nicht mehr; die Zeile wirkt also nicht.
+# Fuer MariaDB beide Zeilen durch die MARIADB-Sektion am Dateiende ersetzen.
 #
 # Kopieren nach: /etc/mysql/mysql.conf.d/shopware.cnf
 # Nach Aenderungen: sudo systemctl restart mysql
@@ -23,7 +30,7 @@
 # und nginx den Speicher - deshalb 4G, nicht 12G.
 innodb_buffer_pool_size = 4G
 
-# Buffer Pool Instances.
+# Buffer Pool Instances. In MariaDB seit 10.6 ohne Wirkung (Variable entfernt).
 # MySQL entscheidet das ab Werk selbst und trifft es fuer die allermeisten Shops
 # richtig (Default 8; 1, solange der Pool unter 1 GB liegt). Wer den Wert setzt,
 # sollte wissen warum: unterhalb von rund 1 GB Pool zwingt MySQL ihn ohne jede
@@ -31,7 +38,7 @@ innodb_buffer_pool_size = 4G
 # Eine Instanz je GB, hoechstens 64, ist eine brauchbare Obergrenze.
 innodb_buffer_pool_instances = 4
 
-# Redo-Log.
+# Redo-Log. Diese Direktive gibt es nur in MySQL ab 8.0.30.
 # NICHT innodb_log_file_size verwenden: seit MySQL 8.0.30 abgekuendigt, in 8.4
 # entfernt - und es wirkt weiter, nur anders als gemeint. MySQL rechnet
 # innodb_redo_log_capacity = innodb_log_file_size x innodb_log_files_in_group,
@@ -143,9 +150,12 @@ performance_schema = ON
 # Automatische Bereinigung nach 7 Tagen.
 # MySQL 8.0+:
 binlog_expire_logs_seconds = 604800
-# MySQL 5.7 - NICHT zusaetzlich zur Zeile darueber setzen. Auf MySQL 8.0 ist
-# das ein harter Fehler: ERROR 3683 "The option expire_logs_days and
-# binlog_expire_logs_seconds cannot be used together".
+# MySQL 5.7 - NICHT zusaetzlich zur Zeile darueber setzen. Die beiden Optionen
+# schliessen sich aus. Hier in der Konfigurationsdatei laesst MySQL 8.0 den
+# Server starten und meldet nur
+#   [Warning] [MY-011079] ... value of expire_logs_days is ignored
+# - die Einstellung wirkt also stillschweigend nicht. Zur Laufzeit ist es ein
+# harter Fehler: SET GLOBAL expire_logs_days = 7 endet in ERROR 3683.
 # expire_logs_days = 7
 
 # Der Default-Basename ist auf MySQL 8.0 "binlog", nicht mehr "mysql-bin"
@@ -160,3 +170,19 @@ binlog_expire_logs_seconds = 604800
 # Fuer MySQL 5.7:
 # query_cache_type = 0
 # query_cache_size = 0
+
+# ==============================================================================
+# MARIADB 10.11
+# ==============================================================================
+# Fuer MariaDB die beiden MySQL-Direktiven oben entfernen und stattdessen:
+#
+#   # innodb_buffer_pool_instances gibt es seit MariaDB 10.6 nicht mehr -
+#   # ersatzlos streichen, der Buffer Pool ist dort nicht in Instanzen geteilt.
+#
+#   # innodb_redo_log_capacity gibt es nur in MySQL. In MariaDB ist
+#   # innodb_log_file_size die aktuelle, nicht abgekuendigte Direktive und meint
+#   # genau das, was dort steht - ohne Multiplikation mit einem zweiten Faktor.
+#   innodb_log_file_size = 1G
+#
+# performance_schema = ON ist auf MariaDB ab Werk AUS und deshalb dort noetig
+# (Neustart erforderlich); alle uebrigen Zeilen dieser Datei nimmt MariaDB an.

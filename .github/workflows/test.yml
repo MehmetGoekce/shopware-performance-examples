@@ -187,6 +187,57 @@ jobs:
 
           exit $fail
 
+      - name: MariaDB must start with the documented substitution
+        run: |
+          # Die Datei ist MySQL-only und sagt das auch. Der Kopfkommentar nennt
+          # zwei Direktiven, die MariaDB nicht kennt, und verweist auf die
+          # MARIADB-Sektion am Dateiende. Dieser Schritt prueft, dass genau die
+          # dort beschriebene Ersetzung MariaDB wirklich starten laesst.
+          sed -e 's/^innodb_buffer_pool_size = 4G/innodb_buffer_pool_size = 256M/' \
+              -e '/^innodb_buffer_pool_instances/d' \
+              -e 's/^innodb_redo_log_capacity = 1G/innodb_log_file_size = 1G/' \
+            chapters/08-database/config/shopware.cnf > maria.cnf
+
+          docker create --name cnf-maria -e MARIADB_ROOT_PASSWORD=root mariadb:10.11
+          docker cp maria.cnf cnf-maria:/etc/mysql/conf.d/shopware.cnf
+          docker start cnf-maria
+          sleep 3
+          docker exec -u root cnf-maria chown root:root /etc/mysql/conf.d/shopware.cnf
+          docker exec -u root cnf-maria chmod 644 /etc/mysql/conf.d/shopware.cnf
+          docker restart cnf-maria
+
+          for i in $(seq 1 60); do
+            docker exec cnf-maria mariadb -uroot -proot -e "SELECT 1" > /dev/null 2>&1 && break
+            sleep 2
+          done
+
+          docker exec cnf-maria mariadb -uroot -proot -e "SELECT 1" > /dev/null 2>&1 || {
+            echo "MariaDB kommt mit der dokumentierten Ersetzung nicht hoch:"
+            docker logs cnf-maria 2>&1 | tail -20
+            exit 1
+          }
+          echo "ok: MariaDB laeuft mit der dokumentierten Ersetzung"
+
+          # Gegenprobe: die unveraenderte Datei MUSS MariaDB scheitern lassen -
+          # sonst ist der Warnhinweis im Kopfkommentar falsch.
+          sed 's/^innodb_buffer_pool_size = 4G/innodb_buffer_pool_size = 256M/' \
+            chapters/08-database/config/shopware.cnf > maria-unchanged.cnf
+          docker create --name cnf-maria-bad -e MARIADB_ROOT_PASSWORD=root mariadb:10.11
+          docker cp maria-unchanged.cnf cnf-maria-bad:/etc/mysql/conf.d/shopware.cnf
+          docker start cnf-maria-bad
+          sleep 3
+          docker exec -u root cnf-maria-bad chown root:root /etc/mysql/conf.d/shopware.cnf || true
+          docker exec -u root cnf-maria-bad chmod 644 /etc/mysql/conf.d/shopware.cnf || true
+          docker restart cnf-maria-bad || true
+          sleep 20
+
+          if docker logs cnf-maria-bad 2>&1 | grep -q "unknown variable 'innodb_redo_log_capacity"; then
+            echo "ok: die unveraenderte Datei wird von MariaDB abgelehnt, wie dokumentiert"
+          else
+            echo "Der Warnhinweis im Kopfkommentar stimmt nicht mehr - MariaDB nimmt die Datei an."
+            exit 1
+          fi
+
       - name: Negative control - a broken config must be caught
         run: |
           # expire_logs_days neben binlog_expire_logs_seconds: MySQL startet,

@@ -142,7 +142,7 @@ behandelt das korrekt; eigene Queries müssen es berücksichtigen.
 
 | Thema | MySQL 8.0 | MariaDB 10.11 |
 |---|---|---|
-| Statuswerte | `performance_schema.global_status` | `information_schema.global_status` |
+| Statuswerte | `performance_schema.global_status` | beides: `performance_schema.global_status` (bei `performance_schema = ON`) und `information_schema.global_status` |
 | `performance_schema` | ab Werk an | ab Werk **aus**, Neustart nötig |
 | `sys`-Schema | vorhanden | ebenfalls vorhanden, inkl. `schema_unused_indexes`, `schema_redundant_indexes`, `schema_index_statistics` |
 | `innodb_buffer_pool_instances` | vorhanden | mit 10.6 **entfernt** |
