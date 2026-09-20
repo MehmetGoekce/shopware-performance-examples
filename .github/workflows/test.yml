@@ -113,6 +113,104 @@ jobs:
             -C -f /etc/varnish/default.vcl > vcc.out 2>&1 \
             || { grep -A 8 "Message from VCC" vcc.out; exit 1; }
 
+  mysql-cnf:
+    name: MySQL Config Boot
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Ein reiner Syntaxcheck sagt hier nichts: MySQL startet auch dann
+      # sauber, wenn es die Datei gar nicht liest. Dieser Job startet den
+      # Server deshalb wirklich und prueft die Werte, die ankommen.
+      - name: Boot MySQL 8.0 with the chapter 8 config
+        run: |
+          # Buffer Pool auf Runner-Groesse drosseln - die 4G aus der Datei
+          # passen nicht in jeden GitHub-Runner. Alles andere bleibt original.
+          sed 's/^innodb_buffer_pool_size = 4G/innodb_buffer_pool_size = 256M/' \
+            chapters/08-database/config/shopware.cnf > shopware-ci.cnf
+
+          docker create --name cnf-test -e MYSQL_ROOT_PASSWORD=root mysql:8.0.46
+          docker cp shopware-ci.cnf cnf-test:/etc/mysql/conf.d/shopware.cnf
+          docker start cnf-test
+          sleep 3
+          # mysqld laeuft als "mysql" und ignoriert die ganze includedir-
+          # Direktive still, wenn es die Datei nicht lesen kann.
+          docker exec -u root cnf-test chown root:root /etc/mysql/conf.d/shopware.cnf
+          docker exec -u root cnf-test chmod 644 /etc/mysql/conf.d/shopware.cnf
+          docker restart cnf-test
+
+          for i in $(seq 1 60); do
+            docker exec cnf-test mysql -uroot -proot -e "SELECT 1" > /dev/null 2>&1 && break
+            sleep 2
+          done
+
+          docker exec cnf-test mysql -uroot -proot -e "SELECT 1" > /dev/null 2>&1 || {
+            echo "MySQL ist mit dieser Konfiguration nicht hochgekommen:"
+            docker logs cnf-test 2>&1 | tail -30
+            exit 1
+          }
+
+      - name: Assert the settings actually arrived
+        run: |
+          get() { docker exec cnf-test mysql -uroot -proot -N -B -e "SELECT $1" 2>/dev/null; }
+          fail=0
+          check() {
+            local actual
+            actual=$(get "$1")
+            if [ "$actual" != "$2" ]; then
+              echo "FEHLT: $1 ist '$actual', erwartet '$2'"
+              fail=1
+            else
+              echo "ok: $1 = $actual"
+            fi
+          }
+          check "@@group_concat_max_len" "320000"
+          check "@@innodb_redo_log_capacity" "1073741824"
+          check "@@log_queries_not_using_indexes" "0"
+          check "@@binlog_expire_logs_seconds" "604800"
+          check "@@long_query_time" "1.000000"
+          check "@@performance_schema" "1"
+          check "@@sql_mode" "STRICT_TRANS_TABLES,NO_ENGINE_SUBSTITUTION"
+
+          # innodb_log_file_size ist abgekuendigt und verdoppelt das Redo-Log
+          # hinter dem Ruecken von SHOW VARIABLES - es darf nicht zurueckkehren.
+          if grep -qE '^[[:space:]]*innodb_log_file_size' chapters/08-database/config/shopware.cnf; then
+            echo "FEHLT: innodb_log_file_size steht wieder in der Konfiguration"
+            fail=1
+          fi
+
+          docker logs cnf-test 2>&1 | grep -q "MY-013907" && {
+            echo "FEHLT: MySQL meldet die innodb_log_file_size-Deprecation"
+            fail=1
+          }
+
+          exit $fail
+
+      - name: Negative control - a broken config must be caught
+        run: |
+          # expire_logs_days neben binlog_expire_logs_seconds: MySQL startet,
+          # ignoriert den Wert aber still. Der Job muss die Warnung sehen.
+          sed -e 's/^innodb_buffer_pool_size = 4G/innodb_buffer_pool_size = 256M/' \
+              -e 's/^# expire_logs_days = 7/expire_logs_days = 7/' \
+            chapters/08-database/config/shopware.cnf > broken.cnf
+
+          docker create --name cnf-broken -e MYSQL_ROOT_PASSWORD=root mysql:8.0.46
+          docker cp broken.cnf cnf-broken:/etc/mysql/conf.d/shopware.cnf
+          docker start cnf-broken
+          sleep 3
+          docker exec -u root cnf-broken chown root:root /etc/mysql/conf.d/shopware.cnf
+          docker exec -u root cnf-broken chmod 644 /etc/mysql/conf.d/shopware.cnf
+          docker restart cnf-broken
+          sleep 25
+
+          if docker logs cnf-broken 2>&1 | grep -q "MY-011079"; then
+            echo "ok: die kaputte Variante wird erkannt (MY-011079)"
+          else
+            echo "Die Gegenprobe hat nicht angeschlagen - das Gate prueft nichts."
+            exit 1
+          fi
+
   shellcheck:
     name: ShellCheck
     runs-on: ubuntu-latest
