@@ -1,17 +1,51 @@
 -- Index-Analyse fuer Shopware Datenbank
--- Verwendung: mysql < index-analysis.sql
+-- Kapitel 8: Datenbank-Optimierung
+--
+-- Verwendung (Datenbankname ist PFLICHT - ohne ihn ist DATABASE() NULL, die
+-- ersten Abschnitte liefern stillschweigend nichts und Abschnitt 4 bricht mit
+-- "ERROR 1046 No database selected" ab):
+--   mysql shopware < index-analysis.sql
 --
 -- Analysiert:
 -- - Ungenutzte Indizes
--- - Fehlende Indizes
+-- - Index-Groessen
 -- - Index-Selektivitaet
+-- - Tabellen ohne Primaerschluessel
+--
+-- @see https://github.com/MehmetGoekce/shopware-performance-examples
+
+-- ==============================================================================
+-- 0. VORAUSSETZUNGEN
+-- ==============================================================================
+
+SELECT '=== Voraussetzungen ===' AS '';
+
+SELECT
+    IF(DATABASE() IS NULL,
+       'FEHLER - keine Datenbank gewaehlt. Aufruf: mysql shopware < index-analysis.sql',
+       CONCAT('OK - Datenbank: ', DATABASE())) AS 'Datenbank',
+    IF(@@performance_schema = 1,
+       'OK - performance_schema aktiv',
+       'FEHLER - performance_schema aus. Abschnitt 1, 2 und 7 bleiben leer.') AS 'Performance Schema';
+
+-- Die Zaehler des Performance Schema werden bei JEDEM Serverstart auf null
+-- gesetzt. Kurz nach einem Neustart meldet Abschnitt 1 praktisch jeden Index
+-- als ungenutzt - gemessen: elf Sekunden nach einem Neustart stand dort der
+-- Primaerschluessel einer Tabelle mit 770.000 Zeilen.
+SELECT
+    CONCAT(ROUND(VARIABLE_VALUE / 3600, 1), ' h') AS 'Uptime',
+    IF(VARIABLE_VALUE < 86400,
+       'ZU KURZ - Abschnitt 1 und 2 erst nach mindestens einem vollen Tag Traffic auswerten',
+       'OK - Zaehler haben genug Laufzeit gesehen') AS 'Aussagekraft'
+FROM performance_schema.global_status WHERE VARIABLE_NAME = 'Uptime';
 
 -- ==============================================================================
 -- 1. UNGENUTZTE INDIZES (Performance Schema erforderlich)
 -- ==============================================================================
 
 SELECT '=== Ungenutzte Indizes ===' AS '';
-SELECT '(Kandidaten zum Loeschen - aber vorsichtig!)' AS '';
+SELECT '(Kandidaten zum Loeschen - erst nach Uptime-Pruefung oben!)' AS '';
+SELECT '(PRIMARY ist ausgenommen - ein Primaerschluessel wird nie geloescht)' AS '';
 
 SELECT
     object_schema AS 'Schema',
@@ -107,15 +141,39 @@ AND tc.constraint_name IS NULL
 ORDER BY t.table_name;
 
 -- ==============================================================================
--- 6. SHOPWARE-SPEZIFISCHE INDEX-EMPFEHLUNGEN
+-- 6. EIGENE INDIZES - UND WAS SHOPWARE SCHON MITBRINGT
 -- ==============================================================================
+-- Vor jedem neuen Index nachsehen, was auf der Tabelle bereits liegt. Zwei
+-- Beispiele aus dem Shopware-Standardschema:
+--
+-- * order hat bereits idx.state_index (state_id). Ein zusaetzlicher
+--   Composite (state_id, created_at) macht den vorhandenen Index zu einem
+--   redundanten Praefix - genau das, was schema_redundant_indexes in
+--   Abschnitt 7 spaeter anmahnt.
+-- * order hat bereits idx.order_date_currency_id (order_date, currency_id),
+--   und Shopware filtert Bestellungen ueber order_date bzw. order_date_time.
+--   Ein Index auf created_at hilft nur eigenen Reports, nicht dem Shop.
+--
+-- Die Abfrage unten zeigt deshalb erst die vorhandenen Indizes der beiden
+-- Tabellen, dann den Status der eigenen Kandidaten.
 
-SELECT '=== Empfohlene Indizes pruefen ===' AS '';
+SELECT '=== Vorhandene Indizes auf product und order ===' AS '';
 
--- Pruefe ob wichtige Indizes existieren
+SELECT
+    table_name AS 'Tabelle',
+    index_name AS 'Index',
+    GROUP_CONCAT(column_name ORDER BY seq_in_index) AS 'Spalten'
+FROM information_schema.statistics
+WHERE table_schema = DATABASE()
+AND table_name IN ('product', 'order')
+GROUP BY table_name, index_name
+ORDER BY table_name, index_name;
+
+SELECT '=== Eigene Index-Kandidaten pruefen ===' AS '';
+
 SELECT
     'product' AS 'Tabelle',
-    'idx_product_active_stock' AS 'Empfohlener Index',
+    'idx_product_active_stock' AS 'Eigener Index',
     CASE WHEN EXISTS (
         SELECT 1 FROM information_schema.statistics
         WHERE table_schema = DATABASE()
@@ -131,13 +189,23 @@ SELECT
         WHERE table_schema = DATABASE()
         AND table_name = 'order'
         AND index_name = 'idx_order_state_created'
-    ) THEN 'VORHANDEN' ELSE 'FEHLT' END;
+    ) THEN 'VORHANDEN (macht idx.state_index redundant - siehe oben)'
+      ELSE 'FEHLT (vor dem Anlegen idx.state_index oben pruefen)' END;
 
 -- ==============================================================================
--- 7. MYSQL 8.0: sys-SCHEMA (moderne Variante zu Abschnitt 1, nur MySQL 8.0)
+-- 7. sys-SCHEMA (moderne Variante zu Abschnitt 1)
 -- ==============================================================================
--- sys-Schema ist in MySQL 8.0 standardmaessig installiert. MariaDB hat ein
--- abweichendes Pendant - dieser Abschnitt nur auf MySQL 8.0 ausfuehren.
+-- Das sys-Schema ist in MySQL 8.0 standardmaessig installiert - und in
+-- MariaDB 10.11 ebenfalls, samt schema_unused_indexes, schema_redundant_indexes
+-- und schema_index_statistics. Auf MariaDB muss dafuer allerdings
+-- performance_schema = ON in der Serverkonfiguration stehen (ab Werk aus),
+-- sonst bleiben die Views leer.
+--
+-- schema_unused_indexes ist sicherer als die Rohabfrage aus Abschnitt 1: die
+-- View blendet PRIMARY und UNIQUE aus und kann deshalb keinen
+-- Primaerschluessel zum Loeschen vorschlagen.
+--
+-- statements_with_full_table_scans gibt es nur auf MySQL.
 
 SELECT '=== Nie genutzte Indizes (sys-Schema) ===' AS '';
 
