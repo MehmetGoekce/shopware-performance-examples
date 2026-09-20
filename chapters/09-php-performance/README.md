@@ -57,6 +57,11 @@ php-fpm8.3 -i | grep -E '^opcache\.(enable|memory_consumption|max_accelerated_fi
 # Damit rechnen (Vorgabewerte = Beispielserver des Buchs, 16 GB)
 ./scripts/calculate-max-children.sh -w 82
 
+# PHP-Einstellungen fuer die FPM-SAPI - NICHT auslassen: hier stehen u. a.
+# upload_max_filesize und post_max_size auf 128M. Ohne diese Datei bleibt es
+# bei PHPs Vorgabe 2M bzw. 8M, denn der Pool unten setzt beides nicht.
+sudo cp config/99-shopware.ini /etc/php/8.3/fpm/conf.d/
+
 # Pool einspielen
 sudo cp config/shopware-fpm.conf /etc/php/8.3/fpm/pool.d/shopware.conf
 sudo mkdir -p /var/log/php-fpm && sudo chown www-data:www-data /var/log/php-fpm
