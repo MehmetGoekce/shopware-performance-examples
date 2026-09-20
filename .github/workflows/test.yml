@@ -262,6 +262,75 @@ jobs:
             exit 1
           fi
 
+  php-fpm-pool:
+    name: PHP-FPM Pool Boot
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # `php-fpm8.3 -t` reicht als Gate nicht: Es meldet auch dann Erfolg,
+      # wenn OPcache gar nicht mehr geladen ist. Dieser Job startet den Pool
+      # deshalb wirklich, schickt einen echten FastCGI-Request und prueft die
+      # Werte, die dabei ankommen - plus zwei Gegenproben.
+      - name: Boot the chapter 9 pool and assert the values arrive
+        run: |
+          docker run --rm -v "$PWD:/code:ro" ubuntu:24.04 bash -euo pipefail -c '
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -qq > /dev/null
+            apt-get install -y -qq php8.3-fpm php8.3-opcache libfcgi-bin > /dev/null
+
+            mkdir -p /var/www /run/php
+            printf "<?php \$s=opcache_get_status(false); echo \"OPCACHE=\", \$s?\"an\":\"aus\", \" KEYS=\", \$s[\"opcache_statistics\"][\"max_cached_keys\"] ?? 0, \" MEM=\", (int)(ini_get(\"opcache.memory_consumption\")), \"\n\";" > /var/www/probe.php
+
+            cp /code/chapters/09-php-performance/config/shopware-fpm.conf /etc/php/8.3/fpm/pool.d/shopware.conf
+            cp /code/chapters/09-php-performance/config/99-shopware-opcache.ini /etc/php/8.3/fpm/conf.d/
+            mkdir -p /var/log/php-fpm && chown www-data:www-data /var/log/php-fpm
+
+            php-fpm8.3 -t
+            php-fpm8.3 -D
+            sleep 2
+            pgrep -x php-fpm8.3 > /dev/null || { echo "FPM laeuft nicht"; exit 1; }
+
+            OUT="$(SCRIPT_FILENAME=/var/www/probe.php REQUEST_METHOD=GET SCRIPT_NAME=/probe.php \
+                   cgi-fcgi -bind -connect /run/php/php8.3-fpm-shopware.sock 2>/dev/null | tail -1)"
+            echo "Antwort: $OUT"
+            case "$OUT" in
+              *"OPCACHE=an"*"KEYS=32531"*"MEM=256"*)
+                echo "ok: OPcache aktiv mit den Werten der Vorlage" ;;
+              *)
+                echo "Die Werte der Vorlage kommen nicht an."; exit 1 ;;
+            esac
+
+            # Gegenprobe 1: Ohne das Logverzeichnis darf FPM nicht starten.
+            # Genau daran scheiterte die alte Vorlage stillschweigend beim Leser.
+            pkill -x php-fpm8.3 || true
+            sleep 1
+            rm -rf /var/log/php-fpm
+            if php-fpm8.3 -t 2>&1 | grep -q "successful"; then
+              echo "Gegenprobe 1 hat nicht angeschlagen - das Gate prueft nichts."
+              exit 1
+            fi
+            echo "ok: fehlendes Logverzeichnis wird erkannt"
+            mkdir -p /var/log/php-fpm && chown www-data:www-data /var/log/php-fpm
+
+            # Gegenprobe 2: Der Zielpfad 10-opcache.ini ist auf Debian/Ubuntu
+            # der Symlink der Distribution, der als einziger
+            # zend_extension=opcache.so traegt. Wird er ueberschrieben, ist
+            # OPcache weg - und `-t` meldet weiterhin Erfolg. Die Warnung in
+            # der Vorlage steht und faellt mit diesem Verhalten.
+            cp /code/chapters/09-php-performance/config/99-shopware-opcache.ini /etc/php/8.3/fpm/conf.d/10-opcache.ini
+            if php-fpm8.3 -m | grep -qi "zend opcache"; then
+              echo "Gegenprobe 2: OPcache ist noch geladen - die Warnung waere gegenstandslos."
+              exit 1
+            fi
+            if ! php-fpm8.3 -t 2>&1 | grep -q "successful"; then
+              echo "Gegenprobe 2: -t schlaegt an - dann waere der Ausfall nicht lautlos."
+              exit 1
+            fi
+            echo "ok: OPcache weg, -t meldet trotzdem Erfolg"
+          '
+
   shellcheck:
     name: ShellCheck
     runs-on: ubuntu-latest
