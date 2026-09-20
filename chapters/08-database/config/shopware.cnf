@@ -1,6 +1,15 @@
 # MySQL/MariaDB Konfiguration fuer Shopware 6
+# Kapitel 8: Datenbank-Optimierung
+#
 # Kopieren nach: /etc/mysql/mysql.conf.d/shopware.cnf
 # Nach Aenderungen: sudo systemctl restart mysql
+#
+# Die Werte unten gelten fuer das Referenzprofil aus Anhang C: ein Server mit
+# 16 GB RAM, auf dem neben MySQL auch PHP-FPM, Redis und nginx laufen. Auf einem
+# Server, der nichts als die Datenbank tut, duerfen Buffer Pool und Redo-Log
+# deutlich groesser sein - dann aber gemessen, nicht geraten.
+#
+# @see https://github.com/MehmetGoekce/shopware-performance-examples
 
 [mysqld]
 
@@ -8,28 +17,51 @@
 # SPEICHER-EINSTELLUNGEN
 # ==============================================================================
 
-# InnoDB Buffer Pool: 70-80% des verfuegbaren RAM
-# Anpassen an Ihren Server:
-# - 8 GB RAM Server: 6G
-# - 16 GB RAM Server: 12G
-# - 32 GB RAM Server: 24G
-innodb_buffer_pool_size = 12G
+# InnoDB Buffer Pool.
+# Faustregel "70-80 % des RAM" gilt nur fuer einen Server, auf dem die Datenbank
+# allein laeuft. Auf dem 16-GB-Referenzprofil teilen sich MySQL, PHP-FPM, Redis
+# und nginx den Speicher - deshalb 4G, nicht 12G.
+innodb_buffer_pool_size = 4G
 
-# Buffer Pool Instances (1 pro GB, max 64)
-# Verbessert Parallelitaet bei Multi-Core CPUs
-innodb_buffer_pool_instances = 12
+# Buffer Pool Instances.
+# MySQL entscheidet das ab Werk selbst und trifft es fuer die allermeisten Shops
+# richtig (Default 8; 1, solange der Pool unter 1 GB liegt). Wer den Wert setzt,
+# sollte wissen warum: unterhalb von rund 1 GB Pool zwingt MySQL ihn ohne jede
+# Meldung im Log auf 1 zurueck - gemessen mit 512 MB Pool und instances = 8.
+# Eine Instanz je GB, hoechstens 64, ist eine brauchbare Obergrenze.
+innodb_buffer_pool_instances = 4
 
-# Log File Groesse (groesser = besser fuer Schreiboperationen)
-# Empfehlung: 25% des Buffer Pool, max 2G
-innodb_log_file_size = 2G
+# Redo-Log.
+# NICHT innodb_log_file_size verwenden: seit MySQL 8.0.30 abgekuendigt, in 8.4
+# entfernt - und es wirkt weiter, nur anders als gemeint. MySQL rechnet
+# innodb_redo_log_capacity = innodb_log_file_size x innodb_log_files_in_group,
+# und der zweite Faktor ist ab Werk 2. Aus "2G" werden also 4 GB auf der Platte,
+# waehrend SHOW VARIABLES weiter den Vorgabewert 100 MB anzeigt.
+# Richtwert: etwa ein Viertel des Buffer Pools.
+innodb_redo_log_capacity = 1G
 innodb_log_buffer_size = 64M
 
-# Flush-Verhalten: 1 = Sicher, 2 = Schneller
-# Fuer SSD/NVMe kann 2 sicher sein
+# Flush-Verhalten: 1 = jede Transaktion sofort auf Platte (ACID),
+# 2 = einmal pro Sekunde (schneller, verliert im Crash bis zu 1 s Schreibvorgaenge)
 innodb_flush_log_at_trx_commit = 1
 
 # Flush-Methode (O_DIRECT empfohlen fuer Linux)
 innodb_flush_method = O_DIRECT
+
+# ==============================================================================
+# SHOPWARE-ANFORDERUNGEN
+# ==============================================================================
+
+# Shopware setzt beide Werte bei JEDEM Verbindungsaufbau selbst
+# (Kernel::initializeDatabaseConnectionVariables): group_concat_max_len auf
+# mindestens 320000 und sql_mode ohne ONLY_FULL_GROUP_BY. Serverseitig setzen
+# bringt darum nur dann etwas, wenn Sie zusaetzlich
+#   SQL_SET_DEFAULT_SESSION_VARIABLES=0
+# in die .env schreiben - dann sparen Sie zwei SET-Statements pro Request.
+# Ohne diese Variable sind die zwei Zeilen hier reine Absicherung fuer alles,
+# was neben Shopware auf dieselbe Datenbank zugreift (Importer, Reports, CLI).
+group_concat_max_len = 320000
+sql_mode = "STRICT_TRANS_TABLES,NO_ENGINE_SUBSTITUTION"
 
 # ==============================================================================
 # VERBINDUNGEN
@@ -64,13 +96,10 @@ table_definition_cache = 2000
 # SORTIERUNG UND JOINS
 # ==============================================================================
 
-# Buffer pro Verbindung fuer Sortierung
+# Diese Buffer werden PRO VERBINDUNG belegt, sobald sie gebraucht werden.
+# Bei max_connections = 200 also mit Bedacht vergroessern.
 sort_buffer_size = 4M
-
-# Buffer fuer JOINs ohne Index
 join_buffer_size = 4M
-
-# Buffer fuer sequentielle Reads
 read_buffer_size = 2M
 read_rnd_buffer_size = 4M
 
@@ -85,25 +114,42 @@ slow_query_log_file = /var/log/mysql/slow.log
 # Queries ueber 1 Sekunde loggen
 long_query_time = 1
 
-# Auch Queries ohne Index loggen
-log_queries_not_using_indexes = 1
+# log_queries_not_using_indexes NICHT dauerhaft einschalten.
+# Die Option ignoriert long_query_time und protokolliert jede Query ohne
+# Index-Zugriff - auch die, die in 0,1 ms fertig ist. Gemessen: mit
+# long_query_time = 10 landeten 40 von 40 trivialen Queries im Log. Auf einem
+# Shop ertraenkt das die echten Slow Queries und entwertet die Auswertung mit
+# pt-query-digest. Fuer eine gezielte Index-Jagd stundenweise einschalten:
+#   SET GLOBAL log_queries_not_using_indexes = 1;   ... und danach wieder 0
+log_queries_not_using_indexes = 0
 
 # ==============================================================================
 # PERFORMANCE SCHEMA
 # ==============================================================================
 
-# Fuer detaillierte Performance-Analyse
+# Fuer detaillierte Performance-Analyse. Auf MySQL 8.0 ab Werk an, auf
+# MariaDB 10.11 ab Werk AUS - dort ist diese Zeile noetig, plus Neustart.
+#
+# Achtung bei der Auswertung: die Zaehler des Performance Schema werden bei
+# JEDEM Serverstart zurueckgesetzt. Kurz nach einem Neustart meldet eine
+# "count_read = 0"-Abfrage praktisch das ganze Schema als ungenutzt. Vor jeder
+# solchen Auswertung SHOW GLOBAL STATUS LIKE 'Uptime' pruefen.
 performance_schema = ON
 
 # ==============================================================================
 # BINARY LOG (fuer Replikation)
 # ==============================================================================
 
-# Automatische Bereinigung nach 7 Tagen
+# Automatische Bereinigung nach 7 Tagen.
 # MySQL 8.0+:
 binlog_expire_logs_seconds = 604800
-# MySQL 5.7:
+# MySQL 5.7 - NICHT zusaetzlich zur Zeile darueber setzen. Auf MySQL 8.0 ist
+# das ein harter Fehler: ERROR 3683 "The option expire_logs_days and
+# binlog_expire_logs_seconds cannot be used together".
 # expire_logs_days = 7
+
+# Der Default-Basename ist auf MySQL 8.0 "binlog", nicht mehr "mysql-bin"
+# (das war 5.7). Die Dateien heissen also /var/lib/mysql/binlog.000001 usw.
 
 # ==============================================================================
 # QUERY CACHE
