@@ -153,6 +153,23 @@ elasticsearch:
                         - 'handy, smartphone, mobiltelefon'
                         - 'fernseher, tv, television'
 
+    # ============================================
+    # Analyzer zuweisen — ohne diesen Block bleibt der eigene Analyzer ungenutzt
+    # ============================================
+    # Ein definierter Analyzer wird von nichts benutzt. Shopware legt je
+    # Sprache ein .search-Subfeld an und waehlt dessen Analyzer ueber diese
+    # Zuordnung (ElasticsearchFieldBuilder.php:45-46). Schluessel ist der
+    # Sprachteil des Locale-Codes: de-DE -> de, de-CH -> de.
+    #
+    # Der Bundle-Default ordnet de/gsw/nds dem sw_german_analyzer zu und en
+    # dem sw_english_analyzer. Wer hier nur `de` ueberschreibt, verliert die
+    # anderen drei Zeilen nicht — language_analyzer_mapping merged tief.
+    #
+    # Wirksam erst beim naechsten `bin/console es:index`: die Zuordnung landet
+    # im Mapping, und das entsteht beim Anlegen des Index.
+    language_analyzer_mapping:
+        de: 'german_analyzer'
+
 # ============================================
 # Shopware Configuration
 # ============================================
