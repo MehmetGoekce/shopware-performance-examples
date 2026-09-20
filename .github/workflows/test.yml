@@ -517,6 +517,55 @@ jobs:
             -v "$PWD/chapters/anhang-c-konfigurationen/config/php-fpm-pool.conf:/usr/local/etc/php-fpm.d/zz-shopware.conf:ro" \
             php:8.3-fpm bash -c 'mkdir -p /var/log/php-fpm /run/php && php-fpm -t'
 
+      - name: Counter-check the conf.d readability claim
+        run: |
+          # Gegenprobe zu MEM-280. Kapitel 22 und die Companion-Vorlage haben
+          # behauptet, eine fuer den PHP-Benutzer unlesbare conf.d-Datei werde
+          # stillschweigend uebergangen und ihre Werte gaelten nicht. Gemessen
+          # ist das Gegenteil: Der FPM-Master liest conf.d als root, bevor er
+          # die Worker herunterstuft. Still ist die KONTROLLE, nicht das Laden.
+          #
+          # Ein reines "php-fpm -t" faengt das nicht - es sagt zu jeder dieser
+          # Varianten "test is successful". Dieser Schritt startet deshalb
+          # einen echten Pool und stellt einen echten FastCGI-Request.
+          cat > conf-d-gate.sh <<'GATE'
+          set -e
+          docker-php-ext-enable opcache
+          apt-get -qq update >/dev/null && apt-get -qq install -y libfcgi-bin procps >/dev/null
+          mkdir -p /var/log/php-fpm /run/php /www
+          printf 'opcache.enable=1\nopcache.memory_consumption=333\n' \
+            > /usr/local/etc/php/conf.d/99-probe.ini
+          chown root:root /usr/local/etc/php/conf.d/99-probe.ini
+          chmod 0600 /usr/local/etc/php/conf.d/99-probe.ini
+          su -s /bin/sh www-data -c 'cat /usr/local/etc/php/conf.d/99-probe.ini' 2>/dev/null \
+            && { echo "FAIL: www-data kann die Datei lesen, Praemisse kaputt"; exit 1; }
+          printf '<?php echo "MEM=", ini_get("opcache.memory_consumption"), "\\n";' > /www/p.php
+          chmod 644 /www/p.php
+          php-fpm -D
+          sleep 2
+          fail=0
+          # 1. Echter Request durch den Pool: die 0600-Datei GILT.
+          got=$(SCRIPT_FILENAME=/www/p.php REQUEST_METHOD=GET SCRIPT_NAME=/p.php \
+                cgi-fcgi -bind -connect 127.0.0.1:9000 | tr -d '\r' | sed -n 's/^MEM=//p')
+          [ "$got" = "333" ] || { echo "FAIL: echter Request meldet MEM=$got statt 333"; fail=1; }
+          # 2. "php-fpm -i" als unprivilegierter Benutzer meldet den Vorgabewert.
+          unpriv=$(su -s /bin/sh www-data -c 'php-fpm -i' 2>/dev/null \
+                   | sed -n 's/^opcache.memory_consumption => \([0-9]*\).*/\1/p' | head -1)
+          [ -n "$unpriv" ] && [ "$unpriv" != "333" ] \
+            || { echo "FAIL: -i als www-data meldet '$unpriv', erwartet war der Vorgabewert"; fail=1; }
+          # 3. Und warnt dabei mit keinem Wort - deshalb faellt es niemandem auf.
+          warn=$(su -s /bin/sh www-data -c 'php-fpm -i' 2>&1 >/dev/null \
+                 | grep -ci 'permission\|denied' || true)
+          [ "$warn" = "0" ] || { echo "FAIL: -i als www-data warnt doch ($warn Zeilen)"; fail=1; }
+          [ "$fail" = "0" ] \
+            && echo "OK: 0600-Datei gilt (MEM=$got), unprivilegierte Kontrolle meldet $unpriv ohne Warnung"
+          exit $fail
+          GATE
+          docker run --rm \
+            -v "$PWD/chapters/anhang-c-konfigurationen/config/php-fpm-pool.conf:/usr/local/etc/php-fpm.d/zz-shopware.conf:ro" \
+            -v "$PWD/conf-d-gate.sh:/gate.sh:ro" \
+            php:8.3-fpm bash /gate.sh
+
       - name: Validate the MySQL config
         run: |
           # --validate-config faengt Tippfehler und unbekannte Variablen ab.
