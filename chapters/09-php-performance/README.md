@@ -5,7 +5,9 @@ Companion-Code zum Buch **"Shop-Performance in 30 Tagen"**
 ## Inhalt
 
 ### config/
-- `99-shopware-opcache.ini` - OPcache-Konfiguration fuer Shopware 6
+- `99-shopware-opcache.ini` - OPcache-Konfiguration fuer Shopware 6.
+  **Die kanonische OPcache-Vorlage des Companions.** Kapitel 22 (Problem 12)
+  und Anhang C verweisen hierher und liefern keine eigene Fassung.
 - `99-shopware.ini` - php.ini-Einstellungen fuer FPM
 - `99-shopware-cli.ini` - php.ini-Einstellungen fuer CLI
 - `shopware-fpm.conf` - PHP-FPM Pool-Konfiguration
@@ -27,6 +29,7 @@ Companion-Code zum Buch **"Shop-Performance in 30 Tagen"**
 ```bash
 # Konfiguration kopieren - beachten Sie den Dateinamen!
 sudo cp config/99-shopware-opcache.ini /etc/php/8.3/fpm/conf.d/
+sudo chmod 644 /etc/php/8.3/fpm/conf.d/99-shopware-opcache.ini
 
 sudo systemctl reload php8.3-fpm
 

@@ -9,7 +9,7 @@ die Stelle, an der das zuerst auffaellt:
 
 | Thema | Datei |
 |---|---|
-| OPcache | `../22-haeufigste-probleme/config/php-opcache.ini` |
+| OPcache | `../09-php-performance/config/99-shopware-opcache.ini` |
 | Gzip | `../22-haeufigste-probleme/config/nginx-gzip.conf` |
 | Logrotate | `../22-haeufigste-probleme/config/logrotate.conf` |
 | Brotli | `../11-cdn-integration/config/nginx-brotli.conf` |
@@ -17,6 +17,15 @@ die Stelle, an der das zuerst auffaellt:
 | Redis-Instanzen, Sentinel | `../10-redis-sentinel/config/` |
 | `cache.yaml` (Redis als Application Cache) | `../07-shopware-cache/config/framework.yaml` |
 | `http_cache.yaml` und `varnish.yaml` | `../06-http-cache/config/shopware.yaml` und `varnish.yaml` |
+
+**Welches Kapitel gewinnt, wenn zwei es erklaeren.** Kanonisch ist die Vorlage
+des Kapitels, das die Einstellung *erklaert* — nicht die des Kapitels, das sie
+nur anwendet. Ein Kapitel, das dieselbe Zieldatei braucht, verweist auf die
+kanonische Vorlage und liefert keine zweite. Grund: Zwei Vorlagen auf einer
+Zieldatei ueberschreiben sich, und zwar lautlos — `php-fpm8.3 -t` und
+`nginx -t` melden dabei weiter Erfolg. OPcache lag deshalb bis September 2026
+doppelt vor (Kapitel 9 und Kapitel 22, beide nach
+`conf.d/99-shopware-opcache.ini`); kanonisch ist jetzt Kapitel 9.
 
 ## Dateien
 

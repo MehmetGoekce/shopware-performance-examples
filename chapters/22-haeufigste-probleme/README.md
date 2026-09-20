@@ -75,12 +75,18 @@ Dazu zwei Skripte, die alle anderen aufrufen:
 |---|---|
 | `config/shopware-cache.yaml` | HTTP-Cache und Cache-Backend (Problem 2) |
 | `config/redis-session.yaml` | Sessions in eine eigene Redis-Instanz (Problem 8) |
-| `config/php-opcache.ini` | OPcache für PHP-FPM (Problem 12) |
 | `config/nginx-gzip.conf` | Kompression unter Nginx (Problem 14) |
 | `config/apache-compression.conf` | Kompression und Ablaufzeiten unter Apache (Problem 14, 20) |
 | `config/apache-webp.conf` | WebP-Auslieferung unter Apache (Problem 4) |
 | `config/nginx-webp.conf` | WebP-Auslieferung unter Nginx (Problem 4) |
 | `config/logrotate.conf` | Log-Aufbewahrung (Problem 17) — mit der Warnung, dass sie meist gar nicht nötig ist |
+
+**OPcache (Problem 12) hat hier keine eigene Vorlage.** Sie liegt bei
+Kapitel 9, das OPcache erklärt:
+`../09-php-performance/config/99-shopware-opcache.ini`. Bis September 2026 gab
+es zwei Fassungen, und beide nannten dieselbe Zieldatei
+`conf.d/99-shopware-opcache.ini` — wer beide Kapitel abarbeitete, überschrieb
+sich still.
 
 Die Vorlagen sind kommentiert und erklären jeweils, **warum** ein Wert so
 gesetzt ist. Wer nur die Werte kopiert, verliert den wichtigeren Teil.

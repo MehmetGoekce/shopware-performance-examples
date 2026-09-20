@@ -178,22 +178,19 @@ if [[ "${PROBLEMS}" -eq 0 ]]; then
     exit 0
 fi
 
-echo "${PROBLEMS} Punkt(e) zu verbessern. Vorlage: config/php-opcache.ini"
+echo "${PROBLEMS} Punkt(e) zu verbessern."
 echo
 cat <<'EOF'
+Die Vorlage liegt bei Kapitel 9, das OPcache erklaert — dieses Kapitel
+haelt keine zweite Fassung, damit beide nicht auseinanderlaufen:
+
+  chapters/09-php-performance/config/99-shopware-opcache.ini
+
+Sie ist kommentiert und begruendet jeden Wert. Zielpfad:
+
 ; /etc/php/8.3/fpm/conf.d/99-shopware-opcache.ini
-; (nicht 10-opcache.ini — das ist der Symlink der Distribution)
-opcache.enable=1
-opcache.memory_consumption=256
-opcache.interned_strings_buffer=16
-opcache.max_accelerated_files=32531
-
-; Produktion: keine Dateisystem-Checks.
-; Erfordert einen OPcache-Reset im Deployment, siehe oben.
-opcache.validate_timestamps=0
-
-; opcache.enable_cli bleibt aus. Die CLI startet je Aufruf einen neuen
-; Prozess; der Cache waere beim Beenden wieder weg und kostet nur Speicher.
+; (nicht 10-opcache.ini — das ist der Symlink der Distribution und traegt
+;  als einziger zend_extension=opcache.so)
 EOF
 echo
 echo "Danach: systemctl reload ${FPM_SERVICE}"
