@@ -383,6 +383,23 @@ fliesstext() {
     [ "$status" -eq 0 ]
     run grep -q 'journalctl -u php8.3-fpm' "$CONFIG/99-shopware-opcache.ini"
     [ "$status" -eq 0 ]
+    # Review-Fund: die Zeile traegt unter FPM ein Praefix, ein grep auf
+    # "^PHP Warning" findet sie deshalb nicht.
+    run grep -qF 'NOTICE: PHP message: ' "$BATS_TEST_TMPDIR/k"
+    [ "$status" -eq 0 ]
+}
+
+@test "die OPcache-Vorlage begruendet den Vorrang nicht mit der hoeheren Nummer" {
+    # T11: conf.d ist zeichenkettensortiert. Gemessen auf Ubuntu 24.04 gewann
+    # 99-a.ini gegen 100-b.ini. Der Rat des Buchs (99 gegen 10) stimmt, die
+    # Begruendung "eine Datei mit hoeherer Nummer gewinnt" nicht.
+    fliesstext "$CONFIG/99-shopware-opcache.ini" > "$BATS_TEST_TMPDIR/k"
+    run grep -qiF "hoeherer Nummer" "$BATS_TEST_TMPDIR/k"
+    [ "$status" -ne 0 ]
+    run grep -qF "Ordnung ist dabei die der ZEICHENKETTEN" "$BATS_TEST_TMPDIR/k"
+    [ "$status" -eq 0 ]
+    run grep -qF "99-a.ini gewinnt gegen 100-b.ini" "$BATS_TEST_TMPDIR/k"
+    [ "$status" -eq 0 ]
 }
 
 @test "die php.ini-Vorlage setzt realpath_cache_size nicht auf den Default" {
