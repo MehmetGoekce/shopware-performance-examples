@@ -2,38 +2,67 @@
 
 declare(strict_types=1);
 
-namespace App\ElasticsearchExtension;
+/**
+ * Abschnitt 18.12 — additiver Vektorpfad, Schritt 3 (Geruest)
+ * Kapitel 18: Shopware 6 mit Elasticsearch
+ *
+ * Haelt das dense_vector-Feld NEBEN Shopwares eigenem Indexer aktuell. Der
+ * lexikalische Index wird nicht angefasst; geschrieben wird nur das additive
+ * Feld description_embedding (siehe config/dense-vector-mapping.json).
+ *
+ * DIE VORAUSSETZUNG, ohne die dieser Weg den Index zerstoert:
+ * Shopware beschneidet das _source des Produktindex ab Werk auf id und
+ * autoIncrement (ElasticsearchProductDefinition.php:143-145). Ein
+ * Teil-Update (_update oder _bulk mit "update") baut das Dokument aus dem
+ * gespeicherten _source neu auf — und was nicht im _source steht, ist danach
+ * weg. Gemessen an einem Index mit derselben _source-Beschneidung: vor dem
+ * Teil-Update findet die Suche das Dokument ueber seinen Namen, danach nicht
+ * mehr; im Dokument stehen nur noch id, autoIncrement und das neu gesetzte
+ * Feld.
+ *
+ * Deshalb braucht dieser Pfad ein vollstaendiges _source:
+ *
+ *   SHOPWARE_ES_EXCLUDE_SOURCE=1
+ *
+ * Der Name liest sich rueckwaerts: der Wert 1 schaltet die Beschneidung AB,
+ * der Index traegt danach alle Felder im _source (gemessen: 47 statt 2), und
+ * das Teil-Update erhaelt sie. Ohne diese Variable bricht dieser Subscriber
+ * beim ersten Schreibvorgang mit einer Ausnahme ab, statt den Katalog still
+ * auszuhoehlen.
+ *
+ * Zweite Einschraenkung: Jeder `bin/console es:index`-Lauf baut einen frischen
+ * Index aus Shopwares Mapping und schwenkt den Alias. Das additive Feld
+ * ueberlebt das nicht — weder Mapping noch Werte. Wer den Weg produktiv
+ * faehrt, haengt sich an ElasticsearchIndexCreatedEvent und spielt Mapping
+ * und Vektoren danach neu ein.
+ *
+ * Grenze: Die Einbettung selbst entsteht AUSSERHALB von Shopware (lokaler
+ * Sentence-Transformers-Dienst oder eine Anbieter-API). EmbeddingClient ist
+ * die Naht — absichtlich ein Interface ohne Implementierung, weil die Wahl
+ * (selbst gehostet vs. API, DSGVO/AVV) vom Shop abhaengt (18.12 «Caveats
+ * fuer Produktion»).
+ *
+ * Fuer das Indexieren und fuer die Anfrage MUSS dasselbe Modell laufen,
+ * sonst liegen beide Seiten in verschiedenen Vektorraeumen.
+ *
+ * Getestet mit Shopware 6.6.10.6 und Elasticsearch 8.15.3.
+ *
+ * @see https://github.com/MehmetGoekce/shopware-performance-examples
+ */
+
+namespace YourPlugin\ElasticsearchExtension;
 
 use OpenSearch\Client;
 use Shopware\Core\Content\Product\ProductEvents;
 use Shopware\Core\Framework\DataAbstractionLayer\Event\EntityWrittenEvent;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
-/**
- * Section 18.12 — additive vector path, step 3 (skeleton).
- *
- * Keeps the dense_vector field in sync ALONGSIDE Shopware's standard
- * indexer. It does NOT touch the lexical product index: it only writes
- * the additive `description_embedding` field (see
- * config/dense-vector-mapping.json) on the existing sw_product index.
- *
- * Boundary: embedding generation lives OUTSIDE Shopware (local
- * Sentence-Transformers service or a vendor API). EmbeddingClient is the
- * seam — intentionally an interface, not implemented here, because the
- * choice (self-hosted vs. API, DSGVO/AVV path) is shop-specific (18.12
- * "Caveats für Produktion").
- *
- * The same embedding model MUST be used for indexing and for query-time
- * embedding, or both sides operate in different vector spaces.
- *
- * Register as service with the kernel.event_subscriber tag and inject
- * the OpenSearch\Client (Shopware-canonical, API-compatible with ES too)
- * plus your EmbeddingClient implementation.
- */
 class ProductEmbeddingSubscriber implements EventSubscriberInterface
 {
     private const INDEX_ALIAS = 'sw_product';
     private const BATCH_SIZE = 500;
+
+    private ?bool $sourceComplete = null;
 
     public function __construct(
         private readonly Client $client,
@@ -57,9 +86,12 @@ class ProductEmbeddingSubscriber implements EventSubscriberInterface
             return;
         }
 
-        // Re-embed only the touched products, in batches. In production
-        // hand this to the message queue instead of doing it inline —
-        // embedding latency must not block the DAL write.
+        $this->assertSourceComplete();
+
+        // Nur die beruehrten Produkte neu einbetten, in Haeppchen. Produktiv
+        // gehoert das in die Message-Queue statt in den schreibenden Request —
+        // die Latenz des Einbettungsmodells darf den DAL-Schreibvorgang nicht
+        // aufhalten.
         foreach (array_chunk($ids, self::BATCH_SIZE) as $chunk) {
             $this->reembed($chunk);
         }
@@ -70,16 +102,26 @@ class ProductEmbeddingSubscriber implements EventSubscriberInterface
      */
     private function reembed(array $ids): void
     {
-        // 1. Load the text to embed (name + description) for these ids.
-        //    Use a lightweight repository/Connection lookup here.
+        // 1. Die einzubettenden Texte (Name + Beschreibung) laden.
         $texts = $this->embeddings->loadProductTexts($ids);
+        if ($texts === []) {
+            return;
+        }
 
-        // 2. One embedding model call for the whole batch.
+        // 2. Ein Modellaufruf fuer das ganze Haeppchen.
         $vectors = $this->embeddings->embed(array_values($texts));
 
-        // 3. Partial-update only the additive vector field via _bulk.
-        //    Shopware's indexer never overwrites it (the field is not in
-        //    its mapping), so a doc update is safe.
+        if (\count($vectors) !== \count($texts)) {
+            throw new \RuntimeException(sprintf(
+                'EmbeddingClient::embed() lieferte %d Vektoren fuer %d Texte — die Zuordnung ueber die Reihenfolge waere falsch.',
+                \count($vectors),
+                \count($texts)
+            ));
+        }
+
+        // 3. Nur das additive Vektorfeld per _bulk nachtragen. Shopwares
+        //    Indexer ueberschreibt es nicht, weil es nicht in seinem Mapping
+        //    steht — siehe aber die Einschraenkung zum Reindex im Kopf.
         $body = [];
         foreach (array_keys($texts) as $i => $productId) {
             $body[] = ['update' => [
@@ -91,30 +133,39 @@ class ProductEmbeddingSubscriber implements EventSubscriberInterface
             ]];
         }
 
-        if ($body !== []) {
-            $this->client->bulk(['body' => $body]);
+        $response = $this->client->bulk(['body' => $body]);
+
+        // _bulk antwortet mit HTTP 200, auch wenn jedes einzelne Dokument
+        // gescheitert ist. Ohne diese Pruefung bleibt der Vektorpfad still
+        // stehen.
+        if ($response['errors'] ?? false) {
+            throw new \RuntimeException('Bulk-Update der Einbettungen fehlgeschlagen: ' . json_encode($response['items'] ?? []));
         }
     }
-}
-
-/**
- * Seam for the embedding backend (self-hosted Sentence-Transformers or a
- * vendor API). Implement in your bundle; see 18.12 for the trade-offs
- * (latency budget, DSGVO/AVV, query-embedding cache).
- */
-interface EmbeddingClient
-{
-    /**
-     * @param list<string> $ids
-     *
-     * @return array<string, string> productId => text to embed
-     */
-    public function loadProductTexts(array $ids): array;
 
     /**
-     * @param list<string> $texts
-     *
-     * @return list<list<float>> one vector per input text, same order
+     * Prueft einmal je Prozess, ob der Index ein vollstaendiges _source
+     * fuehrt. Ohne das macht jedes Teil-Update den Treffer unauffindbar.
      */
-    public function embed(array $texts): array;
+    private function assertSourceComplete(): void
+    {
+        if ($this->sourceComplete === true) {
+            return;
+        }
+
+        $mappings = $this->client->indices()->getMapping(['index' => $this->indexAlias]);
+
+        foreach ($mappings as $index => $data) {
+            if (isset($data['mappings']['_source']['includes'])) {
+                throw new \RuntimeException(sprintf(
+                    'Index %s fuehrt ein beschnittenes _source (%s). Ein Teil-Update wuerde alle uebrigen Felder verwerfen. '
+                    . 'SHOPWARE_ES_EXCLUDE_SOURCE=1 setzen und neu indexieren.',
+                    $index,
+                    implode(', ', $data['mappings']['_source']['includes'])
+                ));
+            }
+        }
+
+        $this->sourceComplete = true;
+    }
 }
