@@ -257,6 +257,134 @@ STUB
     [ "$output" -eq 1 ]
 }
 
+# Kopfkommentar als Fliesstext: ';' weg, Zeilen zu einem Strom verbunden.
+# Noetig, weil die Prosa umbrochen ist - ein zeilenweises grep trifft sie nie.
+# Gleiche Hilfsfunktion wie in pool-template-drift.bats.
+fliesstext() {
+    grep '^[[:space:]]*;' "$1" \
+        | sed 's/^[[:space:]]*;[[:space:]]*//' \
+        | tr '\n' ' ' \
+        | tr -s '[:space:]' ' '
+}
+
+# --- MEM-282: diese Datei ist die kanonische OPcache-Vorlage ----------------
+#
+# Bis September 2026 lag OPcache doppelt vor: hier und in
+# chapters/22-haeufigste-probleme/config/php-opcache.ini, beide mit derselben
+# Zieldatei conf.d/99-shopware-opcache.ini. Die folgenden Zusicherungen
+# standen deshalb in common-problems-scripts.bats und gelten jetzt hier.
+
+@test "es gibt genau eine OPcache-Vorlage im ganzen Companion" {
+    # Grundregel 33: die Behauptung "es gibt nur eine" braucht ihr eigenes
+    # Gate. Ohne das kehrt die zweite Vorlage beim naechsten Kapitel zurueck.
+    gefunden=""
+    for f in chapters/*/config/*; do
+        [ -f "$f" ] || continue
+        case "$f" in
+            */99-shopware-opcache.ini) continue ;;
+        esac
+        if grep -qE '^[[:space:]]*opcache\.[a-z_]+[[:space:]]*=' "$f"; then
+            gefunden="$gefunden $f"
+        fi
+    done
+    [ -z "$gefunden" ] || {
+        echo "weitere Datei(en) mit opcache.*-Direktiven:$gefunden"
+        return 1
+    }
+}
+
+@test "die OPcache-Vorlage nennt 99-shopware-opcache.ini als Ziel, nicht 10-opcache.ini" {
+    # Regressionstest zu MEM-279: 10-opcache.ini ist auf Debian/Ubuntu der
+    # Symlink der Distribution und traegt als einziger zend_extension=opcache.so.
+    # Die Vorlage DARF den Namen nennen - aber nur warnend, nie als Zielpfad.
+    run grep -q 'conf.d/99-shopware-opcache.ini' "$CONFIG/99-shopware-opcache.ini"
+    [ "$status" -eq 0 ]
+    run grep -nE '^;[[:space:]]+sudo cp .*conf\.d/10-opcache\.ini' "$CONFIG/99-shopware-opcache.ini"
+    [ "$status" -ne 0 ]
+    run grep -q 'NICHT nach 10-opcache.ini kopieren' "$CONFIG/99-shopware-opcache.ini"
+    [ "$status" -eq 0 ]
+}
+
+@test "die OPcache-Vorlage setzt kein fast_shutdown" {
+    # Regressionstest zu F111: opcache.fast_shutdown gibt es seit PHP 7.2
+    # nicht mehr.
+    run bash -c "grep -vE '^[[:space:]]*;' $CONFIG/99-shopware-opcache.ini | grep -nE 'fast_shutdown'"
+    [ "$status" -ne 0 ] || {
+        echo "gefunden: $output"
+        return 1
+    }
+}
+
+@test "die OPcache-Vorlage empfiehlt keinen CLI-Reset nach dem Deploy" {
+    # Regressionstest zu F112: "php -r opcache_reset()" und "cache:clear"
+    # erreichen den FPM-OPcache nicht - und die Datei setzt enable_cli=0.
+    # Die Datei darf den Irrtum benennen, aber nicht empfehlen.
+    fliesstext "$CONFIG/99-shopware-opcache.ini" > "$BATS_TEST_TMPDIR/k"
+    run grep -qF "erreichen den FPM-OPcache NICHT" "$BATS_TEST_TMPDIR/k"
+    [ "$status" -eq 0 ]
+    run grep -q 'systemctl reload php8.3-fpm' "$CONFIG/99-shopware-opcache.ini"
+    [ "$status" -eq 0 ]
+}
+
+@test "die OPcache-Vorlage behauptet nicht, eine 0600-Datei werde uebergangen" {
+    # Regressionstest zu MEM-280: Gemessen (Ubuntu 24.04, PHP 8.3.6) gilt eine
+    # root-eigene 0600-Datei in conf.d sehr wohl - der FPM-Master liest conf.d
+    # als root, bevor er die Worker auf www-data herunterstuft. Still ist nicht
+    # das Laden, sondern die Kontrolle mit "php-fpm -i" als unprivilegierter
+    # Benutzer.
+    run grep -q 'die Werte gelten einfach nicht' "$CONFIG/99-shopware-opcache.ini"
+    [ "$status" -ne 0 ]
+    run grep -q 'NICHT uebergangen' "$CONFIG/99-shopware-opcache.ini"
+    [ "$status" -eq 0 ]
+    # Der Messbeleg steht mit in der Datei, nicht nur die Behauptung.
+    run grep -q 'opcache.memory_consumption=333' "$CONFIG/99-shopware-opcache.ini"
+    [ "$status" -eq 0 ]
+    # chmod 644 bleibt die Empfehlung - nur die Begruendung ist eine andere.
+    run grep -q 'chmod 644' "$CONFIG/99-shopware-opcache.ini"
+    [ "$status" -eq 0 ]
+}
+
+@test "die OPcache-Vorlage warnt im JIT-Block vor pcov und Xdebug" {
+    # Regressionstest zu MEM-278: PHP schaltet den JIT ab, sobald eine
+    # Erweiterung zend_execute_ex() ueberschreibt. ini_get() meldet trotzdem
+    # weiter den konfigurierten Wert.
+    run grep -q 'zend_execute_ex()' "$CONFIG/99-shopware-opcache.ini"
+    [ "$status" -eq 0 ]
+    run grep -qF "opcache_get_status(false)['jit']['enabled']" "$CONFIG/99-shopware-opcache.ini"
+    [ "$status" -eq 0 ]
+    # Die Bedingung muss die aktive Einstellung nennen, nicht bloss "geladen":
+    # mit xdebug.mode=off laeuft der JIT.
+    run grep -q 'pcov.enabled=1' "$CONFIG/99-shopware-opcache.ini"
+    [ "$status" -eq 0 ]
+    run grep -q 'xdebug.mode=off' "$CONFIG/99-shopware-opcache.ini"
+    [ "$status" -eq 0 ]
+}
+
+@test "die OPcache-Vorlage nennt den stillen Fall ohne jit_buffer_size" {
+    # T7: opcache.jit=tracing ohne Buffer laeuft nicht, und es gibt dazu an
+    # keiner der drei Stellen eine Meldung - der wirklich stille Fall.
+    run grep -q 'opcache.jit_buffer_size' "$CONFIG/99-shopware-opcache.ini"
+    [ "$status" -eq 0 ]
+    fliesstext "$CONFIG/99-shopware-opcache.ini" > "$BATS_TEST_TMPDIR/k"
+    run grep -qF "Die Vorgabe des Buffers ist 0" "$BATS_TEST_TMPDIR/k"
+    [ "$status" -eq 0 ]
+    run grep -qF "dann gibt es GAR KEINE Meldung" "$BATS_TEST_TMPDIR/k"
+    [ "$status" -eq 0 ]
+}
+
+@test "die OPcache-Vorlage verortet die JIT-Warnung nicht im error_log" {
+    # MEM-283, T5: gemessen landet die Zeile weder im error_log des Pools noch
+    # im globalen FPM-Log, sondern auf stderr des Masters - mit der Unit der
+    # Distribution (--nodaemonize, Type=notify) also im journal.
+    fliesstext "$CONFIG/99-shopware-opcache.ini" > "$BATS_TEST_TMPDIR/k"
+    run grep -qiF "steht nur im Error-Log" "$BATS_TEST_TMPDIR/k"
+    [ "$status" -ne 0 ]
+    run grep -qF "sondern auf stderr des FPM-Masters" "$BATS_TEST_TMPDIR/k"
+    [ "$status" -eq 0 ]
+    run grep -q 'journalctl -u php8.3-fpm' "$CONFIG/99-shopware-opcache.ini"
+    [ "$status" -eq 0 ]
+}
+
 @test "die php.ini-Vorlage setzt realpath_cache_size nicht auf den Default" {
     # 4096K ist seit PHP 7.0.16 der Vorgabewert - die Zeile aendert nichts
     # und behauptete frueher, der Default sei 4K.

@@ -264,26 +264,6 @@ STUB
     fi
 }
 
-@test "config/php-opcache.ini setzt den wirksamen max_accelerated_files-Wert" {
-    # Regressionstest zu F91/T29: PHP rundet 20000 auf 32531 auf.
-    run grep -q '^opcache.max_accelerated_files=32531' "$CONFIG/php-opcache.ini"
-    [ "$status" -eq 0 ]
-    run grep -q '^opcache.enable_cli=0' "$CONFIG/php-opcache.ini"
-    [ "$status" -eq 0 ]
-}
-
-@test "config/php-opcache.ini nennt 99-shopware-opcache.ini als Ziel, nicht 10-opcache.ini" {
-    # Regressionstest zu MEM-279: 10-opcache.ini ist auf Debian/Ubuntu der
-    # Symlink der Distribution und traegt als einziger zend_extension=opcache.so.
-    # Die Vorlage DARF den Namen nennen - aber nur warnend, nie als Zielpfad.
-    run grep -q 'conf.d/99-shopware-opcache.ini' "$CONFIG/php-opcache.ini"
-    [ "$status" -eq 0 ]
-    run grep -nE '^; Datei:.*conf\.d/10-opcache\.ini' "$CONFIG/php-opcache.ini"
-    [ "$status" -ne 0 ]
-    run grep -q 'NICHT nach 10-opcache.ini kopieren' "$CONFIG/php-opcache.ini"
-    [ "$status" -eq 0 ]
-}
-
 @test "QUICKSTART.md kopiert die OPcache-Vorlage nicht nach 10-opcache.ini" {
     # Regressionstest zu MEM-279: hier stand ein fertiges sudo-cp-Kommando,
     # das beim Leser OPcache komplett abgeschaltet haette.
@@ -291,6 +271,12 @@ STUB
     [ "$status" -ne 0 ]
     run grep -q 'conf.d/99-shopware-opcache.ini' "$CONFIG/../QUICKSTART.md"
     [ "$status" -eq 0 ]
+    # MEM-282: dieses Kapitel liefert keine eigene Vorlage mehr, es kopiert die
+    # kanonische aus Kapitel 9.
+    run grep -q '09-php-performance/config/99-shopware-opcache.ini' "$CONFIG/../QUICKSTART.md"
+    [ "$status" -eq 0 ]
+    run test -e "$CONFIG/php-opcache.ini"
+    [ "$status" -ne 0 ]
 }
 
 @test "check-opcache.sh druckt 10-opcache.ini nicht als Zielpfad" {
@@ -504,28 +490,6 @@ STUB
     [ "$status" -eq 0 ]
 }
 
-@test "config/php-opcache.ini setzt weder fast_shutdown noch JIT aktiv" {
-    # Regressionstest zu F111: opcache.fast_shutdown gibt es seit PHP 7.2
-    # nicht mehr, und die JIT-Empfehlung war unbelegt.
-    run bash -c "grep -vE '^[[:space:]]*;' $CONFIG/php-opcache.ini | grep -nE 'fast_shutdown|^opcache\.jit'"
-    [ "$status" -ne 0 ] || {
-        echo "gefunden: $output"
-        return 1
-    }
-}
-
-@test "config/php-opcache.ini empfiehlt keinen CLI-Reset nach dem Deploy" {
-    # Regressionstest zu F112: "php -r opcache_reset()" und "cache:clear"
-    # erreichen den FPM-OPcache nicht — und die Datei setzt enable_cli=0.
-    run grep -nF 'php -r "opcache_reset();"' "$CONFIG/php-opcache.ini"
-    [ "$status" -ne 0 ] || {
-        echo "gefunden: $output"
-        return 1
-    }
-    run grep -nF 'systemctl reload php8.3-fpm' "$CONFIG/php-opcache.ini"
-    [ "$status" -eq 0 ]
-}
-
 @test "config/apache-compression.conf setzt keinen SetOutputFilter DEFLATE" {
     # Regressionstest zu F113: das komprimiert auch JPEG, PNG, PDF und ZIP
     # und macht die Typenliste darunter wirkungslos.
@@ -586,50 +550,3 @@ STUB
     done
 }
 
-@test "config/php-opcache.ini behauptet nicht, eine 0600-Datei werde uebergangen" {
-    # Regressionstest zu MEM-280: Gemessen (Ubuntu 24.04, PHP 8.3.6) gilt eine
-    # root-eigene 0600-Datei in conf.d sehr wohl - der FPM-Master liest conf.d
-    # als root, bevor er die Worker auf www-data herunterstuft. Still ist nicht
-    # das Laden, sondern die Kontrolle mit "php-fpm -i" als unprivilegierter
-    # Benutzer. Die alte Fassung zog daraus die falsche Folgerung.
-    run grep -q 'die Werte gelten einfach nicht' "$CONFIG/php-opcache.ini"
-    [ "$status" -ne 0 ]
-    run grep -q 'NICHT uebergangen' "$CONFIG/php-opcache.ini"
-    [ "$status" -eq 0 ]
-    # Der Messbeleg steht mit in der Datei, nicht nur die Behauptung.
-    run grep -q 'opcache.memory_consumption=333' "$CONFIG/php-opcache.ini"
-    [ "$status" -eq 0 ]
-    # chmod 644 bleibt die Empfehlung - nur die Begruendung ist eine andere.
-    run grep -q 'chmod 644' "$CONFIG/php-opcache.ini"
-    [ "$status" -eq 0 ]
-}
-
-@test "config/php-opcache.ini warnt im JIT-Block vor pcov und Xdebug" {
-    # Regressionstest zu MEM-278: PHP schaltet den JIT still ab, sobald eine
-    # Erweiterung zend_execute_ex() ueberschreibt. ini_get() meldet trotzdem
-    # weiter den konfigurierten Wert - wer nur die Konfiguration liest, misst
-    # einen JIT, der nie lief.
-    run grep -q 'zend_execute_ex()' "$CONFIG/php-opcache.ini"
-    [ "$status" -eq 0 ]
-    run grep -qF "opcache_get_status(false)['jit']['enabled']" "$CONFIG/php-opcache.ini"
-    [ "$status" -eq 0 ]
-    run grep -q 'pcov' "$CONFIG/php-opcache.ini"
-    [ "$status" -eq 0 ]
-    run grep -q 'Xdebug' "$CONFIG/php-opcache.ini"
-    [ "$status" -eq 0 ]
-}
-
-@test "config/php-opcache.ini nennt den stillen Fall jit_buffer_size=0" {
-    # Regressionstest zur Review-Runde: Bei pcov/Xdebug gibt es eine Warnung
-    # (sie landet nur auf stderr des Masters). Ganz ohne Warnung bleibt
-    # opcache.jit=tracing ohne Buffer - die Vorgabe ist 0, dann laeuft kein
-    # JIT, und ini_get() meldet trotzdem den konfigurierten Wert.
-    run grep -q 'jit_buffer_size fehlt' "$CONFIG/php-opcache.ini"
-    [ "$status" -eq 0 ]
-    # Die Bedingung fuer pcov/Xdebug muss die aktive Einstellung nennen,
-    # nicht bloss "geladen": mit xdebug.mode=off laeuft der JIT.
-    run grep -q 'xdebug.mode=off' "$CONFIG/php-opcache.ini"
-    [ "$status" -eq 0 ]
-    run grep -q 'pcov.enabled=1' "$CONFIG/php-opcache.ini"
-    [ "$status" -eq 0 ]
-}
