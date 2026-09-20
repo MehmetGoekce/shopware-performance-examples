@@ -272,6 +272,36 @@ STUB
     [ "$status" -eq 0 ]
 }
 
+@test "config/php-opcache.ini nennt 99-shopware-opcache.ini als Ziel, nicht 10-opcache.ini" {
+    # Regressionstest zu MEM-279: 10-opcache.ini ist auf Debian/Ubuntu der
+    # Symlink der Distribution und traegt als einziger zend_extension=opcache.so.
+    # Die Vorlage DARF den Namen nennen - aber nur warnend, nie als Zielpfad.
+    run grep -q 'conf.d/99-shopware-opcache.ini' "$CONFIG/php-opcache.ini"
+    [ "$status" -eq 0 ]
+    run grep -nE '^; Datei:.*conf\.d/10-opcache\.ini' "$CONFIG/php-opcache.ini"
+    [ "$status" -ne 0 ]
+    run grep -q 'NICHT nach 10-opcache.ini kopieren' "$CONFIG/php-opcache.ini"
+    [ "$status" -eq 0 ]
+}
+
+@test "QUICKSTART.md kopiert die OPcache-Vorlage nicht nach 10-opcache.ini" {
+    # Regressionstest zu MEM-279: hier stand ein fertiges sudo-cp-Kommando,
+    # das beim Leser OPcache komplett abgeschaltet haette.
+    run grep -nE '^sudo (cp|chmod).*10-opcache\.ini' "$CONFIG/../QUICKSTART.md"
+    [ "$status" -ne 0 ]
+    run grep -q 'conf.d/99-shopware-opcache.ini' "$CONFIG/../QUICKSTART.md"
+    [ "$status" -eq 0 ]
+}
+
+@test "check-opcache.sh druckt 10-opcache.ini nicht als Zielpfad" {
+    # Regressionstest zu MEM-279: das Skript laeuft genau dann, wenn OPcache
+    # schon kaputt ist - der ausgegebene Vorschlag darf ihn nicht kaputt lassen.
+    run grep -nE '^; /etc/php/.*conf\.d/10-opcache\.ini' "$DIR/check-opcache.sh"
+    [ "$status" -ne 0 ]
+    run grep -qE '^; /etc/php/.*conf\.d/99-shopware-opcache\.ini' "$DIR/check-opcache.sh"
+    [ "$status" -eq 0 ]
+}
+
 @test "config/redis-session.yaml benutzt REDIS_SESSION_URL, nicht REDIS_URL" {
     # Regressionstest zu F19: REDIS_URL ist die Cache-Instanz.
     run grep -q "handler_id: '%env(REDIS_SESSION_URL)%'" "$CONFIG/redis-session.yaml"
