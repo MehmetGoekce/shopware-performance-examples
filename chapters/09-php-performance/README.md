@@ -4,81 +4,131 @@ Companion-Code zum Buch **"Shop-Performance in 30 Tagen"**
 
 ## Inhalt
 
-Dieses Verzeichnis enthält alle PHP-Konfigurationen und Scripts aus Kapitel 9:
-
 ### config/
 - `99-shopware-opcache.ini` - OPcache-Konfiguration fuer Shopware 6
-- `99-shopware.ini` - php.ini Einstellungen fuer FPM
-- `99-shopware-cli.ini` - php.ini Einstellungen fuer CLI
+- `99-shopware.ini` - php.ini-Einstellungen fuer FPM
+- `99-shopware-cli.ini` - php.ini-Einstellungen fuer CLI
 - `shopware-fpm.conf` - PHP-FPM Pool-Konfiguration
-- `nginx-php-fpm.conf` - Nginx FastCGI-Konfiguration
+- `nginx-php-fpm.conf` - Nginx-Upstream plus Vorlage fuer die location-Bloecke
+- `frankenphp-Caddyfile.example` - Evaluierungs-Skelett, kein Production-Setup
 
 ### scripts/
-- `opcache-status.php` - OPcache-Monitoring Script
-- `php-fpm-memory.sh` - Worker-Speicherverbrauch messen
+- `opcache-status.php` - OPcache-Monitoring (gehaertet)
+- `php-fpm-memory.sh` - RSS je Worker messen
 - `calculate-max-children.sh` - pm.max_children berechnen
-- `jit-benchmark.sh` - JIT A/B-Test durchfuehren
+- `jit-benchmark.sh` - JIT A/B-Test mit Laufzeit-Gegenprobe
+- `preload.example.php` - OPcache-Preload-Vorlage
 
 ## Schnellstart
 
 ### 1. OPcache konfigurieren
 
 ```bash
-# Konfiguration kopieren
+# Konfiguration kopieren - beachten Sie den Dateinamen!
 sudo cp config/99-shopware-opcache.ini /etc/php/8.3/fpm/conf.d/
 
-# PHP-FPM neustarten
 sudo systemctl reload php8.3-fpm
 
-# Status pruefen
-php -r "print_r(opcache_get_status(false));"
+# Pruefen - in der FPM-SAPI, nicht in der CLI:
+php-fpm8.3 -m | grep -i 'zend opcache'
+php-fpm8.3 -i | grep -E '^opcache\.(enable|memory_consumption|max_accelerated_files) =>'
 ```
+
+> **Nicht nach `10-opcache.ini` kopieren.** Dieser Name ist auf Debian und
+> Ubuntu bereits vergeben: Die Datei ist ein Symlink der Distribution auf
+> `/etc/php/8.3/mods-available/opcache.ini`, und **nur dort** steht
+> `zend_extension=opcache.so`. Wer sie ueberschreibt, laedt die Erweiterung
+> nicht mehr - OPcache ist dann komplett aus, obwohl in der Konfiguration
+> `opcache.enable=1` steht. `php-fpm8.3 -t` meldet trotzdem
+> "test is successful", der Ausfall ist also lautlos.
+
+> **`php -i | grep opcache` beantwortet die Frage nicht.** CLI und FPM lesen
+> auf Debian und Ubuntu verschiedene `conf.d`-Verzeichnisse; `php --ini`
+> durchsucht nur `/etc/php/8.3/cli/conf.d`. Eine Datei unter `fpm/conf.d/` -
+> genau dort liegt die OPcache-Konfiguration - sieht `php -i` nie.
 
 ### 2. PHP-FPM dimensionieren
 
 ```bash
-# Worker-Speicher messen
+# RSS je Worker am LAUFENDEN, warmen Shop messen
 ./scripts/php-fpm-memory.sh
 
-# Optimale Worker-Anzahl berechnen
-# VORHER: Werte in calculate-max-children.sh anpassen!
-./scripts/calculate-max-children.sh
+# Damit rechnen (Vorgabewerte = Beispielserver des Buchs, 16 GB)
+./scripts/calculate-max-children.sh -w 82
 
-# Pool-Konfiguration anpassen und aktivieren
-sudo cp config/shopware-fpm.conf /etc/php/8.3/fpm/pool.d/
-sudo systemctl reload php8.3-fpm
+# Pool einspielen
+sudo cp config/shopware-fpm.conf /etc/php/8.3/fpm/pool.d/shopware.conf
+sudo mkdir -p /var/log/php-fpm && sudo chown www-data:www-data /var/log/php-fpm
+sudo php-fpm8.3 -t && sudo systemctl restart php8.3-fpm
 ```
+
+Zwei Dinge, die sonst schiefgehen:
+
+- **Das Logverzeichnis legt PHP-FPM nicht selbst an.** Fehlt `/var/log/php-fpm`,
+  startet FPM gar nicht: `Unable to create or open slowlog(...)`.
+- **Den mitgelieferten Pool `www.conf` abschalten.** Sonst laufen zwei Pools
+  nebeneinander und `pm.max_children` zaehlt doppelt.
 
 ### 3. Monitoring einrichten
 
 ```bash
-# OPcache-Status Script installieren
-cp scripts/opcache-status.php /var/www/shopware/public/
+# Ablage AUSSERHALB von public/
+sudo mkdir -p /var/www/shopware/private
+sudo cp scripts/opcache-status.php /var/www/shopware/private/
 
-# WICHTIG: Zugriff einschraenken! (nur localhost)
-# Nginx-Konfiguration pruefen
+# Aufruf ueber die CLI zeigt den OPcache DER CLI - fuer die FPM-Zahlen
+# entweder eine eigene nginx-Location (siehe Kopfkommentar der Datei) oder:
+cachetool opcache:status --fcgi=/run/php/php8.3-fpm-shopware.sock
 ```
 
-## Typische Ergebnisse
+Das Skript gibt Cache-Internals preis (Speicherauslastung, Trefferquote,
+Dateizahlen). Es gehoert **nicht** nach `public/`.
 
-| Metrik | Standard-PHP | Optimiert |
-|--------|--------------|-----------|
-| OPcache Hit Rate | 80-90% | 99%+ |
-| Requests/Sekunde | 100 | 120-145 |
-| Memory pro Worker | 150MB+ | 80-120MB |
+### 4. JIT messen, bevor Sie ihn einschalten
+
+```bash
+# Ungecachte Route nehmen - die Startseite misst den HTTP-Cache, nicht PHP
+sudo ./scripts/jit-benchmark.sh -u https://ihr-shop.example/account/login \
+     -d /var/www/shopware/public
+```
+
+Das Skript bricht ab, wenn Xdebug oder pcov geladen sind: Beide ueberschreiben
+`zend_execute_ex()`, und PHP schaltet JIT dann still ab - die Messung waere ein
+Vergleich von "aus" mit "aus".
+
+## Gemessene Werte
+
+Alle Zahlen aus **einem** Aufbau: Dockware 6.6.10.6 mit Demo-Daten, lokale
+Datenbank, ein Container auf einem Notebook, Route `/account/login`
+(`Cache-Control: no-store`), 250 Requests bei Nebenlaeufigkeit 4. Kein
+Lasttest. Auf einem Shop mit echter Datenmenge faellt der CPU-Anteil kleiner
+aus - messen Sie Ihre eigenen Werte.
+
+| Messung | Ergebnis |
+|---------|----------|
+| OPcache eines warmen Storefronts | 2278 Skripte, 58,6 MB von 256 MB |
+| RSS je Worker, warm | 79-86 MB (kalt: rund 16 MB) |
+| JIT aus -> tracing, Median aus 14 Paaren | 56,5 -> 62,5 req/s (+10 %) |
+| pcov geladen -> entladen, JIT in beiden Armen aus | 42,6 -> 57,3 req/s (+35 %) |
+| Preload von `vendor/symfony` + `vendor/doctrine` | 4306 Dateien, 2985 Klassen, 31,2 MB, +2,4 s Startzeit |
+
+Der groesste einzelne Gewinn in dieser Messreihe war nicht JIT, sondern das
+Entfernen einer Coverage-Erweiterung aus der Produktionskonfiguration.
 
 ## Voraussetzungen
 
 - Ubuntu 22.04/24.04 oder Debian 12
-- PHP 8.3 (empfohlen, LTS-Stable) - PHP 8.2 lauffaehig, PHP 8.4 ab Jan 2026 GA und in Verbindung mit aktuellen Plugins einsetzbar
-- Root-Zugriff (fuer Konfigurationsaenderungen)
-- Apache Benchmark (`ab`) fuer JIT-Tests
+- PHP 8.3 (empfohlen). Shopware 6.6 ist mit 8.2, 8.3 und 8.4 kompatibel;
+  PHP 8.4 ist seit November 2024 erschienen.
+- Root-Zugriff fuer Konfigurationsaenderungen
+- Apache Benchmark (`ab`) fuer den JIT-Test: `sudo apt install apache2-utils`
 
-> Hinweis: Alle Pfade in diesem Verzeichnis verwenden `/etc/php/8.3/...`. Fuer PHP 8.4 sind die Pfade analog (`/etc/php/8.4/...`); die Konfigurations-Direktiven sind identisch.
+> Alle Pfade verwenden `/etc/php/8.3/...`. Fuer PHP 8.4 sind sie analog
+> (`/etc/php/8.4/...`); die Direktiven sind identisch.
 
 ## Referenzen
 
 - [Tideways: OPcache Configuration](https://tideways.com/profiler/blog/fine-tune-your-opcache-configuration-to-avoid-caching-suprises)
 - [Tideways: PHP-FPM Tuning](https://tideways.com/profiler/blog/an-introduction-to-php-fpm-tuning)
-- [Kinsta: PHP Benchmarks](https://kinsta.com/blog/php-benchmarks/)
-- [Shopware Requirements](https://developer.shopware.com/docs/guides/installation/requirements.html)
+- [PHP-Handbuch: OPcache-Konfiguration](https://www.php.net/manual/en/opcache.configuration.php)
+- [Shopware Requirements (6.6)](https://developer.shopware.com/docs/v6.6/guides/installation/requirements.html)
