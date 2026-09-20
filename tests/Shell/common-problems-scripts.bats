@@ -585,3 +585,36 @@ STUB
         }
     done
 }
+
+@test "config/php-opcache.ini behauptet nicht, eine 0600-Datei werde uebergangen" {
+    # Regressionstest zu MEM-280: Gemessen (Ubuntu 24.04, PHP 8.3.6) gilt eine
+    # root-eigene 0600-Datei in conf.d sehr wohl - der FPM-Master liest conf.d
+    # als root, bevor er die Worker auf www-data herunterstuft. Still ist nicht
+    # das Laden, sondern die Kontrolle mit "php-fpm -i" als unprivilegierter
+    # Benutzer. Die alte Fassung zog daraus die falsche Folgerung.
+    run grep -q 'die Werte gelten einfach nicht' "$CONFIG/php-opcache.ini"
+    [ "$status" -ne 0 ]
+    run grep -q 'NICHT uebergangen' "$CONFIG/php-opcache.ini"
+    [ "$status" -eq 0 ]
+    # Der Messbeleg steht mit in der Datei, nicht nur die Behauptung.
+    run grep -q 'opcache.memory_consumption=333' "$CONFIG/php-opcache.ini"
+    [ "$status" -eq 0 ]
+    # chmod 644 bleibt die Empfehlung - nur die Begruendung ist eine andere.
+    run grep -q 'chmod 644' "$CONFIG/php-opcache.ini"
+    [ "$status" -eq 0 ]
+}
+
+@test "config/php-opcache.ini warnt im JIT-Block vor pcov und Xdebug" {
+    # Regressionstest zu MEM-278: PHP schaltet den JIT still ab, sobald eine
+    # Erweiterung zend_execute_ex() ueberschreibt. ini_get() meldet trotzdem
+    # weiter den konfigurierten Wert - wer nur die Konfiguration liest, misst
+    # einen JIT, der nie lief.
+    run grep -q 'zend_execute_ex()' "$CONFIG/php-opcache.ini"
+    [ "$status" -eq 0 ]
+    run grep -qF "opcache_get_status(false)['jit']['enabled']" "$CONFIG/php-opcache.ini"
+    [ "$status" -eq 0 ]
+    run grep -q 'pcov' "$CONFIG/php-opcache.ini"
+    [ "$status" -eq 0 ]
+    run grep -q 'Xdebug' "$CONFIG/php-opcache.ini"
+    [ "$status" -eq 0 ]
+}
