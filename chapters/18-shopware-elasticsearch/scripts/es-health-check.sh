@@ -26,11 +26,14 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
     echo ""
     echo "Environment:"
     echo "  ES_URL        Elasticsearch URL (default: http://localhost:9200)"
+    echo "  INDEX_PREFIX  Shopware index prefix (default: sw, ohne Unterstrich)"
+    echo "  ES_LOG_DIR    Slow-Log-Verzeichnis (default: /var/log/elasticsearch)"
     exit 0
 fi
 
 # Configuration
 ES_URL="${ES_URL:-http://localhost:9200}"
+INDEX_PREFIX="${INDEX_PREFIX:-sw}"
 WARNING_HEAP_PERCENT=75
 CRITICAL_HEAP_PERCENT=85
 WARNING_DISK_PERCENT=80
@@ -82,7 +85,9 @@ CLUSTER_NAME=$(echo "${CLUSTER_HEALTH}" | jq -r '.cluster_name')
 NODE_COUNT=$(echo "${CLUSTER_HEALTH}" | jq -r '.number_of_nodes')
 ACTIVE_SHARDS=$(echo "${CLUSTER_HEALTH}" | jq -r '.active_shards')
 UNASSIGNED_SHARDS=$(echo "${CLUSTER_HEALTH}" | jq -r '.unassigned_shards')
-PENDING_TASKS=$(echo "${CLUSTER_HEALTH}" | jq -r '.pending_tasks // 0')
+# Das Feld heisst number_of_pending_tasks. `.pending_tasks` liefert null,
+# und `// 0` macht daraus stillschweigend eine 0 — der Check meldete nie etwas.
+PENDING_TASKS=$(echo "${CLUSTER_HEALTH}" | jq -r '.number_of_pending_tasks // 0')
 
 echo "   Cluster:    ${CLUSTER_NAME}"
 echo "   Nodes:      ${NODE_COUNT}"
@@ -110,7 +115,11 @@ echo "-------------------------------------------"
 NODE_STATS=$(curl -s "${ES_URL}/_nodes/stats/jvm,fs,os,process")
 
 # Parse each node
-echo "${NODE_STATS}" | jq -r '.nodes | to_entries[] | "\(.key)|\(.value.name)|\(.value.jvm.mem.heap_used_percent)|\(.value.fs.total.available_in_bytes)|\(.value.fs.total.total_in_bytes)|\(.value.process.open_file_descriptors)|\(.value.process.max_file_descriptors)"' | while IFS='|' read -r node_id node_name heap_percent fs_avail fs_total open_fd max_fd; do
+# Prozess-Substitution statt Pipe: `cmd | while ...` laeuft in einer Subshell,
+# update_exit veraendert dort eine KOPIE von FINAL_EXIT. Der Heap-, Disk- und
+# GC-Check hat deshalb frueher zwar CRITICAL gedruckt, den Exit-Code aber nie
+# angefasst.
+while IFS='|' read -r node_id node_name heap_percent fs_avail fs_total open_fd max_fd; do
     echo "   Node: ${node_name}"
 
     # Heap check
@@ -142,12 +151,12 @@ echo "${NODE_STATS}" | jq -r '.nodes | to_entries[] | "\(.key)|\(.value.name)|\(
         echo "     FDs:        ${open_fd} / ${max_fd} (${fd_percent}%)"
     fi
     echo ""
-done
+done < <(echo "${NODE_STATS}" | jq -r '.nodes | to_entries[] | "\(.key)|\(.value.name)|\(.value.jvm.mem.heap_used_percent)|\(.value.fs.total.available_in_bytes)|\(.value.fs.total.total_in_bytes)|\(.value.process.open_file_descriptors)|\(.value.process.max_file_descriptors)"')
 
 # GC Stats
 echo -e "${BLUE}4. Garbage Collection${NC}"
 echo "-------------------------------------------"
-echo "${NODE_STATS}" | jq -r '.nodes | to_entries[] | "\(.value.name)|\(.value.jvm.gc.collectors.old.collection_count // 0)|\(.value.jvm.gc.collectors.old.collection_time_in_millis // 0)|\(.value.jvm.gc.collectors.young.collection_count // 0)|\(.value.jvm.gc.collectors.young.collection_time_in_millis // 0)"' | while IFS='|' read -r node_name old_count old_time young_count young_time; do
+while IFS='|' read -r node_name old_count old_time young_count young_time; do
     echo "   Node: ${node_name}"
     echo "     Old GC:     ${old_count} collections, ${old_time}ms total"
     echo "     Young GC:   ${young_count} collections, ${young_time}ms total"
@@ -161,35 +170,52 @@ echo "${NODE_STATS}" | jq -r '.nodes | to_entries[] | "\(.value.name)|\(.value.j
         fi
     fi
     echo ""
-done
+done < <(echo "${NODE_STATS}" | jq -r '.nodes | to_entries[] | "\(.value.name)|\(.value.jvm.gc.collectors.old.collection_count // 0)|\(.value.jvm.gc.collectors.old.collection_time_in_millis // 0)|\(.value.jvm.gc.collectors.young.collection_count // 0)|\(.value.jvm.gc.collectors.young.collection_time_in_millis // 0)"')
 
 # Index Stats
 echo -e "${BLUE}5. Index Statistics${NC}"
 echo "-------------------------------------------"
-echo "   Index                          Docs       Size"
+# docs.count aus _cat/indices ist die Zahl der LUCENE-Dokumente — Shopware
+# indexiert verschachtelte Felder, deshalb liegt der Wert deutlich ueber der
+# Produktzahl (gemessen: 234 gegen 14). Und er haengt am Refresh: direkt nach
+# dem Indexieren steht dort minutenlang 0. Die Produktzahl liefert _count.
+echo "   Index                          Lucene-Docs      Size"
 echo "   -------------------------------------------"
-curl -s "${ES_URL}/_cat/indices?v&s=store.size:desc&h=index,docs.count,store.size" 2>/dev/null | tail -n +2 | head -10 | while read -r index docs size; do
-    printf "   %-30s %10s %10s\n" "${index}" "${docs}" "${size}"
-done
+while read -r index docs size; do
+    printf "   %-30s %11s %10s\n" "${index}" "${docs}" "${size}"
+done < <(curl -s "${ES_URL}/_cat/indices?v&s=store.size:desc&h=index,docs.count,store.size" 2>/dev/null | tail -n +2 | head -10)
+echo ""
+ALIAS_COUNT=$(curl -s "${ES_URL}/${INDEX_PREFIX}_product/_count" 2>/dev/null | jq -r '.count // "n/a"')
+echo "   Produkte hinter dem Alias ${INDEX_PREFIX}_product: ${ALIAS_COUNT}"
 echo ""
 
 # Slow Log Entries (if available)
 echo -e "${BLUE}6. Recent Slow Queries${NC}"
 echo "-------------------------------------------"
-SLOWLOG_PATH="/var/log/elasticsearch/*_index_search_slowlog.log"
+# In Elasticsearch 8.x heisst die Datei <cluster>_index_search_slowlog.JSON
+# und traegt ECS-JSON, nicht mehr .log mit Klartext
+# (distribution/src/config/log4j2.properties@v8.15.0, RollingFile-Appender).
+# Im offiziellen Docker-Image ist derselbe Appender ein Console-Appender —
+# dort steht der Slow-Log in `docker logs`, nicht in einer Datei.
+SLOWLOG_PATH="${ES_LOG_DIR:-/var/log/elasticsearch}/*_index_search_slowlog.json"
+# shellcheck disable=SC2086  # Glob soll expandieren
 if ls ${SLOWLOG_PATH} 1> /dev/null 2>&1; then
-    SLOW_COUNT=$(tail -100 ${SLOWLOG_PATH} 2>/dev/null | wc -l || echo "0")
+    # shellcheck disable=SC2086
+    SLOW_COUNT=$(cat ${SLOWLOG_PATH} 2>/dev/null | wc -l)
     if [[ "${SLOW_COUNT}" -gt 0 ]]; then
-        echo -e "   ${YELLOW}Found ${SLOW_COUNT} slow queries in recent log${NC}"
-        echo "   Last 3 slow queries:"
-        tail -3 ${SLOWLOG_PATH} 2>/dev/null | while read -r line; do
-            echo "     ${line}" | cut -c1-80
-        done
+        echo -e "   ${YELLOW}${SLOW_COUNT} Slow-Log-Zeilen${NC}"
+        echo "   Die drei letzten:"
+        # shellcheck disable=SC2086
+        tail -3 ${SLOWLOG_PATH} 2>/dev/null \
+            | jq -r '"     \(.["elasticsearch.slowlog.took"] // "?") — \(.["elasticsearch.slowlog.id"] // .message // "" | tostring | .[0:70])"' 2>/dev/null \
+            || tail -3 ${SLOWLOG_PATH} | cut -c1-100
     else
-        echo -e "   ${GREEN}No slow queries in recent log${NC}"
+        echo -e "   ${GREEN}Keine Slow-Log-Eintraege${NC}"
     fi
 else
-    echo "   Slow log not found or not accessible"
+    echo "   Slow-Log nicht gefunden (Pfad: ${SLOWLOG_PATH})."
+    echo "   Im Docker-Image geht der Slow-Log auf stdout: docker logs <container>."
+    echo "   Schwellen setzen: ./slowlog-settings.sh"
 fi
 echo ""
 

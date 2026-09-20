@@ -13,6 +13,28 @@
 # Place the file on the ES host (see scripts/extract-dictionary.sh):
 #   /etc/elasticsearch/analysis/de_dictionary.txt   (ES)
 #   /etc/opensearch/analysis/de_dictionary.txt      (OpenSearch)
+#
+# DIE WORTLISTE MUSS KLEINGESCHRIEBEN SEIN. Der dictionary_decompounder
+# vergleicht ohne Ruecksicht auf Gross-/Kleinschreibung nicht — er baut ein
+# CharArraySet mit ignoreCase=false. Der lowercase-Filter laeuft in der Kette
+# unten VOR ihm, also trifft eine Liste mit grossen Substantiven
+# ("Schuhe" aus de_DE.dic) nie. Gemessen gegen ES 8.15.3:
+#   grosse Liste: "Kinderschuhe" -> [kinderschuh]
+#   kleine Liste: "Kinderschuhe" -> [kinderschuh, kind, schuh, schuh]
+# extract-dictionary.sh erledigt das und bricht ab, wenn es nicht gelingt.
+#
+# ZUR REIHENFOLGE unten: Der Decompounder steht bewusst VOR dem Stemmer.
+# Andersherum — wie es in 18.5 frueher stand — zerlegt er bereits gestemmte
+# Wortformen, und die Bestandteile stehen so nicht im Woerterbuch. Gemessen
+# an "Winterjacke": Decompounder zuerst ergibt [winterjack, wint, jack],
+# Stemmer zuerst ergibt [winterjack, winter] — "Jacke" faellt weg, weil die
+# gestemmte Form "jack" in der Liste fehlt.
+#
+# Und noch ein betrieblicher Punkt: index.analysis.* ist ein STATISCHES
+# Setting. Ein neuer Analyzer laesst sich an einem offenen Index nicht
+# setzen — entweder `POST /<index>/_settings?reopen=true` oder Index
+# schliessen, setzen, oeffnen. In der Shopware-Praxis heisst das ohnehin:
+# neuer Analyzer, dann `bin/console es:index` (legt einen frischen Index an).
 
 elasticsearch:
     index_settings:
