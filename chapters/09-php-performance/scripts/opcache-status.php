@@ -87,8 +87,15 @@ $memoryFree    = $status['memory_usage']['free_memory'];
 $memoryTotal   = $memoryUsed + $memoryFree;
 $memoryPercent = round($memoryUsed / $memoryTotal * 100, 1);
 
-$scriptsUsed    = $status['opcache_statistics']['num_cached_scripts'];
-$scriptsMax     = $config['directives']['opcache.max_accelerated_files'];
+$scriptsUsed = $status['opcache_statistics']['num_cached_scripts'];
+
+// Das WIRKSAME Maximum, nicht das eingetragene. PHP rundet
+// opcache.max_accelerated_files auf die naechste Zahl einer festen Reihe auf
+// (... 16229, 32531, 65407, 130987), und opcache_get_configuration() meldet
+// weiterhin stur den Eingabewert. Aus 50000 werden 65407 - wer gegen 50000
+// rechnet, meldet eine Auslastung, die es nicht gibt.
+$scriptsMax     = $status['opcache_statistics']['max_cached_keys'];
+$scriptsEntered = $config['directives']['opcache.max_accelerated_files'];
 $scriptsPercent = round($scriptsUsed / $scriptsMax * 100, 1);
 
 $hitRate = round($status['opcache_statistics']['opcache_hit_rate'], 2);
@@ -102,7 +109,11 @@ echo "  Gesamt: " . round($memoryTotal / 1024 / 1024, 1) . " MB\n\n";
 
 echo "Skripte:\n";
 echo "  Gecached: {$scriptsUsed} ({$scriptsPercent}%)\n";
-echo "  Maximum: {$scriptsMax}\n\n";
+echo "  Maximum: {$scriptsMax}";
+if ($scriptsMax !== $scriptsEntered) {
+    echo " (eingetragen: {$scriptsEntered}, aufgerundet)";
+}
+echo "\n\n";
 
 echo "Performance:\n";
 echo "  Hit Rate: {$hitRate}%\n";
@@ -114,16 +125,23 @@ if (isset($status['jit'])) {
     echo "JIT:\n";
     echo "  Aktiviert: " . ($status['jit']['enabled'] ? 'Ja' : 'Nein') . "\n";
     echo "  On: " . ($status['jit']['on'] ? 'Ja' : 'Nein') . "\n";
+    // opcache_get_status()['jit'] kennt buffer_size und buffer_free -
+    // einen Schluessel buffer_used gibt es nicht.
+    $jitUsed = $status['jit']['buffer_size'] - $status['jit']['buffer_free'];
     echo "  Buffer Size: " . round($status['jit']['buffer_size'] / 1024 / 1024, 1) . " MB\n";
-    echo "  Buffer Used: " . round($status['jit']['buffer_used'] / 1024 / 1024, 1) . " MB\n\n";
+    echo "  Buffer Used: " . round($jitUsed / 1024 / 1024, 1) . " MB\n\n";
 }
 
 // Preload-Status (PHP 7.4+)
 if (isset($status['preload_statistics'])) {
+    // classes, functions und scripts sind LISTEN von Namen, keine Zaehler.
+    // number_format() darauf ist ein TypeError und bricht das Skript ab.
+    $preload = $status['preload_statistics'];
     echo "Preload:\n";
-    echo "  Klassen: " . number_format($status['preload_statistics']['classes']) . "\n";
-    echo "  Funktionen: " . number_format($status['preload_statistics']['functions']) . "\n";
-    echo "  Speicher: " . round($status['preload_statistics']['memory_consumption'] / 1024 / 1024, 1) . " MB\n\n";
+    echo "  Klassen: " . number_format(count($preload['classes'])) . "\n";
+    echo "  Funktionen: " . number_format(count($preload['functions'])) . "\n";
+    echo "  Skripte: " . number_format(count($preload['scripts'])) . "\n";
+    echo "  Speicher: " . round($preload['memory_consumption'] / 1024 / 1024, 1) . " MB\n\n";
 }
 
 // Warnungen

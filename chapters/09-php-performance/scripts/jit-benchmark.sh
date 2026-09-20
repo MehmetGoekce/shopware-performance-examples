@@ -93,6 +93,26 @@ while getopts ":u:n:c:r:v:i:d:h" opt; do
     esac
 done
 
+# Zahlenargumente pruefen, bevor irgendetwas laeuft. Ohne das laufen
+# `-n abc` und `-r 0` durch und liefern "0.00 req/s" bzw. eine Division
+# durch null - eine Messung, die aussieht wie ein Ergebnis.
+for pair in "Requests:-n:${REQUESTS}" "Nebenlaeufigkeit:-c:${CONCURRENCY}" "Runden:-r:${ROUNDS}"; do
+    label="${pair%%:*}"
+    rest="${pair#*:}"
+    flag="${rest%%:*}"
+    value="${rest#*:}"
+    if ! [[ "${value}" =~ ^[1-9][0-9]*$ ]]; then
+        echo "FEHLER: ${label} (${flag}) muss eine ganze Zahl groesser 0 sein (war: '${value}')." >&2
+        exit 1
+    fi
+done
+
+if (( REQUESTS < CONCURRENCY )); then
+    echo "FEHLER: Requests (-n ${REQUESTS}) muss mindestens so gross sein wie die" >&2
+    echo "        Nebenlaeufigkeit (-c ${CONCURRENCY})." >&2
+    exit 1
+fi
+
 [[ -n "${OPCACHE_INI}" ]] || OPCACHE_INI="/etc/php/${PHP_VERSION}/fpm/conf.d/99-shopware-opcache.ini"
 
 FPM_SERVICE="php${PHP_VERSION}-fpm"
@@ -141,6 +161,17 @@ if [[ ! -f "${OPCACHE_INI}" ]]; then
 fi
 
 # --- Blockiert eine Erweiterung den JIT? ------------------------------------
+#
+# Erst pruefen, ob es das Binary ueberhaupt gibt. Sonst liefert der Aufruf
+# nichts, die Blocker-Liste bleibt leer, und das Skript meldet "sauber" fuer
+# eine PHP-Version, die gar nicht installiert ist.
+if ! command -v "${FPM_BIN}" > /dev/null 2>&1; then
+    echo "FEHLER: ${FPM_BIN} nicht gefunden." >&2
+    echo "        Andere Version mit -v angeben, z. B. -v 8.4. Vorhanden:" >&2
+    ls /usr/sbin/php-fpm* /usr/bin/php-fpm* 2>/dev/null | sed 's/^/          /' >&2 || echo "          (keine)" >&2
+    exit 1
+fi
+
 BLOCKERS="$("${FPM_BIN}" -m 2>/dev/null | grep -ixE 'xdebug|pcov' || true)"
 if [[ -n "${BLOCKERS}" ]]; then
     echo "FEHLER: Diese Erweiterungen schalten JIT still ab:" >&2

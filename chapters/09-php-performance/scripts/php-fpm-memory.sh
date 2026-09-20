@@ -112,8 +112,8 @@ END {
     printf "  Durchschnitt:   %.0f MB\n", avg
     printf "  Minimum:        %.0f MB\n", min
     printf "  Maximum:        %.0f MB\n", max
-    printf "\n=== Empfehlung fuer calculate-max-children.sh ===\n"
-    printf "  AVG_WORKER_MB=%.0f  # (Durchschnitt + 10 MB Puffer)\n", avg + 10
+    printf "\n=== Naechster Schritt ===\n"
+    printf "  ./calculate-max-children.sh -w %.0f   # Durchschnitt + 10 MB Puffer\n", avg + 10
 }'
 
 echo ""

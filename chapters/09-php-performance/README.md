@@ -10,6 +10,7 @@ Companion-Code zum Buch **"Shop-Performance in 30 Tagen"**
 - `99-shopware-cli.ini` - php.ini-Einstellungen fuer CLI
 - `shopware-fpm.conf` - PHP-FPM Pool-Konfiguration
 - `nginx-php-fpm.conf` - Nginx-Upstream plus Vorlage fuer die location-Bloecke
+- `nginx-shopware-vhost.conf` - vollstaendiger vHost, der diesen Upstream nutzt
 - `frankenphp-Caddyfile.example` - Evaluierungs-Skelett, kein Production-Setup
 
 ### scripts/
@@ -60,6 +61,15 @@ php-fpm8.3 -i | grep -E '^opcache\.(enable|memory_consumption|max_accelerated_fi
 sudo cp config/shopware-fpm.conf /etc/php/8.3/fpm/pool.d/shopware.conf
 sudo mkdir -p /var/log/php-fpm && sudo chown www-data:www-data /var/log/php-fpm
 sudo php-fpm8.3 -t && sudo systemctl restart php8.3-fpm
+
+# Webserver: Upstream global, vHost je Shop
+sudo cp config/nginx-php-fpm.conf /etc/nginx/conf.d/php-fpm.conf
+sudo cp config/nginx-shopware-vhost.conf /etc/nginx/sites-available/shopware
+sudo ln -s /etc/nginx/sites-available/shopware /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+
+# Gegenprobe: die Statusseite muss von FPM kommen, nicht aus dem Shop
+curl -s http://127.0.0.1:8080/fpm-status | head -3
 ```
 
 Zwei Dinge, die sonst schiefgehen:

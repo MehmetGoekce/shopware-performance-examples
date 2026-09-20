@@ -174,8 +174,9 @@ teardown() {
 #!/bin/sh
 printf 'HTTP/1.1 200 OK\r\nAge: 1655\r\nCache-Control: no-cache, private\r\n\r\n'
 STUB
+    printf '#!/bin/sh\necho "Zend OPcache"\n' > "$TMP/bin/php-fpm8.3"
     printf 'opcache.enable=1\n' > "$TMP/opcache.ini"
-    chmod +x "$TMP/bin/ab" "$TMP/bin/curl"
+    chmod +x "$TMP/bin/ab" "$TMP/bin/curl" "$TMP/bin/php-fpm8.3"
     run env PATH="$TMP/bin:$PATH" bash "$DIR/jit-benchmark.sh" -i "$TMP/opcache.ini" -u http://example.test/
     [ "$status" -eq 3 ]
     [[ "$output" == *"HTTP-Cache"* ]]
@@ -191,8 +192,9 @@ STUB
 #!/bin/sh
 printf 'HTTP/1.1 200 OK\r\nCache-Control: no-cache, private\r\n\r\n'
 STUB
+    printf '#!/bin/sh\necho "Zend OPcache"\n' > "$TMP/bin/php-fpm8.3"
     printf 'opcache.enable=1\n' > "$TMP/opcache.ini"
-    chmod +x "$TMP/bin/ab" "$TMP/bin/curl"
+    chmod +x "$TMP/bin/ab" "$TMP/bin/curl" "$TMP/bin/php-fpm8.3"
     run env PATH="$TMP/bin:$PATH" bash "$DIR/jit-benchmark.sh" -i "$TMP/opcache.ini" -u http://example.test/
     [ "$status" -eq 3 ]
     [[ "$output" == *"no-store"* ]]
@@ -301,4 +303,64 @@ STUB
     # laengst preloadet.
     run grep -cE "php -r .*preload_statistics" "$DIR/preload.example.php"
     [ "$output" -eq 0 ]
+}
+
+# --- Befunde der Review-Runde -----------------------------------------------
+
+@test "jit-benchmark weist unsinnige Zahlenargumente mit Exit 1 ab" {
+    for bad in "-n abc" "-n 0" "-c 0" "-c x" "-r 0" "-r abc"; do
+        # shellcheck disable=SC2086
+        run bash "$DIR/jit-benchmark.sh" $bad
+        [ "$status" -eq 1 ]
+        [[ "$output" == *"ganze Zahl groesser 0"* ]]
+    done
+}
+
+@test "jit-benchmark lehnt weniger Requests als Verbindungen ab" {
+    run bash "$DIR/jit-benchmark.sh" -n 5 -c 10
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"mindestens so gross"* ]]
+}
+
+@test "jit-benchmark meldet eine nicht vorhandene PHP-Version" {
+    # Ohne diese Pruefung liefert php-fpm<version> -m nichts, die Blocker-Liste
+    # bleibt leer und das Skript meldet "sauber" fuer ein Binary, das fehlt.
+    [ "$EUID" -eq 0 ] || skip "braucht Root, sonst greift die Root-Pruefung zuerst"
+    mkdir -p "$TMP/bin"
+    printf '#!/bin/sh\nexit 0\n' > "$TMP/bin/ab"
+    chmod +x "$TMP/bin/ab"
+    printf 'opcache.enable=1\n' > "$TMP/o.ini"
+    run env PATH="$TMP/bin:$PATH" bash "$DIR/jit-benchmark.sh" -i "$TMP/o.ini" -v 9.9
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"php-fpm9.9 nicht gefunden"* ]]
+}
+
+@test "opcache-status liest das wirksame Maximum, nicht den eingetragenen Wert" {
+    # opcache_get_configuration() meldet 50000, wirksam sind 65407.
+    run grep -c "opcache_statistics'\]\['max_cached_keys'\]" "$DIR/opcache-status.php"
+    [ "$output" -ge 1 ]
+}
+
+@test "opcache-status greift nicht auf den nicht existierenden jit-Schluessel zu" {
+    # opcache_get_status()['jit'] kennt buffer_size und buffer_free,
+    # kein buffer_used - der Zugriff erzeugte eine Warning und zeigte 0 MB.
+    run grep -c "buffer_used'\]" "$DIR/opcache-status.php"
+    [ "$output" -eq 0 ]
+}
+
+@test "opcache-status zaehlt die Preload-Listen, statt sie zu formatieren" {
+    # classes/functions/scripts sind Namenslisten. number_format() darauf ist
+    # ein TypeError und brach das Skript ab, sobald Preloading aktiv war.
+    run grep -cE "number_format\(\\\$(status|preload)\[?'?(preload_statistics)?'?\]?\['(classes|functions|scripts)'\]\)" "$DIR/opcache-status.php"
+    [ "$output" -eq 0 ]
+
+    run grep -c "number_format(count(" "$DIR/opcache-status.php"
+    [ "$output" -ge 3 ]
+}
+
+@test "das Kapitel-Listing des Monitoring-Skripts hat genau einen PHP-Opener" {
+    # Beim programmatischen Uebernehmen entstand ein zweites <?php - das
+    # abgedruckte Listing war damit ein Parse-Error.
+    run grep -c '^<?php$' "$DIR/opcache-status.php"
+    [ "$output" -eq 1 ]
 }

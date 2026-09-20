@@ -64,13 +64,14 @@ for arg in "$@"; do
 done
 set -- "${ARGS[@]+"${ARGS[@]}"}"
 
+DEFAULTS_USED=1
 while getopts ":r:o:s:b:w:h" opt; do
     case "${opt}" in
-        r) TOTAL_RAM_MB="${OPTARG}" ;;
-        o) OS_RESERVE_MB="${OPTARG}" ;;
-        s) OTHER_SERVICES_MB="${OPTARG}" ;;
-        b) BUFFER_PERCENT="${OPTARG}" ;;
-        w) AVG_WORKER_MB="${OPTARG}" ;;
+        r) TOTAL_RAM_MB="${OPTARG}";     DEFAULTS_USED=0 ;;
+        o) OS_RESERVE_MB="${OPTARG}";    DEFAULTS_USED=0 ;;
+        s) OTHER_SERVICES_MB="${OPTARG}"; DEFAULTS_USED=0 ;;
+        b) BUFFER_PERCENT="${OPTARG}";   DEFAULTS_USED=0 ;;
+        w) AVG_WORKER_MB="${OPTARG}";    DEFAULTS_USED=0 ;;
         h) usage; exit 0 ;;
         *) usage >&2; exit 1 ;;
     esac
@@ -149,10 +150,16 @@ pm.max_spare_servers = ${MAX_SPARE}
 
 EOF
 
-echo "Die Vorlage shopware-fpm.conf traegt 50 ein - dieselbe Rechnung, auf eine"
-echo "runde Zahl abgerundet. Ein Worker mehr oder weniger ist Rauschen."
+if (( DEFAULTS_USED )); then
+    echo "Die Vorlage shopware-fpm.conf traegt 50 ein - dieselbe Rechnung, auf eine"
+    echo "runde Zahl abgerundet. Ein Worker mehr oder weniger ist Rauschen."
+else
+    echo "Die Vorlage shopware-fpm.conf traegt 50 ein - das ist der Beispielserver"
+    echo "des Buchs mit 80 MB je Worker. Ihre Messung ergibt eine andere Zahl;"
+    echo "genau dafuer ist sie da. Tragen Sie ${MAX_CHILDREN} ein, nicht 50."
+fi
 echo ""
 echo "Diese Rechnung ist ein Startwert, kein Ergebnis."
 echo "Pruefen Sie danach die Statusseite des Pools:"
-echo "  curl -s http://127.0.0.1/fpm-status | grep -E 'listen queue|max children'"
+echo "  curl -s http://127.0.0.1:8080/fpm-status | grep -E 'listen queue|max children'"
 echo "'max children reached' darf nie ueber 0 stehen, 'listen queue' nie dauerhaft."

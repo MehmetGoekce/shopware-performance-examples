@@ -302,6 +302,25 @@ jobs:
                 echo "Die Werte der Vorlage kommen nicht an."; exit 1 ;;
             esac
 
+            # Der Pool selbst, nicht nur OPcache. Ohne diese drei Zusicherungen
+            # laeuft das Gate auch fuer eine Vorlage durch, deren Timeouts
+            # invertiert sind und deren Statusseite es gar nicht gibt.
+            STATUS="$(SCRIPT_NAME=/fpm-status SCRIPT_FILENAME=/fpm-status REQUEST_METHOD=GET \
+                      cgi-fcgi -bind -connect /run/php/php8.3-fpm-shopware.sock 2>/dev/null)"
+            echo "$STATUS" | grep -q "pool:  *shopware" || { echo "Statusseite antwortet nicht aus dem Pool shopware"; exit 1; }
+            echo "$STATUS" | grep -q "max children reached" || { echo "Statusausgabe unvollstaendig"; exit 1; }
+            echo "ok: /fpm-status wird vom Pool beantwortet"
+
+            POOL=/code/chapters/09-php-performance/config/shopware-fpm.conf
+            MET="$(grep -oP "php_value\[max_execution_time\]\s*=\s*\K[0-9]+" "$POOL")"
+            RTT="$(grep -oP "^request_terminate_timeout\s*=\s*\K[0-9]+" "$POOL")"
+            [ "$RTT" -gt "$MET" ] || { echo "request_terminate_timeout ($RTT) muss ueber max_execution_time ($MET) liegen"; exit 1; }
+            echo "ok: Timeouts gestaffelt ($MET < $RTT)"
+
+            MC="$(grep -oP "^pm.max_children\s*=\s*\K[0-9]+" "$POOL")"
+            [ "$MC" -le 100 ] || { echo "pm.max_children=$MC sprengt das 16-GB-Budget der Vorlage"; exit 1; }
+            echo "ok: pm.max_children=$MC passt zum dokumentierten Budget"
+
             # Gegenprobe 1: Ohne das Logverzeichnis darf FPM nicht starten.
             # Genau daran scheiterte die alte Vorlage stillschweigend beim Leser.
             pkill -x php-fpm8.3 || true
