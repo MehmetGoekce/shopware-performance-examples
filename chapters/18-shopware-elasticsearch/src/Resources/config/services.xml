@@ -1,0 +1,67 @@
+<?xml version="1.0" ?>
+<!--
+    Verdrahtung der Elasticsearch-Beispiele aus Kapitel 18 (Shopware 6.6)
+    Namespace "YourPlugin" an das eigene Plugin anpassen.
+
+    Ohne diese Datei passiert nichts: Ein Subscriber wird nur aufgerufen,
+    wenn sein Service den Tag kernel.event_subscriber traegt.
+
+    OpenSearch\Client ist die Service-ID, unter der das Bundle seinen Client
+    registriert (vendor/shopware/elasticsearch/Resources/config/services.xml).
+    Er traegt Hosts, TLS und Zugangsdaten aus der Shopware-Konfiguration —
+    deshalb hier injizieren statt eine eigene URL zu setzen.
+
+    Getestet mit Shopware 6.6.10.6 und Elasticsearch 8.15.3.
+
+    @see https://github.com/MehmetGoekce/shopware-performance-examples
+-->
+<container xmlns="http://symfony.com/schema/dic/services"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xsi:schemaLocation="http://symfony.com/schema/dic/services http://symfony.com/schema/dic/services/services-1.0.xsd">
+    <services>
+        <!--
+            Eigene Analyzer im Index. Alternative zum analysis-Block in
+            config/packages/elasticsearch.yaml — nicht beides zugleich
+            pflegen, sonst driften die Definitionen auseinander.
+        -->
+        <service id="YourPlugin\ElasticsearchExtension\CustomAnalyzerDefinition">
+            <tag name="kernel.event_subscriber"/>
+        </service>
+
+        <!-- Typisierung der Custom Fields im Produkt-Mapping -->
+        <service id="YourPlugin\ElasticsearchExtension\ProductMappingExtension">
+            <tag name="kernel.event_subscriber"/>
+        </service>
+
+        <!--
+            Relevanz-Zuschlaege am fertigen Query. Feld-Gewichte gehoeren
+            NICHT hierher, sondern in den Admin (Einstellungen > Shop > Suche).
+        -->
+        <service id="YourPlugin\ElasticsearchExtension\SearchBoostSubscriber">
+            <tag name="kernel.event_subscriber"/>
+        </service>
+
+        <!--
+            Kein Subscriber, sondern ein Werkzeug fuer eigene Massenimporte.
+            Fuer `bin/console es:index` ist es der falsche Hebel — siehe
+            Kopfkommentar der Klasse.
+        -->
+        <service id="YourPlugin\ElasticsearchExtension\IndexingOptimizer">
+            <argument type="service" id="OpenSearch\Client"/>
+            <argument type="service" id="logger"/>
+        </service>
+
+        <!--
+            Additiver Vektorpfad aus 18.12. Auskommentiert, weil er zwei
+            Voraussetzungen hat, die bewusst zu treffen sind:
+            SHOPWARE_ES_EXCLUDE_SOURCE=1 und eine eigene Implementierung von
+            YourPlugin\ElasticsearchExtension\EmbeddingClient.
+
+        <service id="YourPlugin\ElasticsearchExtension\ProductEmbeddingSubscriber">
+            <argument type="service" id="OpenSearch\Client"/>
+            <argument type="service" id="YourPlugin\ElasticsearchExtension\YourEmbeddingClient"/>
+            <tag name="kernel.event_subscriber"/>
+        </service>
+        -->
+    </services>
+</container>

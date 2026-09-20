@@ -1,252 +1,292 @@
-# Chapter 18: Shopware 6 Elasticsearch
+# Kapitel 18: Shopware 6 mit Elasticsearch — Companion Code
 
-Companion code for Chapter 18 of "Shop-Performance in 30 Tagen".
+Companion-Code zum Buch **«Shop-Performance in 30 Tagen»**.
 
-This chapter covers Elasticsearch/OpenSearch configuration and optimization for Shopware 6, including heap sizing, German language analysis, custom mappings, and performance monitoring.
+Getestet gegen **Shopware 6.6.10.6** (Dockware, PHP 8.3, MySQL 8.0) und
+**Elasticsearch 8.15.3**. Jede Datei in diesem Ordner ist gegen diesen Aufbau
+gelaufen — bis auf `scripts/opensearch-hybrid-pipeline.sh`, das am Quelltext
+und an der OpenSearch-Dokumentation belegt, aber **nicht gefahren** ist.
+Die Datei sagt das in ihrem Kopfkommentar noch einmal.
 
-## Why Elasticsearch?
+Elasticsearch 7.x und OpenSearch 2.x sind ebenfalls **ungetestet**. Wo etwas
+versionsabhängig ist, steht es an der Datei.
 
-| Products | MySQL | Elasticsearch | Factor |
-|----------|-------|---------------|--------|
-| 10,000 | 2-4s | 20ms | 100-200x |
-| 100,000 | 10-20s | 29ms | 350-700x |
-| 200,000+ | Timeout | 35ms | ∞ |
+## Das Wichtigste zuerst
 
-**Rule of thumb**: Start evaluating Elasticsearch at 30,000+ products.
+**Shopware konfiguriert Elasticsearch über Umgebungsvariablen, nicht über eine
+eigene YAML.** Eine Standardinstallation hat keine
+`config/packages/elasticsearch.yaml`. In die `.env.local` gehören:
 
-## Directory Structure
+```bash
+OPENSEARCH_URL=http://localhost:9200   # ELASTICSEARCH_URL gibt es nicht
+SHOPWARE_ES_ENABLED=1
+SHOPWARE_ES_INDEXING_ENABLED=1
+SHOPWARE_ES_INDEX_PREFIX=sw            # ohne Unterstrich!
+SHOPWARE_ES_THROW_EXCEPTION=1
+```
+
+Drei Fallen, alle gemessen:
+
+- `ELASTICSEARCH_URL` liest Shopware an keiner Stelle. Bis 6.4 hiess die
+  Variable `SHOPWARE_ES_HOSTS`, seit 6.5.0.0 `OPENSEARCH_URL`.
+- `SHOPWARE_ES_INDEX_PREFIX=sw_` erzeugt den Alias `sw__product` — den
+  Unterstrich hängt Shopware selbst an (`ElasticsearchHelper::getIndexName`).
+- `SHOPWARE_ES_THROW_EXCEPTION=1` ist der Bundle-Default, und er bedeutet:
+  Fällt der Cluster aus, antwortet die Suchseite mit **HTTP 500**. Erst `=0`
+  fällt auf die Datenbanksuche zurück. Beides gemessen.
+
+`config/elasticsearch.yaml` in diesem Ordner ist deshalb kein Ersatz für die
+`.env.local`, sondern die Ergänzung für das, was die Variablen **nicht**
+abdecken: `search.timeout`, `index_settings`, `analysis` und
+`language_analyzer_mapping`.
+
+## Verzeichnis
 
 ```
 chapters/18-shopware-elasticsearch/
 ├── config/
-│   ├── elasticsearch.yaml             # Shopware ES configuration
-│   ├── elasticsearch.yml              # ES server configuration
-│   ├── jvm.options                    # Heap and JVM settings
-│   ├── dictionary-decompounder-analyzer.yaml  # 18.5 compound split
-│   ├── de_dictionary.sample.txt       # 18.5 sample word list
-│   ├── dense-vector-mapping.json      # 18.12 additive vector field
-│   └── hybrid-rrf-query.json          # 18.12 ES 8.x hybrid query
+│   ├── elasticsearch.yaml                     # Shopware-Seite (optional, s. o.)
+│   ├── elasticsearch.yml                      # Node-Konfiguration
+│   ├── jvm.options                            # Heap und JVM
+│   ├── dictionary-decompounder-analyzer.yaml  # 18.5 Kompositazerlegung
+│   ├── de_dictionary.sample.txt               # 18.5 Beispiel-Wortliste
+│   ├── dense-vector-mapping.json              # 18.12 additives Vektorfeld
+│   └── hybrid-rrf-query.json                  # 18.12 ES-8.x-Hybridabfrage
 ├── scripts/
-│   ├── es-health-check.sh             # Cluster health monitoring
-│   ├── es-reindex.sh                  # Optimized reindexing
-│   ├── es-index-stats.sh              # Index statistics
-│   ├── es-benchmark.sh                # Performance benchmarks
-│   ├── extract-dictionary.sh          # 18.5 build de_dictionary.txt
-│   └── opensearch-hybrid-pipeline.sh  # 18.12 OpenSearch counterpart
+│   ├── es-health-check.sh                     # Cluster-Zustand
+│   ├── es-reindex.sh                          # Reindex mit Warteschlange
+│   ├── es-index-stats.sh                      # Index-Kennzahlen
+│   ├── es-benchmark.sh                        # Abfragen messen
+│   ├── slowlog-settings.sh                    # Slow-Log setzen und zurücknehmen
+│   ├── extract-dictionary.sh                  # 18.5 de_dictionary.txt bauen
+│   └── opensearch-hybrid-pipeline.sh          # 18.12 OpenSearch (ungetestet)
 ├── src/
-│   └── ElasticsearchExtension/
-│       ├── ProductMappingExtension.php    # Custom field mapping
-│       ├── ProductEmbeddingSubscriber.php # 18.12 vector path skeleton
-│       ├── CustomAnalyzerDefinition.php   # German analyzers
-│       ├── SearchBoostSubscriber.php      # Relevance tuning
-│       └── IndexingOptimizer.php          # Bulk indexing
+│   ├── ElasticsearchExtension/
+│   │   ├── CustomAnalyzerDefinition.php       # eigene Analyzer im Index
+│   │   ├── ProductMappingExtension.php        # Custom-Fields typisieren
+│   │   ├── SearchBoostSubscriber.php          # Relevanz-Zuschläge
+│   │   ├── IndexingOptimizer.php              # eigene Massenimporte
+│   │   ├── ProductEmbeddingSubscriber.php     # 18.12 Vektorpfad (Gerüst)
+│   │   └── EmbeddingClient.php                # 18.12 Naht zum Modell
+│   └── Resources/config/services.xml          # Verdrahtung der Klassen
 └── README.md
 ```
 
-## Quick Start
+## Schnellstart
 
-### 1. Install Elasticsearch/OpenSearch
+### 1. Elasticsearch installieren
 
-```bash
-# For Shopware 6.6+: Use OpenSearch
-wget https://artifacts.opensearch.org/releases/bundle/opensearch/2.11.1/opensearch-2.11.1-linux-x64.tar.gz
-tar -xzf opensearch-2.11.1-linux-x64.tar.gz
-```
+Shopware 6.6 und 6.7 laufen weiterhin mit Elasticsearch; OpenSearch ist keine
+Pflicht, sondern der Weg, den Shopware selbst empfiehlt. Der Unterschied wird
+erst bei den Erweiterungen relevant (Advanced Search, Vektorsuche).
 
-### 2. Configure Heap (Critical!)
+**Elasticsearch 8.x hat Security ab Werk an** und schreibt TLS und ein
+generiertes `elastic`-Passwort beim ersten Start selbst in die
+`elasticsearch.yml`. Jeder `curl http://localhost:9200` ohne Zugangsdaten
+läuft dort ins Leere. Für den ersten Aufbau entweder die Zugangsdaten nutzen
+oder `xpack.security.enabled: false` bewusst setzen.
 
-```bash
-# /etc/opensearch/jvm.options.d/heap.options
-# Set to 50% of RAM, max 31GB
--Xms8g
--Xmx8g
-```
-
-### 3. Configure Shopware
+### 2. Heap setzen
 
 ```bash
-# .env
-ELASTICSEARCH_URL=http://localhost:9200
+# /etc/elasticsearch/jvm.options.d/heap.options
+-Xms4g
+-Xmx4g
 ```
 
-```yaml
-# config/packages/elasticsearch.yaml
-elasticsearch:
-    enabled: true
-    hosts: ['%env(ELASTICSEARCH_URL)%']
-    index_settings:
-        number_of_shards: 1
-        number_of_replicas: 0
-```
+Die Hälfte des RAM, und **höchstens 26 GB**: Elastic dokumentiert «26GB is
+safe on most systems and can be as large as 30GB on some systems». Die oft
+zitierten 31-32 GB liegen ausserhalb dieser Empfehlung. `Xms` und `Xmx` immer
+gleich.
 
-### 4. Initial Index
+### 3. Shopware konfigurieren
+
+Siehe oben — `.env.local`. `config/elasticsearch.yaml` nur, wenn `timeout`,
+Shard-Zahl oder eigene Analyzer gebraucht werden.
+
+### 4. Ersten Index bauen
 
 ```bash
-bin/console es:create:alias
 bin/console es:index --no-queue
 ```
 
-## Scripts
+`--no-queue` ist nicht optional, wenn kein Worker läuft: `es:index` stellt
+sonst nur eine Nachricht in die Warteschlange, der Index bleibt leer — und
+`es:status` meldet trotzdem `completed`. `es:create:alias` wird hier nicht
+gebraucht und gehört, wenn überhaupt, **nach** den Reindex.
 
-### Health Check
+## Skripte
 
-```bash
-./scripts/es-health-check.sh
-# Shows cluster status, heap usage, index stats
-```
-
-### Optimized Reindex
-
-```bash
-./scripts/es-reindex.sh
-# Disables refresh, indexes, force merges, re-enables
-```
-
-### Performance Benchmark
-
-```bash
-./scripts/es-benchmark.sh
-# Tests various query types with timing
-```
-
-## Configuration Files
-
-### elasticsearch.yaml (Shopware)
-
-Key settings for production:
-- `number_of_shards: 1` - Single node
-- `number_of_replicas: 0` - No replication needed
-- `refresh_interval: 5s` - Balance freshness/performance
-
-### jvm.options (Heap)
-
-The 50% rule:
-- Set heap to 50% of available RAM
-- Never exceed 31GB (Compressed OOPs limit)
-- Always set Xms = Xmx
-
-### elasticsearch.yml (Server)
-
-For single-node setups:
-```yaml
-discovery.type: single-node
-bootstrap.memory_lock: true
-```
-
-## PHP Extensions
-
-### ProductMappingExtension
-
-Adds custom fields for:
-- Exact product number matching
-- Autocomplete optimization
-- Custom sorting values
-- Nested attributes
-
-### CustomAnalyzerDefinition
-
-German language optimization:
-- Stemming (Bücher → Buch)
-- Stopword removal
-- Edge n-grams for autocomplete
-- Cologne phonetic for fuzzy matching
-
-### SearchBoostSubscriber
-
-Relevance tuning:
-- Exact match boost (100x)
-- Product number boost (80x)
-- In-stock boost (1.2x)
-
-### IndexingOptimizer
-
-Bulk indexing helpers:
-- Disable refresh during import
-- Force merge after completion
-- Cache management
-
-## Performance Tips
-
-1. **Heap sizing**: 50% of RAM, max 31GB
-2. **Single node**: `shards=1, replicas=0`
-3. **Refresh interval**: 30s during indexing, 5s normal
-4. **Filter vs Query**: Use `filter` for yes/no, `query` for relevance
-5. **Force merge**: After large imports
-6. **German analyzer**: Use light_german stemmer
-
-## Monitoring
-
-Check these metrics regularly:
-- Heap usage: Keep < 85%
-- Segment count: Force merge if > 10
-- Search latency: Should be < 100ms
-- Indexing rate: Watch for queue buildup
-
-## Troubleshooting
-
-### Cluster Yellow
+| Skript | Was es tut |
+|---|---|
+| `es-health-check.sh` | Cluster-Zustand, Heap, Disk, ausstehende Aufgaben. Exit 1 bei Warnungen. |
+| `es-reindex.sh` | Reindex inkl. Warteschlange, Alias-Schwenk und Aufräumen. |
+| `es-index-stats.sh` | Kennzahlen je Index, Entitätszahl über `_count`. |
+| `es-benchmark.sh` | Acht Abfragetypen gegen den Produktindex, Wanduhr- und Serverzeit getrennt. |
+| `slowlog-settings.sh` | Slow-Log-Schwellen setzen (`set`) und zurücknehmen (`reset`). |
+| `extract-dictionary.sh` | Baut `de_dictionary.txt` aus dem LibreOffice-Wörterbuch, klein geschrieben. |
+| `opensearch-hybrid-pipeline.sh` | OpenSearch-Gegenstück zur Hybridabfrage. **Ungetestet.** |
 
 ```bash
-# Single node with replicas configured
-curl -X PUT "localhost:9200/_settings" \
-    -d '{"index": {"number_of_replicas": 0}}'
+ES_URL=http://localhost:9200 ./scripts/es-health-check.sh
+ES_URL=http://localhost:9200 ./scripts/es-benchmark.sh --iterations=20
 ```
 
-### High Heap Usage
+`es-benchmark.sh` nimmt bei Bedarf Zugangsdaten über `ES_USER`/`ES_PASSWORD`
+entgegen — die übrigen Skripte sprechen einen offenen Endpunkt an.
+
+Zwei Dinge, die der Benchmark bewusst anders macht als die erste Fassung:
+Eine Abfrage, die Elasticsearch mit HTTP 400 ablehnt, ist **kein** Messwert
+und wird als `[FAILED]` gemeldet (Exit 1). Und die Dokumentzahl kommt aus
+`_count`, nicht aus `docs.count`: Letzteres zählt Lucene-Dokumente, also
+verschachtelte Felder mit — gemessen 234 bei 14 Produkten.
+
+## Konfigurationsdateien
+
+### `config/elasticsearch.yaml` (Shopware-Seite)
+
+- `hosts` ist ein **Skalar**. Mehrere Knoten als ein String mit Komma.
+  Eine YAML-Liste bricht den Container-Build («Expected "scalar", but got
+  "array"»).
+- `timeout` gibt es auf oberster Ebene nicht — nur `search.timeout`, und der
+  braucht eine Zeiteinheit (`'30s'`).
+- Der `analysis`-Block steht unter `index_settings`, nicht unter
+  `elasticsearch.analysis`. Der dokumentierte Knoten ist
+  `performNoDeepMerging()`: Er **ersetzt** Shopwares eigenen Block, und jede
+  Index-Erstellung scheitert danach an
+  `normalizer [sw_lowercase_normalizer] not found`.
+- `language_analyzer_mapping` ist die Zeile, ohne die ein eigener Analyzer
+  definiert, aber von nichts benutzt wird.
+
+### `config/elasticsearch.yml` (Node)
+
+**Index-Level-Settings gehören nicht in die Node-Konfiguration.** Seit ES 5.x
+verweigert der Node den Start: `node settings must not contain any index level
+settings`, Exit 1. Das betrifft `index.search.slowlog.*`,
+`index.indexing.slowlog.*` und `index.merge.*`. Der Slow-Log wird deshalb zur
+Laufzeit gesetzt — dafür gibt es `scripts/slowlog-settings.sh`.
+
+Zwei weitere Punkte aus dem Test:
+
+- `vm.max_map_count` (mindestens 262144) ist ein harter Bootstrap-Check.
+- ES 8.x **schreibt selbst** in diese Datei. Read-only eingehängt startet der
+  Node nicht.
+
+### `config/jvm.options`
+
+Siehe Heap oben. `bootstrap.memory_lock: true` wirkt nur, wenn der Prozess
+die Sperre auch setzen darf (`ulimit -l unlimited`, im Container
+`--ulimit memlock=-1:-1`); im Einzelknoten-Testaufbau lief der Node ohne die
+Sperre weiter, ohne das zu melden.
+
+## PHP-Klassen
+
+Ohne `src/Resources/config/services.xml` passiert nichts: Ein Subscriber wird
+nur aufgerufen, wenn sein Service den Tag `kernel.event_subscriber` trägt.
+Der Namespace `YourPlugin` ist ein Platzhalter.
+
+### `CustomAnalyzerDefinition`
+
+Eigene Analyzer (deutscher Volltext mit Stemming, Autocomplete mit
+Edge-N-Grammen, `keyword_lowercase`) über `ElasticsearchIndexConfigEvent`.
+
+Zwei Dinge, die in der ersten Fassung fehlten: Das Event heisst so — ein
+String `'elasticsearch.index.settings'` existiert in Shopware nicht, und ein
+Subscriber darauf wird nie aufgerufen. Und ein Analyzer wirkt erst, wenn ihn
+etwas benutzt: dafür `language_analyzer_mapping: { de: german_analyzer }`.
+
+Ein phonetischer Filter ist **nicht** enthalten: `"type": "phonetic"` braucht
+das Plugin `analysis-phonetic`; ohne es antwortet ES mit
+`Unknown filter type [phonetic]` — und weil der Subscriber bei jeder
+Index-Erstellung läuft, scheitert dann jedes `es:index`.
+
+### `ProductMappingExtension`
+
+Typisiert Custom Fields im Produkt-Mapping. `$type` ist eine
+`CustomFieldTypes::*`-Konstante, kein Elasticsearch-Typ; `'integer'` fällt
+still in den default-Zweig und bricht Range und Sortierung.
+
+### `SearchBoostSubscriber`
+
+**Feld-Gewichte gehören nicht in Code.** Sie stehen in
+`product_search_config_field.ranking` und werden im Admin gepflegt
+(Einstellungen > Shop > Suche). Die Vorgabe einer frischen 6.6-Installation:
+productNumber 1000, customSearchKeywords 800, name 700, manufacturerNumber /
+ean / manufacturer.name je 500. Shopware macht daraus den ES-`boost` je Feld.
+
+Was sich so nicht ausdrücken lässt — «der exakt eingegebene Artikel ganz nach
+oben» — kommt über `ElasticsearchEntitySearcherSearchEvent` an die fertige
+Abfrage. Gemessen: Score des exakten Treffers 2302 → 13815, Reihenfolge
+anschliessend wie erwartet, Trefferzahl unverändert.
+
+Die frühere Fassung hängte eine Criteria-Extension an. Die liest kein
+Shopware-Code; die erzeugte Abfrage war Byte für Byte dieselbe wie ohne
+Subscriber. Der Claim «Exact match boost (100x)» in diesem README war damit
+unbelegt und ist ersatzlos gestrichen.
+
+### `IndexingOptimizer`
+
+Für **eigene** Massenimporte, nicht für `es:index`. Shopware legt bei jedem
+Reindex einen neuen Index an; ein vorher gesetztes `refresh_interval` trifft
+den alten, und nach dem Alias-Schwenk setzt Shopware den Wert selbst auf
+`null`. Force-Merge ist deshalb `false` per Vorgabe: Elastic empfiehlt ihn
+ausdrücklich nur für Indizes, in die nicht mehr geschrieben wird.
+
+### `ProductEmbeddingSubscriber` (18.12)
+
+Braucht `SHOPWARE_ES_EXCLUDE_SOURCE=1`. Shopware beschneidet das `_source` des
+Produktindex ab Werk auf `id` und `autoIncrement`; ein Teil-Update baut das
+Dokument aus dem gespeicherten `_source` neu auf und **verwirft alles andere**.
+Gemessen: Vor dem Teil-Update findet die Suche das Dokument über seinen Namen,
+danach nicht mehr. Die Klasse prüft das und bricht ab, statt den Katalog still
+auszuhöhlen. Der Variablenname liest sich rückwärts — `1` schaltet die
+Beschneidung ab.
+
+## Fortgeschritten (18.5 / 18.12)
+
+### Kompositazerlegung (18.5)
 
 ```bash
-# Force merge to reduce segments
-curl -X POST "localhost:9200/_forcemerge?max_num_segments=1"
-
-# Clear caches
-curl -X POST "localhost:9200/_cache/clear"
+./scripts/extract-dictionary.sh        # baut de_dictionary.txt
+# config/dictionary-decompounder-analyzer.yaml in die eigene YAML übernehmen
+# danach voller Reindex (18.11), sonst greift der Analyzer nicht
 ```
 
-### Slow Queries
+Die Wortliste **muss klein geschrieben sein**: Der `dictionary_decompounder`
+vergleicht ohne Rücksicht auf Gross-/Kleinschreibung nicht — mit den
+Hunspell-Stämmen («Schuhe») feuert er nie. Das Skript erzwingt das und prüft
+danach gegen, weil `tr` Umlaute byteweise stehen lässt.
 
-Enable slow log:
-```yaml
-index.search.slowlog.threshold.query.warn: 1s
-```
+Zweite Falle: die Reihenfolge der Filter. Erst zerlegen, dann stemmen. Die
+umgekehrte Reihenfolge verliert «Jacke» aus «Winterjacke» (gemessen).
 
-## Advanced (18.5 / 18.12)
+### Vektor- und Hybridsuche (18.12, Ausblick)
 
-### Compound-word splitting (18.5)
+Shopware-Core hat auch in 6.7 keine Vektorsuche. Die Artefakte hier bauen den
+Weg **additiv**, ohne den lexikalischen Index zu ersetzen:
 
-German shoppers type "Schuhe" but the product is a "Kinderschuhe". The
-`dictionary_decompounder` splits compounds against a word list.
+- `config/dense-vector-mapping.json` — additives `dense_vector`-Feld.
+  Der Default für `index_options` ist seit 8.11 `int8_hnsw`, also quantisiert;
+  das gehört in jede Heap-Rechnung.
+- `src/ElasticsearchExtension/ProductEmbeddingSubscriber.php` — hält das Feld
+  aktuell (Gerüst, Modell als Naht). Voraussetzungen siehe oben.
+- `config/hybrid-rrf-query.json` — ES-8.x-Hybridabfrage über `retriever.rrf`.
+  **Lizenzpflichtig:** Auf einem `basic`-Cluster antwortet sie mit HTTP 403,
+  `current license is non-compliant for [Reciprocal Rank Fusion (RRF)]`
+  (gemessen). `RRFRankPlugin` fordert PLATINUM.
+- `scripts/opensearch-hybrid-pipeline.sh` — OpenSearch-Gegenstück über den
+  `normalization-processor`. OpenSearch hat seit **2.19** ausserdem RRF nativ
+  (`score-ranker-processor`, Apache-2.0) — der Satz «OpenSearch hat kein
+  RRF-Pendant» stimmte bis 2.18. Nicht gefahren.
 
-```bash
-./scripts/extract-dictionary.sh        # build de_dictionary.txt
-# merge config/dictionary-decompounder-analyzer.yaml into elasticsearch.yaml
-# then a full reindex (see 18.11) so the analyzer takes effect
-```
+Kein Weg überlebt einen Reindex: Jeder `es:index`-Lauf baut den Index neu aus
+Shopwares Mapping. Mapping und Vektoren müssen danach neu eingespielt werden.
 
-`config/de_dictionary.sample.txt` is a runnable mini word list; the script
-produces the real one from the LibreOffice dictionary.
-
-### Vector & hybrid search (18.12, forward section)
-
-Shopware core (incl. 6.7.x) has no vector search. These artifacts build
-the path **additively**, leaving the standard lexical index untouched:
-
-- `config/dense-vector-mapping.json` — additive `dense_vector` field on
-  the existing `sw_product` index (mapping update, no re-index)
-- `src/ElasticsearchExtension/ProductEmbeddingSubscriber.php` — keeps the
-  vector field in sync on `product.written` (skeleton; embedding backend
-  is an injected seam)
-- `config/hybrid-rrf-query.json` — ES 8.x lexical + kNN via RRF
-- `scripts/opensearch-hybrid-pipeline.sh` — the OpenSearch counterpart
-  (normalization-processor search pipeline; no RRF in OpenSearch)
-
-Hybrid beats pure-vector in practice: exact SKU lookups stay in the
-lexical retriever. See chapter 18.12 for thresholds and DSGVO caveats.
-
-## Resources
+## Quellen
 
 - [Shopware ES Docs](https://developer.shopware.com/docs/guides/plugins/plugins/elasticsearch/)
-- [OpenSearch Documentation](https://opensearch.org/docs/latest/)
 - [Elastic Heap Sizing](https://www.elastic.co/guide/en/elasticsearch/reference/current/heap-size.html)
 - [Elastic dense_vector](https://www.elastic.co/guide/en/elasticsearch/reference/current/dense-vector.html)
 - [Elastic RRF](https://www.elastic.co/guide/en/elasticsearch/reference/current/rrf.html)
-- [OpenSearch Hybrid Search](https://opensearch.org/docs/latest/search-plugins/hybrid-search/)
+- [OpenSearch RRF (2.19)](https://opensearch.org/blog/introducing-reciprocal-rank-fusion-hybrid-search/)
+- [OpenSearch Score Ranker Processor](https://docs.opensearch.org/latest/search-plugins/search-pipelines/score-ranker-processor/)

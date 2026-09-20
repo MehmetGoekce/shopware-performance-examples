@@ -2,18 +2,36 @@
 #
 # Section 18.12 — OpenSearch counterpart to the ES 8.x RRF hybrid query.
 #
-# OpenSearch has NO RRF retriever. Hybrid search is a Search Pipeline with
-# a normalization-processor: lexical (BM25) and neural queries run in
-# parallel, scores are normalised (min_max) and combined (arithmetic_mean
-# or an explicit weight like 0.3 * BM25 + 0.7 * neural).
+# NICHT GEGEN OPENSEARCH GEFAHREN. Die Testmatrix dieses Kapitels ist
+# Elasticsearch 8.15.3 (bewusste Entscheidung). Alles hier ist an der
+# OpenSearch-Dokumentation und am Quelltext belegt, aber nicht gemessen —
+# anders als die uebrigen Skripte dieses Ordners.
 #
-# Trade-off vs. ES RRF: the weighting is EXPLICIT and configurable here
-# (0.3 / 0.7), not implicit via rank_constant — at the cost of three
-# pipeline components to maintain instead of one query.
+# OpenSearch kennt ZWEI Wege, und seit 2.19 auch RRF:
+#
+# 1. normalization-processor (ab 2.10): BM25 und neurale Abfrage laufen
+#    parallel, die Scores werden normalisiert (min_max) und gewichtet
+#    kombiniert (arithmetic_mean, z. B. 0.3 * BM25 + 0.7 * neural).
+#    Die Gewichtung ist ausdruecklich und einstellbar — das ist der
+#    Unterschied zu RRF, wo nur der Rang zaehlt.
+# 2. score-ranker-processor (ab 2.19, neural-search, Apache-2.0): dieselbe
+#    reziproke Rangfusion wie in Elasticsearch, nur als Pipeline-Prozessor
+#    statt als retriever. Der Satz «OpenSearch hat kein RRF-Pendant» stimmte
+#    bis 2.18 und ist seit Februar 2025 falsch.
+#
+# Dieses Skript zeigt Weg 1, weil die explizite Gewichtung der Punkt ist,
+# an dem sich OpenSearch von ES unterscheidet. Der Preis: drei
+# Pipeline-Bestandteile statt einer Abfrage.
+#
+# Anders als bei Elasticsearch ist beides Apache-2.0 und braucht keine
+# Lizenzstufe — die RRF-Abfrage aus config/hybrid-rrf-query.json antwortet
+# auf einem ES-Basic-Cluster mit HTTP 403.
 #
 # Sketch, not turnkey: a deployed text-embedding model id is required
-# (register/deploy via the ml-commons plugin first). Verified against
-# OpenSearch neural-search + hybrid-search docs (OpenSearch 2.x).
+# (register/deploy via the ml-commons plugin first).
+#
+# @see https://opensearch.org/blog/introducing-reciprocal-rank-fusion-hybrid-search/
+# @see https://docs.opensearch.org/latest/search-plugins/search-pipelines/score-ranker-processor/
 #
 # Usage:  OS_URL=http://localhost:9200 MODEL_ID=<deployed-model> \
 #           ./opensearch-hybrid-pipeline.sh
