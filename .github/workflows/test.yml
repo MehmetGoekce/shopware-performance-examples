@@ -561,8 +561,13 @@ jobs:
             && echo "OK: 0600-Datei gilt (MEM=$got), unprivilegierte Kontrolle meldet $unpriv ohne Warnung"
           exit $fail
           GATE
+          # Ohne Pool-Mount: Die Zusicherung geht ueber Port 9000, also den
+          # [www]-Pool des Images. Der Anhang-C-Pool heisst [shopware] und
+          # hoert auf einem Socket - er wuerde nie angesprochen, waere aber in
+          # der Lage, den Schritt mit Exit 78 unter einer Ueberschrift zu
+          # toeten, die von conf.d spricht. Die Vorlage hat ihr eigenes Gate
+          # einen Schritt weiter oben.
           docker run --rm \
-            -v "$PWD/chapters/anhang-c-konfigurationen/config/php-fpm-pool.conf:/usr/local/etc/php-fpm.d/zz-shopware.conf:ro" \
             -v "$PWD/conf-d-gate.sh:/gate.sh:ro" \
             php:8.3-fpm bash /gate.sh
 
