@@ -18,7 +18,9 @@ set -euo pipefail
 
 # Configuration
 ES_URL="${ES_URL:-http://localhost:9200}"
-INDEX_PREFIX="${INDEX_PREFIX:-sw_}"
+# OHNE Unterstrich — Shopware haengt ihn selbst an
+# (ElasticsearchHelper::getIndexName). Ein Prefix 'sw_' erzeugt sw__product.
+INDEX_PREFIX="${INDEX_PREFIX:-sw}"
 INDEX="${1:-}"
 DETAILED="${DETAILED:-false}"
 
@@ -59,7 +61,7 @@ NC='\033[0m'
 if [[ -n "${INDEX}" ]]; then
     TARGET="${INDEX}"
 else
-    TARGET="${INDEX_PREFIX}*"
+    TARGET="${INDEX_PREFIX}_*"
 fi
 
 echo -e "${BLUE}============================================${NC}"
@@ -73,7 +75,12 @@ echo ""
 # Basic index info
 echo -e "${YELLOW}1. Index Overview${NC}"
 echo "-------------------------------------------"
-printf "%-35s %12s %12s %8s\n" "Index" "Docs" "Size" "Shards"
+# «Docs» ist hier die Zahl der LUCENE-Dokumente. Shopware indexiert
+# verschachtelte Felder, deshalb liegt sie deutlich ueber der Zahl der
+# Entitaeten (gemessen: 234 Lucene-Dokumente bei 14 Produkten). Ausserdem
+# haengt der Wert am Refresh und steht direkt nach dem Indexieren noch auf 0.
+# Die Zahl der Produkte steht weiter unten, aus _count.
+printf "%-35s %12s %12s %8s\n" "Index" "Lucene-Docs" "Size" "Shards"
 echo "-------------------------------------------"
 curl -s "${ES_URL}/_cat/indices/${TARGET}?h=index,docs.count,store.size,pri&s=index" 2>/dev/null | while read -r index docs size shards; do
     printf "%-35s %12s %12s %8s\n" "${index}" "${docs}" "${size}" "${shards}"
@@ -114,9 +121,18 @@ curl -s "${ES_URL}/${TARGET}/_stats/docs" 2>/dev/null | jq -r '
     .indices | to_entries[] |
     "\(.key)|\(.value.primaries.docs.count)"
 ' | while IFS='|' read -r index docs; do
-    entity=$(echo "${index}" | sed "s/${INDEX_PREFIX}//" | cut -d'_' -f1)
-    printf "   %-20s %12s documents\n" "${entity}" "${docs}"
+    entity=$(echo "${index}" | sed "s/^${INDEX_PREFIX}_//" | rev | cut -d'_' -f2- | rev)
+    printf "   %-20s %12s Lucene-Docs\n" "${entity}" "${docs}"
 done
+echo ""
+# Die tatsaechliche Entitaetenzahl hinter den Aliassen — das ist die Zahl,
+# die ein Leser erwartet, wenn er «Dokumente» liest.
+echo "   Entitaeten (aus _count ueber den Alias):"
+while read -r alias; do
+    [[ -z "${alias}" ]] && continue
+    cnt=$(curl -s "${ES_URL}/${alias}/_count" | jq -r '.count // "n/a"')
+    printf "   %-20s %12s\n" "${alias}" "${cnt}"
+done < <(curl -s "${ES_URL}/_cat/aliases/${TARGET}?h=alias" | tr -d ' ' | sort -u)
 echo ""
 
 # Field mappings (if detailed)
