@@ -1,0 +1,207 @@
+{#
+    Optimierte Basis-Template für Shopware 6 Storefront
+
+    Features:
+    - Critical CSS inline im <head>
+    - Async CSS Loading
+    - Optimiertes Script Loading
+    - Preconnect/Preload Hints
+    - Native Lazy Loading
+
+    Verwendung:
+    Dieses Template in src/Resources/views/storefront/base.html.twig platzieren.
+#}
+{% sw_extends '@Storefront/storefront/base.html.twig' %}
+
+{# ============================================================ #}
+{# HEAD: Preconnect & Preload Hints #}
+{# ============================================================ #}
+{% block base_head %}
+    {# DNS Prefetch für Third-Party Domains #}
+    <link rel="dns-prefetch" href="//fonts.googleapis.com">
+    <link rel="dns-prefetch" href="//www.google-analytics.com">
+    <link rel="dns-prefetch" href="//cdn.example.com">
+
+    {# Preconnect für kritische Domains #}
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    {{ parent() }}
+{% endblock %}
+
+{# ============================================================ #}
+{# META: Performance-relevante Meta Tags #}
+{# ============================================================ #}
+{% block base_head_meta %}
+    {{ parent() }}
+
+    {# Theme-Color für Mobile Browser Chrome #}
+    <meta name="theme-color" content="#1a73e8">
+
+    {# Viewport mit touch-action für besseres Scrolling #}
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+{% endblock %}
+
+{# ============================================================ #}
+{# STYLESHEETS: Critical CSS + Async Loading #}
+{# ============================================================ #}
+{% block base_head_stylesheets %}
+    {# ---------------------------------------- #}
+    {# Option 1: Standard (Parent aufrufen) #}
+    {# ---------------------------------------- #}
+    {# {{ parent() }} #}
+
+    {# ---------------------------------------- #}
+    {# Option 2: Critical CSS + Async Loading #}
+    {# ---------------------------------------- #}
+    {% if theme_config('PerformanceTheme.config.enableCriticalCss') %}
+        {# Critical CSS inline #}
+        <style>
+            {% sw_include '@PerformanceTheme/storefront/critical/critical.css.twig' ignore missing %}
+        </style>
+
+        {# Rest async laden mit Preload #}
+        <link rel="preload"
+              href="{{ asset('bundles/storefront/css/all.css', 'asset') }}"
+              as="style"
+              onload="this.onload=null;this.rel='stylesheet'">
+
+        {# Fallback für NoScript #}
+        <noscript>
+            <link rel="stylesheet" href="{{ asset('bundles/storefront/css/all.css', 'asset') }}">
+        </noscript>
+
+        {# Theme CSS async #}
+        {% for css in theme_config('assets.css') %}
+            <link rel="preload"
+                  href="{{ asset(css, 'theme') }}"
+                  as="style"
+                  onload="this.onload=null;this.rel='stylesheet'">
+        {% endfor %}
+
+    {% else %}
+        {# Standard Shopware CSS Loading #}
+        {{ parent() }}
+    {% endif %}
+
+    {# Fonts preloaden (falls externe Fonts) #}
+    {#
+    <link rel="preload"
+          href="{{ asset('fonts/inter-var.woff2', 'theme') }}"
+          as="font"
+          type="font/woff2"
+          crossorigin>
+    #}
+{% endblock %}
+
+{# ============================================================ #}
+{# LCP HINT: Hero Image Preload #}
+{# ============================================================ #}
+{% block base_head_opengraph %}
+    {{ parent() }}
+
+    {# Hero/LCP Image preloaden wenn auf Homepage #}
+    {% if page.cmsPage is defined and page.cmsPage.sections|length > 0 %}
+        {% set firstSection = page.cmsPage.sections|first %}
+        {% if firstSection.blocks is defined and firstSection.blocks|length > 0 %}
+            {% set heroBlock = firstSection.blocks|first %}
+            {% if heroBlock.backgroundMedia is defined and heroBlock.backgroundMedia %}
+                <link rel="preload"
+                      as="image"
+                      href="{{ heroBlock.backgroundMedia.url }}"
+                      fetchpriority="high">
+            {% endif %}
+        {% endif %}
+    {% endif %}
+{% endblock %}
+
+{# ============================================================ #}
+{# HEADER: Mit ESI für separates Caching (SW 6.7+) #}
+{# ============================================================ #}
+{% block base_header %}
+    {# In Shopware 6.7+ wird Header via ESI geladen #}
+    {# Für ältere Versionen oder manuell: #}
+    {% if constant('Shopware\\Core\\Framework\\ShopwareException::EXCEPTION_TYPE_TECHNICAL') is defined %}
+        {# SW 6.7+: ESI nutzen #}
+        {{ parent() }}
+    {% else %}
+        {# SW < 6.7: Standard Header #}
+        {{ parent() }}
+    {% endif %}
+{% endblock %}
+
+{# ============================================================ #}
+{# SCRIPTS: Optimiertes Loading #}
+{# ============================================================ #}
+{% block base_body_script %}
+    {# Plugins deregistrieren basierend auf Theme Config #}
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            if (window.PluginManager) {
+                {% if theme_config('PerformanceTheme.config.disableDatePicker') %}
+                // DatePicker deregistrieren (-115 KB)
+                if (window.PluginManager.getPlugin('DatePicker')) {
+                    window.PluginManager.deregister('DatePicker');
+                }
+                {% endif %}
+
+                {% if theme_config('PerformanceTheme.config.disableImageZoom') %}
+                // ImageZoom deregistrieren (-72 KB Hammer.js)
+                if (window.PluginManager.getPlugin('ImageZoom')) {
+                    window.PluginManager.deregister('ImageZoom');
+                }
+                {% endif %}
+            }
+        });
+    </script>
+
+    {# Parent Scripts laden (defer ist Standard) #}
+    {{ parent() }}
+
+    {# Async Plugin Loading für Slider #}
+    {% if theme_config('PerformanceTheme.config.asyncSliderLoading') %}
+    <script type="module">
+        // Slider nur laden wenn im Viewport
+        const sliders = document.querySelectorAll('[data-base-slider]');
+        if (sliders.length > 0) {
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        import('{{ asset('bundles/storefront/js/slider.js', 'asset') }}')
+                            .then(module => {
+                                // Slider initialisieren
+                                window.PluginManager.initializePlugin('BaseSlider', entry.target);
+                            });
+                        observer.unobserve(entry.target);
+                    }
+                });
+            }, { rootMargin: '100px' });
+
+            sliders.forEach(slider => observer.observe(slider));
+        }
+    </script>
+    {% endif %}
+{% endblock %}
+
+{# ============================================================ #}
+{# PRODUCT IMAGES: Native Lazy Loading #}
+{# ============================================================ #}
+{# Dieses Block-Override gehört in separate Template-Datei #}
+{# Hier als Referenz: #}
+{#
+{% block component_product_box_image %}
+    {% sw_thumbnails 'product-image-thumbnails' with {
+        media: cover,
+        sizes: {
+            'default': '300px',
+            'sm': '500px',
+            'lg': '300px'
+        },
+        attributes: {
+            'loading': 'lazy',
+            'decoding': 'async',
+            'class': 'product-image',
+            'alt': product.translated.name
+        }
+    } %}
+{% endblock %}
+#}

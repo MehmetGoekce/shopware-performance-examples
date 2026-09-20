@@ -1,0 +1,230 @@
+{#
+ # Einfaches RUM Dashboard für Shopware Admin
+ #
+ # Installation:
+ #   1. Kopieren nach: templates/admin/rum_dashboard.html.twig
+ #   2. Controller erstellen (siehe RumDashboardController.php)
+ #   3. Route: /admin/rum-dashboard
+ #}
+
+{% extends '@Administration/administration/index.html.twig' %}
+
+{% block administration_content %}
+<style>
+    .rum-dashboard {
+        padding: 20px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    .rum-header {
+        margin-bottom: 30px;
+    }
+    .rum-header h1 {
+        margin: 0 0 10px 0;
+        font-size: 24px;
+    }
+    .rum-header .subtitle {
+        color: #666;
+        font-size: 14px;
+    }
+    .rum-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 20px;
+        margin-bottom: 30px;
+    }
+    .rum-card {
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+        padding: 20px;
+    }
+    .rum-card h3 {
+        margin: 0 0 15px 0;
+        font-size: 14px;
+        color: #666;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .rum-value {
+        font-size: 36px;
+        font-weight: 600;
+        margin-bottom: 10px;
+    }
+    .rum-value.good { color: #0a0; }
+    .rum-value.needs-improvement { color: #fa0; }
+    .rum-value.poor { color: #f00; }
+    .rum-percentiles {
+        display: flex;
+        gap: 20px;
+        color: #666;
+        font-size: 13px;
+    }
+    .rum-percentiles span {
+        display: flex;
+        flex-direction: column;
+    }
+    .rum-percentiles .label {
+        font-size: 11px;
+        text-transform: uppercase;
+        color: #999;
+    }
+    .rum-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    .rum-table th,
+    .rum-table td {
+        padding: 12px;
+        text-align: left;
+        border-bottom: 1px solid #eee;
+    }
+    .rum-table th {
+        font-weight: 600;
+        color: #666;
+        font-size: 12px;
+        text-transform: uppercase;
+    }
+    .rum-badge {
+        display: inline-block;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: 500;
+    }
+    .rum-badge.good { background: #e6f4e6; color: #0a0; }
+    .rum-badge.needs-improvement { background: #fff4e6; color: #fa0; }
+    .rum-badge.poor { background: #ffe6e6; color: #f00; }
+    .rum-footer {
+        margin-top: 30px;
+        padding-top: 20px;
+        border-top: 1px solid #eee;
+        color: #666;
+        font-size: 13px;
+    }
+</style>
+
+<div class="rum-dashboard">
+    <div class="rum-header">
+        <h1>Real User Monitoring</h1>
+        <div class="subtitle">
+            Letzte 24 Stunden &bull; {{ sampleCount|number_format }} Samples &bull;
+            Aktualisiert: {{ "now"|date("H:i") }}
+        </div>
+    </div>
+
+    {# Core Web Vitals Karten #}
+    <div class="rum-grid">
+        {% for metric, data in stats %}
+        <div class="rum-card">
+            <h3>{{ metric }}{% if metric == 'LCP' %} (Largest Contentful Paint){% endif %}{% if metric == 'INP' %} (Interaction to Next Paint){% endif %}{% if metric == 'CLS' %} (Cumulative Layout Shift){% endif %}</h3>
+
+            {% set rating = 'good' %}
+            {% if metric == 'LCP' and data.p75 > 4000 %}{% set rating = 'poor' %}
+            {% elseif metric == 'LCP' and data.p75 > 2500 %}{% set rating = 'needs-improvement' %}
+            {% elseif metric == 'INP' and data.p75 > 500 %}{% set rating = 'poor' %}
+            {% elseif metric == 'INP' and data.p75 > 200 %}{% set rating = 'needs-improvement' %}
+            {% elseif metric == 'CLS' and data.p75 > 0.25 %}{% set rating = 'poor' %}
+            {% elseif metric == 'CLS' and data.p75 > 0.1 %}{% set rating = 'needs-improvement' %}
+            {% endif %}
+
+            <div class="rum-value {{ rating }}">
+                {% if metric == 'CLS' %}
+                    {{ data.p75|number_format(3) }}
+                {% else %}
+                    {{ data.p75|number_format(0) }}ms
+                {% endif %}
+            </div>
+
+            <div class="rum-percentiles">
+                <span>
+                    <span class="label">p50</span>
+                    {% if metric == 'CLS' %}{{ data.p50|number_format(3) }}{% else %}{{ data.p50|number_format(0) }}ms{% endif %}
+                </span>
+                <span>
+                    <span class="label">p75</span>
+                    {% if metric == 'CLS' %}{{ data.p75|number_format(3) }}{% else %}{{ data.p75|number_format(0) }}ms{% endif %}
+                </span>
+                <span>
+                    <span class="label">p90</span>
+                    {% if metric == 'CLS' %}{{ data.p90|number_format(3) }}{% else %}{{ data.p90|number_format(0) }}ms{% endif %}
+                </span>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    {# Schwellenwerte Referenz #}
+    <div class="rum-card">
+        <h3>Core Web Vitals Schwellenwerte</h3>
+        <table class="rum-table">
+            <thead>
+                <tr>
+                    <th>Metrik</th>
+                    <th>Gut</th>
+                    <th>Verbesserungswürdig</th>
+                    <th>Schlecht</th>
+                    <th>Ihr p75</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>LCP</strong></td>
+                    <td>≤ 2.500ms</td>
+                    <td>2.500 - 4.000ms</td>
+                    <td>&gt; 4.000ms</td>
+                    <td>{{ stats.LCP.p75|default(0)|number_format(0) }}ms</td>
+                    <td>
+                        {% if stats.LCP.p75|default(0) <= 2500 %}
+                            <span class="rum-badge good">Gut</span>
+                        {% elseif stats.LCP.p75|default(0) <= 4000 %}
+                            <span class="rum-badge needs-improvement">Verbesserungswürdig</span>
+                        {% else %}
+                            <span class="rum-badge poor">Schlecht</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                <tr>
+                    <td><strong>INP</strong></td>
+                    <td>≤ 200ms</td>
+                    <td>200 - 500ms</td>
+                    <td>&gt; 500ms</td>
+                    <td>{{ stats.INP.p75|default(0)|number_format(0) }}ms</td>
+                    <td>
+                        {% if stats.INP.p75|default(0) <= 200 %}
+                            <span class="rum-badge good">Gut</span>
+                        {% elseif stats.INP.p75|default(0) <= 500 %}
+                            <span class="rum-badge needs-improvement">Verbesserungswürdig</span>
+                        {% else %}
+                            <span class="rum-badge poor">Schlecht</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                <tr>
+                    <td><strong>CLS</strong></td>
+                    <td>≤ 0.1</td>
+                    <td>0.1 - 0.25</td>
+                    <td>&gt; 0.25</td>
+                    <td>{{ stats.CLS.p75|default(0)|number_format(3) }}</td>
+                    <td>
+                        {% if stats.CLS.p75|default(0) <= 0.1 %}
+                            <span class="rum-badge good">Gut</span>
+                        {% elseif stats.CLS.p75|default(0) <= 0.25 %}
+                            <span class="rum-badge needs-improvement">Verbesserungswürdig</span>
+                        {% else %}
+                            <span class="rum-badge poor">Schlecht</span>
+                        {% endif %}
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="rum-footer">
+        <strong>Hinweis:</strong> Google verwendet das 75. Perzentil (p75) für die Bewertung Ihrer Core Web Vitals.
+        75% Ihrer Nutzer müssen die Schwellenwerte erreichen, nicht nur der Durchschnitt.
+        <br><br>
+        <a href="https://web.dev/articles/vitals" target="_blank">→ Mehr über Core Web Vitals</a>
+    </div>
+</div>
+{% endblock %}

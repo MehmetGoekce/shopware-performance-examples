@@ -277,13 +277,15 @@ fliesstext() {
 @test "es gibt genau eine OPcache-Vorlage im ganzen Companion" {
     # Grundregel 33: die Behauptung "es gibt nur eine" braucht ihr eigenes
     # Gate. Ohne das kehrt die zweite Vorlage beim naechsten Kapitel zurueck.
+    # Die Ausnahme gilt dem EINEN Pfad, nicht dem Dateinamen: eine gleichnamige
+    # Datei in einem anderen Kapitel waere genau die Rueckkehr der Doppelung.
+    kanonisch="chapters/09-php-performance/config/99-shopware-opcache.ini"
+    [ -f "$kanonisch" ]
     gefunden=""
-    for f in chapters/*/config/*; do
-        [ -f "$f" ] || continue
-        case "$f" in
-            */99-shopware-opcache.ini) continue ;;
-        esac
-        if grep -qE '^[[:space:]]*opcache\.[a-z_]+[[:space:]]*=' "$f"; then
+    for f in $(find chapters -type f \( -name '*.ini' -o -name '*.conf' -o -name '*.sh' \)); do
+        [ "$f" = "$kanonisch" ] && continue
+        # Direkte Direktive oder der Pool-Weg php_value[opcache.*].
+        if grep -qE '^[[:space:]]*(opcache\.[a-z_]+[[:space:]]*=|php_(admin_)?value\[opcache\.)' "$f"; then
             gefunden="$gefunden $f"
         fi
     done
@@ -332,9 +334,10 @@ fliesstext() {
     # als root, bevor er die Worker auf www-data herunterstuft. Still ist nicht
     # das Laden, sondern die Kontrolle mit "php-fpm -i" als unprivilegierter
     # Benutzer.
-    run grep -q 'die Werte gelten einfach nicht' "$CONFIG/99-shopware-opcache.ini"
+    fliesstext "$CONFIG/99-shopware-opcache.ini" > "$BATS_TEST_TMPDIR/k"
+    run grep -qF 'die Werte gelten einfach nicht' "$BATS_TEST_TMPDIR/k"
     [ "$status" -ne 0 ]
-    run grep -q 'NICHT uebergangen' "$CONFIG/99-shopware-opcache.ini"
+    run grep -qF 'wird NICHT uebergangen' "$BATS_TEST_TMPDIR/k"
     [ "$status" -eq 0 ]
     # Der Messbeleg steht mit in der Datei, nicht nur die Behauptung.
     run grep -q 'opcache.memory_consumption=333' "$CONFIG/99-shopware-opcache.ini"
@@ -363,7 +366,11 @@ fliesstext() {
 @test "die OPcache-Vorlage nennt den stillen Fall ohne jit_buffer_size" {
     # T7: opcache.jit=tracing ohne Buffer laeuft nicht, und es gibt dazu an
     # keiner der drei Stellen eine Meldung - der wirklich stille Fall.
-    run grep -q 'opcache.jit_buffer_size' "$CONFIG/99-shopware-opcache.ini"
+    # Die auskommentierte Direktive selbst, nicht die Prosa darueber: ein
+    # blosses grep auf den Namen trifft schon den erklaerenden Satz.
+    run grep -qE '^;[[:space:]]*opcache\.jit_buffer_size=100M$' "$CONFIG/99-shopware-opcache.ini"
+    [ "$status" -eq 0 ]
+    run grep -qE '^;[[:space:]]*opcache\.jit=1255$' "$CONFIG/99-shopware-opcache.ini"
     [ "$status" -eq 0 ]
     fliesstext "$CONFIG/99-shopware-opcache.ini" > "$BATS_TEST_TMPDIR/k"
     run grep -qF "Die Vorgabe des Buffers ist 0" "$BATS_TEST_TMPDIR/k"
@@ -386,6 +393,20 @@ fliesstext() {
     # Review-Fund: die Zeile traegt unter FPM ein Praefix, ein grep auf
     # "^PHP Warning" findet sie deshalb nicht.
     run grep -qF 'NOTICE: PHP message: ' "$BATS_TEST_TMPDIR/k"
+    [ "$status" -eq 0 ]
+}
+
+@test "die zwei Werte, die der Kopf als Opfer der Drift nennt, stehen wirklich drin" {
+    # Grundregel 33: Der Kopfkommentar behauptet, der Zusammenstoss habe
+    # max_wasted_percentage 10 -> 5 und log_verbosity_level 2 -> 1 gekostet
+    # (gemessen, T3). Ohne Gate veraltet diese Aussage beim naechsten Eingriff
+    # genauso wie das "es ist dieselbe Datei" davor.
+    run grep -qE '^opcache\.max_wasted_percentage=10$' "$CONFIG/99-shopware-opcache.ini"
+    [ "$status" -eq 0 ]
+    run grep -qE '^opcache\.log_verbosity_level=2$' "$CONFIG/99-shopware-opcache.ini"
+    [ "$status" -eq 0 ]
+    fliesstext "$CONFIG/99-shopware-opcache.ini" > "$BATS_TEST_TMPDIR/k"
+    run grep -qF 'max_wasted_percentage 10 -> 5 und log_verbosity_level' "$BATS_TEST_TMPDIR/k"
     [ "$status" -eq 0 ]
 }
 

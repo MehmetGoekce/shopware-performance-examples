@@ -1,0 +1,166 @@
+{#
+  Consent-Aware Script Wrapper
+
+  Lädt Scripts nur wenn entsprechender Consent vorhanden.
+  Zeigt Placeholder wenn kein Consent.
+
+  Usage:
+    {% include '@ThirdPartyScripts/consent-wrapper.html.twig' with {
+        category: 'marketing',
+        scriptUrl: 'https://example.com/script.js',
+        placeholderText: 'Bitte akzeptieren Sie Marketing-Cookies'
+    } %}
+
+  @author Mehmet Gökçe
+  @since 1.0.0
+#}
+
+{% set category = category|default('analytics') %}
+{% set scriptType = scriptType|default('text/javascript') %}
+{% set async = async|default(true) %}
+{% set defer = defer|default(false) %}
+
+<div class="consent-script-wrapper" data-consent-category="{{ category }}">
+    {# Consent-Check #}
+    <script>
+        (function() {
+            const category = '{{ category }}';
+            const wrapper = document.currentScript.parentElement;
+
+            // Consent-Status prüfen
+            function hasConsent() {
+                const cookies = document.cookie.split(';');
+                for (let cookie of cookies) {
+                    const [name, value] = cookie.trim().split('=');
+                    if (name === 'sw_consent_preferences') {
+                        try {
+                            const consents = JSON.parse(decodeURIComponent(value));
+                            return consents[category] === true;
+                        } catch (e) {
+                            return false;
+                        }
+                    }
+                }
+                return false;
+            }
+
+            // Script laden wenn Consent vorhanden
+            function loadScript() {
+                {% if scriptUrl is defined %}
+                const script = document.createElement('script');
+                script.type = '{{ scriptType }}';
+                script.async = {{ async ? 'true' : 'false' }};
+                script.defer = {{ defer ? 'true' : 'false' }};
+                script.src = '{{ scriptUrl }}';
+
+                {% if scriptAttributes is defined %}
+                    {% for attr, value in scriptAttributes %}
+                    script.setAttribute('{{ attr }}', '{{ value }}');
+                    {% endfor %}
+                {% endif %}
+
+                script.onload = function() {
+                    wrapper.classList.add('consent-script-loaded');
+                    {% if onload is defined %}
+                    {{ onload|raw }}
+                    {% endif %}
+                };
+
+                script.onerror = function() {
+                    wrapper.classList.add('consent-script-error');
+                    console.error('Failed to load consent script:', '{{ scriptUrl }}');
+                };
+
+                wrapper.appendChild(script);
+                {% endif %}
+
+                {% if inlineScript is defined %}
+                const inlineScript = document.createElement('script');
+                inlineScript.type = '{{ scriptType }}';
+                inlineScript.textContent = `{{ inlineScript|raw }}`;
+                wrapper.appendChild(inlineScript);
+                {% endif %}
+
+                // Placeholder entfernen
+                const placeholder = wrapper.querySelector('.consent-placeholder');
+                if (placeholder) {
+                    placeholder.remove();
+                }
+            }
+
+            // Placeholder anzeigen wenn kein Consent
+            function showPlaceholder() {
+                {% if placeholderText is defined or placeholderHtml is defined %}
+                const placeholder = document.createElement('div');
+                placeholder.className = 'consent-placeholder';
+                {% if placeholderHtml is defined %}
+                placeholder.innerHTML = `{{ placeholderHtml|raw }}`;
+                {% else %}
+                placeholder.innerHTML = `
+                    <div class="consent-message">
+                        <p>{{ placeholderText|default('Für diesen Inhalt ist Ihre Zustimmung erforderlich.') }}</p>
+                        <button class="btn btn-primary" onclick="openConsentSettings()">
+                            Cookie-Einstellungen öffnen
+                        </button>
+                    </div>
+                `;
+                {% endif %}
+                wrapper.appendChild(placeholder);
+                {% endif %}
+            }
+
+            // Initial Check
+            if (hasConsent()) {
+                loadScript();
+            } else {
+                showPlaceholder();
+            }
+
+            // Auf Consent-Änderungen hören
+            window.addEventListener('consentUpdated', function(e) {
+                const consents = e.detail;
+                if (consents[category]) {
+                    loadScript();
+                }
+            });
+        })();
+    </script>
+</div>
+
+<style>
+.consent-script-wrapper {
+    position: relative;
+}
+
+.consent-placeholder {
+    padding: 2rem;
+    text-align: center;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 0.25rem;
+    margin: 1rem 0;
+}
+
+.consent-placeholder .consent-message p {
+    margin-bottom: 1rem;
+    color: #6c757d;
+}
+
+.consent-placeholder .btn {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    font-size: 1rem;
+    border-radius: 0.25rem;
+    border: none;
+    cursor: pointer;
+}
+
+.consent-placeholder .btn-primary {
+    background-color: #007bff;
+    color: #fff;
+}
+
+.consent-placeholder .btn-primary:hover {
+    background-color: #0056b3;
+}
+</style>

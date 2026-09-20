@@ -92,8 +92,11 @@ Die Vorlagen sind kommentiert und erklären jeweils, **warum** ein Wert so
 gesetzt ist. Wer nur die Werte kopiert, verliert den wichtigeren Teil.
 
 **Nach dem Kopieren die Dateirechte prüfen.** Eine Datei in
-`config/packages/` oder in `conf.d/`, die der PHP-Benutzer nicht lesen darf,
-führt je nach Ort zu einem HTTP 500 oder wird stillschweigend ignoriert:
+`config/packages/`, die der PHP-Benutzer nicht lesen darf, führt zu HTTP 500.
+Eine Datei in `conf.d/` **gilt dagegen trotzdem** — der FPM-Master liest
+`conf.d` als root, bevor er die Worker herunterstuft (gemessen). Still ist dort
+nicht das Laden, sondern die Kontrolle mit `php-fpm8.3 -i` als unprivilegierter
+Benutzer, die den Vorgabewert meldet. `chmod 644` gehört in beiden Fällen dazu:
 
 ```bash
 sudo chmod 644 <zieldatei>

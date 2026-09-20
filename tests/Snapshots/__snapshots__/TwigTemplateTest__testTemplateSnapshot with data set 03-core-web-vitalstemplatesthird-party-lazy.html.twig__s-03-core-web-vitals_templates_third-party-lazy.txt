@@ -1,0 +1,223 @@
+{#
+ # Third-Party Scripts Lazy Loading Template
+ # Kapitel 3: Core Web Vitals messen und optimieren
+ #
+ # Zeigt Strategien zum verzögerten Laden von Third-Party Scripts:
+ # 1. Laden nach User-Interaktion
+ # 2. Laden nach Timeout
+ # 3. Laden bei Scroll in Viewport
+ #
+ # @see https://github.com/MehmetGoekce/shopware-performance-examples
+ #}
+
+{% block base_body_script %}
+    {{ parent() }}
+
+    <script>
+    /**
+     * Third-Party Script Loader
+     * Lädt Scripts erst nach User-Interaktion oder Timeout
+     */
+    (function() {
+        'use strict';
+
+        // Flag um doppeltes Laden zu verhindern
+        let scriptsLoaded = false;
+
+        // Third-Party Scripts die verzögert geladen werden sollen
+        const thirdPartyScripts = [
+            {
+                src: 'https://chat-widget.example.com/widget.js',
+                async: true,
+                id: 'chat-widget'
+            },
+            {
+                src: 'https://www.googletagmanager.com/gtm.js?id=GTM-XXXX',
+                async: true,
+                id: 'gtm'
+            },
+            {
+                src: 'https://connect.facebook.net/en_US/fbevents.js',
+                async: true,
+                id: 'fb-pixel'
+            }
+        ];
+
+        /**
+         * Scripts laden
+         */
+        function loadThirdPartyScripts() {
+            if (scriptsLoaded) return;
+            scriptsLoaded = true;
+
+            console.log('[Performance] Loading third-party scripts...');
+
+            thirdPartyScripts.forEach(function(config) {
+                // Prüfen ob Script bereits existiert
+                if (document.getElementById(config.id)) return;
+
+                const script = document.createElement('script');
+                script.src = config.src;
+                script.async = config.async !== false;
+                script.id = config.id;
+
+                if (config.onload) {
+                    script.onload = config.onload;
+                }
+
+                document.body.appendChild(script);
+            });
+        }
+
+        /**
+         * Event Listener für User-Interaktion
+         * Script wird geladen sobald User interagiert
+         */
+        const interactionEvents = ['scroll', 'click', 'touchstart', 'keydown'];
+
+        function onInteraction() {
+            loadThirdPartyScripts();
+
+            // Event Listener entfernen nach dem Laden
+            interactionEvents.forEach(function(event) {
+                document.removeEventListener(event, onInteraction, { passive: true });
+            });
+        }
+
+        // Auf Interaktion warten
+        interactionEvents.forEach(function(event) {
+            document.addEventListener(event, onInteraction, { passive: true });
+        });
+
+        /**
+         * Fallback: Nach 5 Sekunden laden falls keine Interaktion
+         */
+        setTimeout(loadThirdPartyScripts, 5000);
+
+    })();
+    </script>
+{% endblock %}
+
+
+{# ============================================================ #}
+{# Beispiel: Chat-Widget nur bei Bedarf laden                   #}
+{# ============================================================ #}
+
+{% block page_footer %}
+    {{ parent() }}
+
+    {# Chat-Button der das Widget bei Klick lädt #}
+    <button
+        id="chat-trigger"
+        class="chat-trigger"
+        aria-label="Chat öffnen"
+        onclick="loadChatWidget(this)"
+    >
+        <svg class="chat-trigger__icon" viewBox="0 0 24 24">
+            <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/>
+        </svg>
+    </button>
+
+    <script>
+    function loadChatWidget(button) {
+        // Button deaktivieren während Laden
+        button.disabled = true;
+        button.textContent = 'Laden...';
+
+        // Chat-Widget laden
+        const script = document.createElement('script');
+        script.src = 'https://chat-widget.example.com/widget.js';
+        script.async = true;
+        script.onload = function() {
+            // Widget initialisieren nach Laden
+            if (window.ChatWidget) {
+                window.ChatWidget.init({ open: true });
+            }
+            button.remove();
+        };
+        script.onerror = function() {
+            button.textContent = 'Fehler - Erneut versuchen';
+            button.disabled = false;
+        };
+        document.body.appendChild(script);
+    }
+    </script>
+
+    <style>
+    .chat-trigger {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        background: #007bff;
+        border: none;
+        cursor: pointer;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .chat-trigger:hover {
+        transform: scale(1.1);
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+    }
+
+    .chat-trigger__icon {
+        width: 28px;
+        height: 28px;
+        fill: white;
+    }
+    </style>
+{% endblock %}
+
+
+{# ============================================================ #}
+{# Beispiel: Google Analytics mit Consent                       #}
+{# ============================================================ #}
+
+{% block layout_head_javascript_tracking %}
+    {{ parent() }}
+
+    <script>
+    /**
+     * Google Analytics 4 mit Consent-Prüfung
+     * Lädt GA4 nur wenn Consent gegeben wurde
+     */
+    function loadGoogleAnalytics() {
+        // Consent prüfen (Shopware Cookie Consent)
+        const consent = window.CookieStorage?.get('cookie-preference');
+        if (!consent || !consent.includes('statistics')) {
+            console.log('[GA4] Kein Consent für Statistik-Cookies');
+            return;
+        }
+
+        // GA4 Script laden
+        const script = document.createElement('script');
+        script.async = true;
+        script.src = 'https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX';
+        document.head.appendChild(script);
+
+        // gtag initialisieren
+        window.dataLayer = window.dataLayer || [];
+        function gtag() { dataLayer.push(arguments); }
+        gtag('js', new Date());
+        gtag('config', 'G-XXXXXXXXXX', {
+            'anonymize_ip': true,
+            'cookie_flags': 'SameSite=None;Secure'
+        });
+
+        console.log('[GA4] Geladen mit Consent');
+    }
+
+    // Nach Cookie-Consent-Event laden
+    document.addEventListener('CookieConsentChange', loadGoogleAnalytics);
+
+    // Oder nach 5s falls bereits Consent vorhanden
+    setTimeout(function() {
+        if (window.CookieStorage?.get('cookie-preference')) {
+            loadGoogleAnalytics();
+        }
+    }, 5000);
+    </script>
+{% endblock %}

@@ -1,0 +1,200 @@
+{#
+ # sw_thumbnails Best Practices
+ # Kapitel 4: Bildoptimierung
+ #
+ # Beispiele für die korrekte Verwendung der sw_thumbnails Twig-Funktion
+ # in verschiedenen Kontexten.
+ #
+ # @see https://github.com/MehmetGoekce/shopware-performance-examples
+ #}
+
+
+{# ============================================================ #}
+{# Beispiel 1: Produktbox in Listing (Below-the-fold)           #}
+{# ============================================================ #}
+
+{% block product_box_image %}
+    {% set cover = product.cover.media %}
+    {% set isFirstProduct = loop.first|default(false) %}
+
+    {% if cover %}
+        {% sw_thumbnails 'product-box-' ~ product.id with {
+            media: cover,
+
+            {# sizes basierend auf Grid-Layout #}
+            sizes: {
+                'xs': '50vw',      {# 2 Spalten auf Mobile #}
+                'sm': '50vw',      {# 2 Spalten #}
+                'md': '33vw',      {# 3 Spalten #}
+                'lg': '25vw',      {# 4 Spalten #}
+                'xl': '20vw'       {# 5 Spalten #}
+            },
+
+            attributes: {
+                'class': 'product-image',
+                'alt': cover.alt|default(product.translated.name),
+
+                {# Erstes Produkt könnte above-the-fold sein #}
+                'loading': isFirstProduct ? 'eager' : 'lazy',
+                'fetchpriority': isFirstProduct ? 'high' : 'auto'
+            }
+        } %}
+    {% endif %}
+{% endblock %}
+
+
+{# ============================================================ #}
+{# Beispiel 2: Hero-Banner (Immer Above-the-fold)               #}
+{# ============================================================ #}
+
+{% block hero_banner_image %}
+    {% set heroMedia = page.cmsPage.sections|first.blocks|first.slots|first.data.media %}
+
+    {% if heroMedia %}
+        {% sw_thumbnails 'hero-banner' with {
+            media: heroMedia,
+
+            {# Hero nimmt immer volle Breite ein #}
+            sizes: {
+                'default': '100vw'
+            },
+
+            attributes: {
+                'class': 'hero-banner__image',
+                'alt': heroMedia.alt|default('Hero Banner'),
+
+                {# Hero ist IMMER LCP-kritisch #}
+                'loading': 'eager',
+                'fetchpriority': 'high',
+                'decoding': 'sync'
+            }
+        } %}
+    {% endif %}
+{% endblock %}
+
+
+{# ============================================================ #}
+{# Beispiel 3: Produktdetail-Galerie                            #}
+{# ============================================================ #}
+
+{% block product_detail_gallery %}
+    {% for media in product.media %}
+        {% sw_thumbnails 'gallery-image-' ~ media.id with {
+            media: media.media,
+
+            {# Galerie-Bild: Responsive basierend auf Layout #}
+            sizes: {
+                'xs': '100vw',     {# Volle Breite auf Mobile #}
+                'sm': '100vw',
+                'md': '60vw',      {# 60% auf Tablet (neben Infos) #}
+                'lg': '50vw',      {# 50% auf Desktop #}
+                'xl': '600px'      {# Max 600px auf großen Screens #}
+            },
+
+            attributes: {
+                'class': 'gallery-slider-image',
+                'alt': media.media.alt|default(product.translated.name),
+
+                {# Erstes Galerie-Bild ist above-the-fold #}
+                'loading': loop.first ? 'eager' : 'lazy',
+                'fetchpriority': loop.first ? 'high' : 'auto',
+
+                {# Data-Attribute für Lightbox/Zoom #}
+                'data-zoom-src': media.media.url
+            }
+        } %}
+    {% endfor %}
+{% endblock %}
+
+
+{# ============================================================ #}
+{# Beispiel 4: Warenkorb-Thumbnails (Kleine Bilder)             #}
+{# ============================================================ #}
+
+{% block cart_item_image %}
+    {% set cover = lineItem.cover %}
+
+    {% if cover %}
+        {% sw_thumbnails 'cart-item-' ~ lineItem.id with {
+            media: cover,
+
+            {# Kleine feste Größe im Warenkorb #}
+            sizes: {
+                'default': '80px'
+            },
+
+            attributes: {
+                'class': 'cart-item-img',
+                'alt': cover.alt|default(lineItem.label),
+
+                {# Warenkorb ist nicht LCP-kritisch #}
+                'loading': 'lazy',
+                'width': '80',
+                'height': '80'
+            }
+        } %}
+    {% endif %}
+{% endblock %}
+
+
+{# ============================================================ #}
+{# Beispiel 5: Kategorie-Header mit Art Direction               #}
+{# ============================================================ #}
+
+{% block category_header_image %}
+    {% set categoryMedia = category.media %}
+
+    {% if categoryMedia %}
+        <picture class="category-header__picture">
+            {# WebP für moderne Browser #}
+            <source
+                type="image/webp"
+                srcset="
+                    {{ categoryMedia.url|replace({'.jpg': '.webp', '.png': '.webp'}) }} 1920w,
+                    {{ categoryMedia.thumbnails|filter(t => t.width == 800)|first.url|replace({'.jpg': '.webp', '.png': '.webp'}) }} 800w,
+                    {{ categoryMedia.thumbnails|filter(t => t.width == 400)|first.url|replace({'.jpg': '.webp', '.png': '.webp'}) }} 400w
+                "
+                sizes="100vw"
+            >
+
+            {# Fallback für ältere Browser #}
+            {% sw_thumbnails 'category-header' with {
+                media: categoryMedia,
+                sizes: { 'default': '100vw' },
+                attributes: {
+                    'class': 'category-header__image',
+                    'alt': categoryMedia.alt|default(category.translated.name),
+                    'loading': 'eager',
+                    'fetchpriority': 'high'
+                }
+            } %}
+        </picture>
+    {% endif %}
+{% endblock %}
+
+
+{# ============================================================ #}
+{# Beispiel 6: Preload-Hint für LCP-Bild im Head                #}
+{# ============================================================ #}
+
+{% block layout_head_meta_tags_preload %}
+    {{ parent() }}
+
+    {# Preload für Hero-Bild wenn vorhanden #}
+    {% if page.cmsPage.sections|first.blocks|first.slots|first.data.media %}
+        {% set heroMedia = page.cmsPage.sections|first.blocks|first.slots|first.data.media %}
+
+        <link
+            rel="preload"
+            as="image"
+            href="{{ heroMedia.thumbnails|filter(t => t.width == 1920)|first.url|default(heroMedia.url) }}"
+            imagesrcset="
+                {%- for thumbnail in heroMedia.thumbnails|sort((a, b) => a.width <=> b.width) -%}
+                    {{ thumbnail.url }} {{ thumbnail.width }}w{% if not loop.last %}, {% endif %}
+                {%- endfor -%}
+            "
+            imagesizes="100vw"
+            fetchpriority="high"
+        >
+    {% endif %}
+{% endblock %}

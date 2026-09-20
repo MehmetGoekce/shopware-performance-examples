@@ -1,0 +1,128 @@
+{#
+ # Critical CSS Inline Template
+ # Kapitel 5: CSS und JavaScript optimieren
+ #
+ # Lädt Critical CSS inline im <head> und den Rest asynchron.
+ # Das eliminiert render-blocking CSS und verbessert FCP.
+ #
+ # Installation:
+ # 1. Critical CSS generieren mit scripts/generate-critical.js
+ # 2. Diese Datei nach Resources/views/storefront/layout/meta.html.twig kopieren
+ # 3. critical.css nach Resources/views/storefront/assets/ kopieren
+ #
+ # @see https://github.com/MehmetGoekce/shopware-performance-examples
+ #}
+
+{% sw_extends '@Storefront/storefront/layout/meta.html.twig' %}
+
+
+{# ============================================================ #}
+{# Critical CSS inline, Rest async                              #}
+{# ============================================================ #}
+
+{% block layout_head_stylesheet %}
+    {# Critical CSS inline - wird sofort angewendet #}
+    <style id="critical-css">
+        {# Option 1: Aus Datei inkludieren #}
+        {% include '@YourTheme/storefront/assets/critical.css' ignore missing %}
+
+        {# Option 2: Direkt hier definieren (für kleine Mengen) #}
+        {#
+        :root {
+            --color-primary: #007bff;
+            --color-text: #212529;
+            --font-family-base: system-ui, -apple-system, sans-serif;
+        }
+
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: var(--font-family-base);
+            color: var(--color-text);
+        }
+
+        .header { ... }
+        .navigation { ... }
+        .hero-banner { ... }
+        #}
+    </style>
+
+    {# Rest-CSS async laden mit preload/onload Pattern #}
+    {% set mainStylesheet = asset('bundles/storefront/css/all.css', 'theme') %}
+
+    {# Preload für schnelleres Laden #}
+    <link rel="preload"
+          href="{{ mainStylesheet }}"
+          as="style"
+          onload="this.onload=null;this.rel='stylesheet'">
+
+    {# Fallback für Browser ohne JavaScript #}
+    <noscript>
+        <link rel="stylesheet" href="{{ mainStylesheet }}">
+    </noscript>
+
+    {# Plugin-Styles (auch async) #}
+    {% for stylesheet in theme_config('assets.css') %}
+        {% if stylesheet != 'bundles/storefront/css/all.css' %}
+            <link rel="preload"
+                  href="{{ asset(stylesheet, 'theme') }}"
+                  as="style"
+                  onload="this.onload=null;this.rel='stylesheet'">
+            <noscript>
+                <link rel="stylesheet" href="{{ asset(stylesheet, 'theme') }}">
+            </noscript>
+        {% endif %}
+    {% endfor %}
+{% endblock %}
+
+
+{# ============================================================ #}
+{# Preload-Hints für kritische Ressourcen                       #}
+{# ============================================================ #}
+
+{% block layout_head_meta_tags_preload %}
+    {{ parent() }}
+
+    {# Preconnect für Third-Party Domains #}
+    <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    {# DNS-Prefetch für Third-Party die später geladen werden #}
+    <link rel="dns-prefetch" href="https://www.googletagmanager.com">
+    <link rel="dns-prefetch" href="https://www.google-analytics.com">
+
+    {# Preload für kritische Fonts #}
+    {% if theme_config('fonts.preload') %}
+        {% for font in theme_config('fonts.preload') %}
+            <link rel="preload"
+                  href="{{ asset(font, 'theme') }}"
+                  as="font"
+                  type="font/woff2"
+                  crossorigin>
+        {% endfor %}
+    {% endif %}
+{% endblock %}
+
+
+{# ============================================================ #}
+{# CSS Loading Polyfill (für ältere Browser)                    #}
+{# ============================================================ #}
+
+{% block layout_head_javascript %}
+    {# Polyfill für preload onload in älteren Browsern #}
+    <script>
+    (function() {
+        // CSS preload polyfill
+        var links = document.querySelectorAll('link[rel="preload"][as="style"]');
+        links.forEach(function(link) {
+            if (!link.onload) {
+                link.onload = function() {
+                    this.rel = 'stylesheet';
+                };
+            }
+        });
+    })();
+    </script>
+
+    {{ parent() }}
+{% endblock %}

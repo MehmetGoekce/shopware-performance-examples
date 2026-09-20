@@ -130,9 +130,15 @@ sudo -u www-data bin/console cache:clear
 **Das `chmod 644` nicht überspringen.** Eine Datei in `config/packages/`, die
 der PHP-Benutzer nicht lesen darf, lässt den Container-Build mit
 `does not contain valid YAML: … cannot be read` abbrechen — der Shop
-antwortet dann mit HTTP 500. Eine Datei in `conf.d/` mit denselben Rechten
-wird dagegen **stillschweigend** ignoriert: kein Fehler, die Werte gelten
-einfach nicht.
+antwortet dann mit HTTP 500. Bei einer Datei in `conf.d/` ist es anders herum,
+als man es meist liest: Sie gilt trotzdem. Der FPM-Master liest `conf.d` als
+root, bevor er die Worker auf `www-data` herunterstuft — gemessen kam eine
+`0600`-Datei mit `opcache.memory_consumption=333` im echten Request mit 333 an.
+Still ist nicht das Laden, sondern die **Kontrolle**: `php-fpm8.3 -i` als
+unprivilegierter Benutzer meldet für dieselbe Datei den Vorgabewert 128 und
+warnt mit keinem Wort. `chmod 644` gehört trotzdem dazu — damit die Kontrolle
+stimmt und damit die Werte auch dann gelten, wenn der Master ausnahmsweise
+nicht als root läuft.
 
 ## Ergebnis lesen
 

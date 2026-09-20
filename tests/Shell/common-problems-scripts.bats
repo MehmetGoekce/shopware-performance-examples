@@ -264,6 +264,19 @@ STUB
     fi
 }
 
+@test "README und QUICKSTART behaupten nicht, eine conf.d-Datei werde uebergangen" {
+    # MEM-280, hier als Review-Fund nachgezogen: Die Korrektur war bisher nur in
+    # der kanonischen ini angekommen. Gemessen gilt eine root-eigene
+    # 0600-Datei in conf.d - still ist nur die Kontrolle per "php-fpm -i".
+    for f in "$CONFIG/../README.md" "$CONFIG/../QUICKSTART.md"; do
+        strom="$(tr '\n' ' ' < "$f" | tr -s '[:space:]' ' ')"
+        run grep -qF 'die Werte gelten einfach nicht' <<< "$strom"
+        [ "$status" -ne 0 ]
+        run grep -qF 'stillschweigend ignoriert' <<< "$strom"
+        [ "$status" -ne 0 ]
+    done
+}
+
 @test "QUICKSTART.md kopiert die OPcache-Vorlage nicht nach 10-opcache.ini" {
     # Regressionstest zu MEM-279: hier stand ein fertiges sudo-cp-Kommando,
     # das beim Leser OPcache komplett abgeschaltet haette.
