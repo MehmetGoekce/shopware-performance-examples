@@ -31,10 +31,6 @@ parameters:
         # Elasticsearch extensions using Shopware ES classes
         - chapters/*/src/ElasticsearchExtension/*.php
 
-        # Classes implementing PSR CacheItemPoolInterface
-        - chapters/23-fallstudien/src/TenantAwareCache.php
-        - chapters/23-fallstudien/src/LazyLoadingSubscriber.php
-
         # Controllers not in standard Controller/ directory
         - chapters/12-real-user-monitoring/src/RumController.php
 
