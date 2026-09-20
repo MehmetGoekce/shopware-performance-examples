@@ -6,8 +6,17 @@
  *
  * Empfohlenes Setup:
  *   1. Ablage AUSSERHALB von public/ (z.B. /var/www/shopware/private/opcache-status.php),
- *      damit das Script nicht direkt via HTTP erreichbar ist. Wenn ein HTTP-Endpoint
- *      gebraucht wird, ueber dedizierte Nginx-Location mit `internal;` ausliefern.
+ *      damit das Script nicht direkt via HTTP erreichbar ist. Wenn ein
+ *      HTTP-Endpoint gebraucht wird, dann ueber eine eigene Location mit
+ *      Quell-IP-Beschraenkung:
+ *        location = /opcache-status {
+ *            allow 127.0.0.1; deny all;
+ *            include fastcgi_params;
+ *            fastcgi_param SCRIPT_FILENAME /var/www/shopware/private/opcache-status.php;
+ *            fastcgi_pass php-fpm-shopware;
+ *        }
+ *      NICHT `internal;` verwenden - damit ist die Seite auch fuer den
+ *      Monitoring-Agenten nicht erreichbar, jeder Aufruf endet auf 404.
  *   2. Zugriff via CLI (`php /var/www/shopware/private/opcache-status.php`) ist
  *      immer am sichersten und reicht fuer Cron / Monitoring-Agents.
  *   3. Falls HTTP-Zugriff zwingend noetig:
@@ -18,7 +27,13 @@
  *          mit trusted_proxies-Logik, oder bei Cloudflare ueber den
  *          CF-Connecting-IP-Header mit Cloudflare-IP-Range-Validierung.
  *
- * Quelle: https://www.php.net/manual/en/opcache.preloading.php
+ * WICHTIG: Ueber die CLI aufgerufen misst dieses Skript den OPcache DER CLI -
+ * und der ist ab Werk aus (opcache.enable_cli=0) bzw. lebt nur fuer die Dauer
+ * des Aufrufs. Die Zahlen des FPM-Pools bekommt man nur ueber einen echten
+ * HTTP-Request auf diese Datei oder ueber
+ *   cachetool opcache:status --fcgi=/run/php/php8.3-fpm-shopware.sock
+ *
+ * @see https://www.php.net/manual/en/function.opcache-get-status.php
  */
 
 declare(strict_types=1);
