@@ -1,82 +1,71 @@
 # Kapitel 2: Performance-Audit
 
-Code-Beispiele und Tools für das Performance-Audit-Kapitel.
+Werkzeuge für die Bestandsaufnahme. Beide Skripte lesen nur und ändern nichts.
+Getestet mit Shopware 6.6.10.6 (Dockware, Demo-Daten).
 
 ## Dateien
 
 | Datei | Beschreibung |
 |-------|--------------|
-| `scripts/audit.sh` | Komplettes Audit-Script für Shopware 6 |
-| `scripts/analyze-images.sh` | Bildgrößen-Analyse |
-| `config/shopware-http-cache.yaml` | HTTP-Cache Konfigurationsbeispiel |
-| `config/shopware-worker.conf` | Supervisor-Konfiguration für CLI Worker |
-| `config/mysql-slow-query.cnf` | MySQL Slow Query Log Konfiguration |
-| `templates/AUDIT-TEMPLATE.md` | Audit-Dokumentations-Template |
+| `scripts/audit.sh` | Bestandsaufnahme auf dem Server: Versionen, Plugins, HTTP-Cache, OPcache (FPM), Message Queue, Redis/Suche, grosse Bilder |
+| `scripts/analyze-images.sh` | Originalbilder nach Format zählen, grösste über einer Schwelle auflisten |
+| `templates/AUDIT-TEMPLATE.md` | Vorlage für das Audit-Protokoll |
+
+Konfigurationen stehen dort, wo das Buch sie begründet und testet — dieses
+Kapitel findet Probleme, die Lösung steht im jeweiligen Kapitel:
+
+| Thema | Datei |
+|-------|-------|
+| HTTP-Cache | Kapitel 6, `chapters/06-http-cache/` |
+| Slow Query Log | Kapitel 8, `chapters/08-database/config/shopware.cnf` |
+| OPcache, PHP-FPM | Kapitel 9, `chapters/09-php-performance/` |
+| CLI-Worker (Supervisor) | Anhang C, `chapters/anhang-c-konfigurationen/config/supervisor-shopware.conf` |
 
 ## Verwendung
 
-### Komplettes Audit durchführen
+### Bestandsaufnahme
+
+Als der Benutzer aufrufen, unter dem der Shop läuft:
 
 ```bash
-# Vom Shopware-Root-Verzeichnis ausführen
-./chapters/02-performance-audit/scripts/audit.sh
+sudo -u www-data ./chapters/02-performance-audit/scripts/audit.sh /var/www/shopware
+
+# Mit Abruf-Test gegen die laufende Seite (zwei Abrufe als Gast, Age > 0 = Treffer)
+SHOP_URL=https://ihr-shop.ch sudo -E -u www-data \
+  ./chapters/02-performance-audit/scripts/audit.sh /var/www/shopware
 ```
 
-Das Script prüft:
-- Shopware- und PHP-Version
-- Aktive Plugins
-- HTTP-Cache-Status
-- PHP OPcache
-- MySQL Buffer Pool
-- Redis-Status
-- Message Queue Worker
+Was das Skript anders macht als die naheliegenden Einzeiler:
 
-### Bildgrößen analysieren
+- `plugin:list --active` gibt es nicht (Exit 1); `plugin:list | wc -l` zählt die
+  Tabellenrahmen mit. Das Skript liest `plugin:list --json`.
+- `debug:config shopware http_cache` bricht in `APP_ENV=prod` mit «frozen
+  ParameterBag» ab, und `shopware.http_cache` hat keinen Schlüssel `enabled`.
+  Das Skript liest `debug:dotenv` und prüft optional die Antwort-Header.
+- `php -i` zeigt die CLI-Konfiguration. Das Skript fragt jede gefundene
+  `php-fpmX.Y -i`.
+- `ps aux | grep messenger:consume` findet sich selbst. Das Skript zählt mit
+  `pgrep -fc` auf die PHP-Kommandozeile.
+- `messenger:stats` schreibt seine Tabelle auf stderr.
+
+### Bilder
 
 ```bash
-# Große Bilder finden (> 500KB)
-./chapters/02-performance-audit/scripts/analyze-images.sh /var/www/shop/public/media
+./chapters/02-performance-audit/scripts/analyze-images.sh /var/www/shopware/public/media 500
 ```
 
-### CLI Worker einrichten
+`public/media` enthält die Originale; ausgeliefert werden meist die Thumbnails
+aus `public/thumbnail`. Bildoptimierung: Kapitel 4.
+
+## Tests
 
 ```bash
-# Supervisor-Konfiguration kopieren
-sudo cp config/shopware-worker.conf /etc/supervisor/conf.d/
-
-# Supervisor neu laden
-sudo supervisorctl reread
-sudo supervisorctl update
-sudo supervisorctl start shopware-worker:*
+docker run --rm -v "$PWD:/code" -w /code bats/bats:latest tests/Shell/audit-scripts.bats
 ```
-
-## Die 7 Performance-Dimensionen
-
-| Dimension | Metrik | Zielwert | Tool |
-|-----------|--------|----------|------|
-| Server Response | TTFB | < 800ms | PageSpeed Insights |
-| Render | LCP | < 2.5s | Lighthouse |
-| Render | FCP | < 1.8s | Lighthouse |
-| Interaktivität | INP | < 200ms | Chrome UX Report |
-| Interaktivität | TBT | < 200ms | Lighthouse |
-| Stabilität | CLS | < 0.1 | Lighthouse |
-| Ressourcen | Page Weight | < 1.5MB | Network Panel |
-
-## Performance-Killer Checkliste
-
-Die häufigsten Probleme in Shopware 6:
-
-- [ ] Unoptimierte Bilder (> 500KB, kein WebP)
-- [ ] JavaScript-Bloat (> 500KB JS)
-- [ ] Zu viele Plugins (> 30 aktiv)
-- [ ] HTTP-Cache deaktiviert
-- [ ] Datenbankprobleme (> 100 Queries/Request)
-- [ ] Synchrone Third-Party-Calls
-- [ ] Admin Worker statt CLI Worker
 
 ## Quellen
 
-- [TTFB Thresholds (web.dev)](https://web.dev/articles/ttfb)
+- [TTFB (web.dev)](https://web.dev/articles/ttfb)
 - [Core Web Vitals (web.dev)](https://web.dev/articles/vitals)
-- [INP Metric (web.dev)](https://web.dev/articles/inp)
+- [Lighthouse Scoring](https://developer.chrome.com/docs/lighthouse/performance/performance-scoring)
 - [Frosh Tools (GitHub)](https://github.com/FriendsOfShopware/FroshTools)
