@@ -6,46 +6,50 @@ namespace Memotech\ShopwarePerformance\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
 
-// Load Shopware stubs for mocking
-require_once __DIR__ . '/../Stubs/ShopwareStubs.php';
 require_once __DIR__ . '/../../chapters/16-shopware-themes/src/ThemePerformanceAnalyzer.php';
 
 use App\Service\ThemePerformanceAnalyzer;
-use Shopware\Core\System\SystemConfig\SystemConfigService;
-use Shopware\Storefront\Theme\ThemeService;
 use Psr\Log\LoggerInterface;
 
 /**
- * Unit Tests for ThemePerformanceAnalyzer
+ * Unit tests for ThemePerformanceAnalyzer (Kapitel 16)
  *
- * Tests the theme analysis logic using mocks for Shopware dependencies.
- * Uses reflection to test private methods.
+ * Die Integrationstests bauen ein echtes public/theme/<prefix>/ in einem
+ * temporären Verzeichnis nach — so, wie theme:compile es anlegt.
+ * Private Methoden werden per Reflection getestet.
  */
 class ThemePerformanceAnalyzerTest extends TestCase
 {
     private ThemePerformanceAnalyzer $analyzer;
     /** @var \ReflectionClass<ThemePerformanceAnalyzer> */
     private \ReflectionClass $reflection;
+    private string $projectDir;
 
     protected function setUp(): void
     {
-        $themeService = $this->createMock(ThemeService::class);
-        $configService = $this->createMock(SystemConfigService::class);
-        $logger = $this->createMock(LoggerInterface::class);
+        $this->projectDir = sys_get_temp_dir() . '/tpa-' . bin2hex(random_bytes(4));
+        mkdir($this->projectDir . '/public/theme', 0777, true);
 
         $this->analyzer = new ThemePerformanceAnalyzer(
-            $themeService,
-            $configService,
-            '/tmp/test-project',
-            $logger
+            $this->projectDir,
+            $this->createMock(LoggerInterface::class)
         );
 
         $this->reflection = new \ReflectionClass($this->analyzer);
     }
 
-    /**
-     * Helper: Invoke private method
-     */
+    protected function tearDown(): void
+    {
+        $it = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($this->projectDir, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::CHILD_FIRST
+        );
+        foreach ($it as $file) {
+            $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
+        }
+        rmdir($this->projectDir);
+    }
+
     private function invokePrivate(string $methodName, array $args = []): mixed
     {
         $method = $this->reflection->getMethod($methodName);
@@ -53,432 +57,246 @@ class ThemePerformanceAnalyzerTest extends TestCase
         return $method->invoke($this->analyzer, ...$args);
     }
 
+    /**
+     * Legt public/theme/<prefix>/ mit den gegebenen Dateien an (Pfad => Inhalt)
+     *
+     * @param array<string, string> $files
+     */
+    private function createThemeDir(string $prefix, array $files): string
+    {
+        $dir = $this->projectDir . '/public/theme/' . $prefix;
+        foreach ($files as $path => $content) {
+            @mkdir(\dirname($dir . '/' . $path), 0777, true);
+            file_put_contents($dir . '/' . $path, $content);
+        }
+        return $dir;
+    }
+
     // =================================================================
-    // formatBytes() Tests
+    // analyzeThemeDirectory() — gegen echte Dateien
+    // =================================================================
+
+    public function testAnalyzeSplitsEntriesFromChunks(): void
+    {
+        $dir = $this->createThemeDir('c7629e6bf9db1d9c6b66f6f545d51be2', [
+            'css/all.css' => str_repeat('.a{color:red}', 100),
+            'js/storefront/storefront.js' => str_repeat('x', 5000),
+            'js/storefront/storefront.hammer.50cbec.js' => str_repeat('h', 2000),
+            'js/performance-theme/performance-theme.js' => str_repeat('p', 300),
+            'js/performance-theme/performance-theme.async-slider.plugin.6cd542.js' => str_repeat('s', 700),
+        ]);
+
+        $result = $this->analyzer->analyzeThemeDirectory($dir);
+
+        $this->assertSame(2, $result['assets']['javascript']['fileCount'], 'zwei Einstiege');
+        $this->assertSame(5300, $result['assets']['javascript']['totalSize']);
+        $this->assertSame(2, $result['assets']['chunks']['fileCount'], 'zwei Chunks');
+        $this->assertSame(2700, $result['assets']['chunks']['totalSize']);
+        $this->assertSame(1, $result['assets']['css']['fileCount']);
+        $this->assertSame(100, $result['score']);
+        $this->assertSame([], $result['issues']);
+    }
+
+    public function testAnalyzeReportsLibraryChunksAsInfo(): void
+    {
+        $dir = $this->createThemeDir('abc', [
+            'css/all.css' => 'a{}',
+            'js/storefront/storefront.js' => 'x',
+            'js/storefront/storefront.tiny-slider.41a54b.js' => str_repeat('t', 1000),
+            'js/storefront/storefront.hammer.50cbec.js' => str_repeat('h', 500),
+        ]);
+
+        $result = $this->analyzer->analyzeThemeDirectory($dir);
+        $libraries = array_column($result['libraryChunks'], 'library');
+
+        $this->assertContains('tiny-slider', $libraries);
+        $this->assertContains('hammer', $libraries);
+        $this->assertSame([], $result['issues'], 'Chunks zählen nicht gegen das Budget');
+    }
+
+    public function testAnalyzeFlagsOversizedEntryJavaScript(): void
+    {
+        // Zufallsdaten komprimieren kaum: gzip bleibt über 200 KB
+        $dir = $this->createThemeDir('big', [
+            'css/all.css' => 'a{}',
+            'js/storefront/storefront.js' => random_bytes(260 * 1024),
+        ]);
+
+        $result = $this->analyzer->analyzeThemeDirectory($dir);
+        $types = array_column($result['issues'], 'type');
+
+        $this->assertContains('js_size', $types);
+        $this->assertSame(80, $result['score']);
+        $this->assertSame('high', $result['recommendations'][0]['priority']);
+    }
+
+    public function testAnalyzeRejectsDirectoryWithoutCss(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->analyzer->analyzeThemeDirectory($this->projectDir . '/public/theme/missing');
+    }
+
+    public function testFindLatestThemeDirectoryPicksNewestAllCss(): void
+    {
+        $old = $this->createThemeDir('old', ['css/all.css' => 'a{}']);
+        $new = $this->createThemeDir('new', ['css/all.css' => 'b{}']);
+        touch($old . '/css/all.css', time() - 3600);
+        // Ein Asset-Verzeichnis ohne css/all.css darf nicht gewählt werden
+        $this->createThemeDir('assets-only', ['assets/logo.svg' => '<svg/>']);
+
+        $this->assertSame($new, $this->analyzer->findLatestThemeDirectory());
+    }
+
+    public function testFindLatestThemeDirectoryReturnsNullWhenNothingCompiled(): void
+    {
+        $this->assertNull($this->analyzer->findLatestThemeDirectory());
+    }
+
+    // =================================================================
+    // isChunk()
+    // =================================================================
+
+    public function testIsChunkRecognisesWebpackChunkHash(): void
+    {
+        $this->assertTrue($this->invokePrivate('isChunk', ['storefront.hammer.50cbec.js']));
+        $this->assertTrue($this->invokePrivate('isChunk', ['storefront.index.92319.0b57b1.js']));
+        $this->assertFalse($this->invokePrivate('isChunk', ['storefront.js']));
+        $this->assertFalse($this->invokePrivate('isChunk', ['performance-theme.js']));
+    }
+
+    // =================================================================
+    // formatBytes()
     // =================================================================
 
     public function testFormatBytesUnderKilobyte(): void
     {
-        $result = $this->invokePrivate('formatBytes', [512]);
-        $this->assertEquals('512 B', $result);
+        $this->assertEquals('512 B', $this->invokePrivate('formatBytes', [512]));
     }
 
     public function testFormatBytesKilobytes(): void
     {
-        $result = $this->invokePrivate('formatBytes', [2048]);
-        $this->assertEquals('2 KB', $result);
+        $this->assertEquals('2 KB', $this->invokePrivate('formatBytes', [2048]));
     }
 
     public function testFormatBytesKilobytesDecimal(): void
     {
-        $result = $this->invokePrivate('formatBytes', [1536]);
-        $this->assertEquals('1.5 KB', $result);
+        $this->assertEquals('1.5 KB', $this->invokePrivate('formatBytes', [1536]));
     }
 
     public function testFormatBytesMegabytes(): void
     {
-        $result = $this->invokePrivate('formatBytes', [1048576]); // 1 MB
-        $this->assertEquals('1 MB', $result);
-    }
-
-    public function testFormatBytesLargeMegabytes(): void
-    {
-        $result = $this->invokePrivate('formatBytes', [5242880]); // 5 MB
-        $this->assertEquals('5 MB', $result);
+        $this->assertEquals('1 MB', $this->invokePrivate('formatBytes', [1048576]));
     }
 
     // =================================================================
-    // detectLibraries() Tests
+    // detectIssues()
     // =================================================================
 
-    public function testDetectLibrariesFindsJquery(): void
+    private function assets(int $jsGzip, int $cssGzip): array
     {
-        $content = 'function test() { return jQuery.ajax(...); }';
-        $result = $this->invokePrivate('detectLibraries', [$content]);
-
-        $this->assertCount(1, $result);
-        $this->assertEquals('jquery', $result[0]['name']);
-        $this->assertEquals(229000, $result[0]['estimatedSize']);
+        return [
+            'javascript' => ['gzipSize' => $jsGzip, 'totalSize' => $jsGzip * 3, 'files' => [], 'fileCount' => 1],
+            'chunks' => ['gzipSize' => 0, 'totalSize' => 0, 'files' => [], 'fileCount' => 0],
+            'css' => ['gzipSize' => $cssGzip, 'totalSize' => $cssGzip * 7, 'files' => [], 'fileCount' => 1],
+            'total' => ['gzipSize' => $jsGzip + $cssGzip],
+        ];
     }
 
-    public function testDetectLibrariesFindsFlatpickr(): void
+    public function testDetectIssuesUsesGzipNotRawSize(): void
     {
-        $content = 'import flatpickr from "flatpickr";';
-        $result = $this->invokePrivate('detectLibraries', [$content]);
-
-        $this->assertCount(1, $result);
-        $this->assertEquals('flatpickr', $result[0]['name']);
+        // Messwerte Dockware 6.6.10.6: Einstieg 75 KB gzip (230 KB roh), CSS 55 KB gzip (391 KB roh)
+        $result = $this->invokePrivate('detectIssues', [$this->assets(75 * 1024, 55 * 1024)]);
+        $this->assertSame([], $result);
     }
-
-    public function testDetectLibrariesFindsMultiple(): void
-    {
-        $content = 'jQuery + flatpickr + tiny-slider + hammer';
-        $result = $this->invokePrivate('detectLibraries', [$content]);
-
-        $this->assertCount(4, $result);
-        $names = array_column($result, 'name');
-        $this->assertContains('jquery', $names);
-        $this->assertContains('flatpickr', $names);
-        $this->assertContains('tiny-slider', $names);
-        $this->assertContains('hammer', $names);
-    }
-
-    public function testDetectLibrariesReturnsEmptyForCleanCode(): void
-    {
-        $content = 'const app = { init() { console.log("Hello"); }};';
-        $result = $this->invokePrivate('detectLibraries', [$content]);
-
-        $this->assertEmpty($result);
-    }
-
-    public function testDetectLibrariesCaseInsensitive(): void
-    {
-        $content = 'JQUERY and Flatpickr and TINY-SLIDER';
-        $result = $this->invokePrivate('detectLibraries', [$content]);
-
-        $this->assertCount(3, $result);
-    }
-
-    // =================================================================
-    // detectIssues() Tests
-    // =================================================================
 
     public function testDetectIssuesJavaScriptTooLarge(): void
     {
-        $assets = [
-            'javascript' => [
-                'totalSize' => 400 * 1024, // 400 KB > 300 KB threshold
-                'files' => [],
-                'fileCount' => 2,
-            ],
-            'css' => [
-                'totalSize' => 100 * 1024,
-                'files' => [],
-                'fileCount' => 1,
-            ],
-        ];
-
-        $result = $this->invokePrivate('detectIssues', [$assets]);
-
-        $this->assertNotEmpty($result);
-        $jsIssue = array_filter($result, fn($i) => $i['type'] === 'js_size');
-        $this->assertCount(1, $jsIssue);
-        $this->assertEquals('high', array_values($jsIssue)[0]['severity']);
+        $result = $this->invokePrivate('detectIssues', [$this->assets(250 * 1024, 50 * 1024)]);
+        $this->assertSame(['js_size'], array_column($result, 'type'));
+        $this->assertSame('high', $result[0]['severity']);
     }
 
-    public function testDetectIssuesCSSTooLarge(): void
+    public function testDetectIssuesCssTooLarge(): void
     {
-        $assets = [
-            'javascript' => [
-                'totalSize' => 100 * 1024,
-                'files' => [],
-                'fileCount' => 2,
-            ],
-            'css' => [
-                'totalSize' => 200 * 1024, // 200 KB > 150 KB threshold
-                'files' => [],
-                'fileCount' => 1,
-            ],
-        ];
-
-        $result = $this->invokePrivate('detectIssues', [$assets]);
-
-        $cssIssue = array_filter($result, fn($i) => $i['type'] === 'css_size');
-        $this->assertCount(1, $cssIssue);
-        $this->assertEquals('medium', array_values($cssIssue)[0]['severity']);
-    }
-
-    public function testDetectIssuesTooManyFiles(): void
-    {
-        $assets = [
-            'javascript' => [
-                'totalSize' => 100 * 1024,
-                'files' => [],
-                'fileCount' => 15, // > 10 threshold
-            ],
-            'css' => [
-                'totalSize' => 50 * 1024,
-                'files' => [],
-                'fileCount' => 1,
-            ],
-        ];
-
-        $result = $this->invokePrivate('detectIssues', [$assets]);
-
-        $fileIssue = array_filter($result, fn($i) => $i['type'] === 'too_many_files');
-        $this->assertCount(1, $fileIssue);
-        $this->assertEquals('low', array_values($fileIssue)[0]['severity']);
-    }
-
-    public function testDetectIssuesHeavyLibrary(): void
-    {
-        $assets = [
-            'javascript' => [
-                'totalSize' => 100 * 1024,
-                'files' => [
-                    [
-                        'name' => 'main.js',
-                        'libraries' => [
-                            ['name' => 'jquery', 'estimatedSize' => 229000, 'alternative' => 'Vanilla JS'],
-                        ],
-                    ],
-                ],
-                'fileCount' => 1,
-            ],
-            'css' => [
-                'totalSize' => 50 * 1024,
-                'files' => [],
-                'fileCount' => 1,
-            ],
-        ];
-
-        $result = $this->invokePrivate('detectIssues', [$assets]);
-
-        $libIssue = array_filter($result, fn($i) => $i['type'] === 'heavy_library');
-        $this->assertCount(1, $libIssue);
-    }
-
-    public function testDetectIssuesNoIssuesWhenOptimal(): void
-    {
-        $assets = [
-            'javascript' => [
-                'totalSize' => 150 * 1024, // Under threshold
-                'files' => [],
-                'fileCount' => 3,
-            ],
-            'css' => [
-                'totalSize' => 80 * 1024, // Under threshold
-                'files' => [],
-                'fileCount' => 2,
-            ],
-        ];
-
-        $result = $this->invokePrivate('detectIssues', [$assets]);
-
-        $this->assertEmpty($result);
+        $result = $this->invokePrivate('detectIssues', [$this->assets(50 * 1024, 150 * 1024)]);
+        $this->assertSame(['css_size'], array_column($result, 'type'));
+        $this->assertSame('medium', $result[0]['severity']);
     }
 
     // =================================================================
-    // calculateScore() Tests
+    // calculateScore()
     // =================================================================
 
-    public function testCalculateScorePerfect(): void
+    public function testCalculateScoreSeverities(): void
     {
-        $issues = [];
-        $assets = [
-            'total' => ['size' => 300 * 1024], // Under 500 KB threshold
-        ];
-
-        $result = $this->invokePrivate('calculateScore', [$issues, $assets]);
-
-        $this->assertEquals(100, $result);
+        $assets = ['total' => ['gzipSize' => 300 * 1024]];
+        $this->assertEquals(100, $this->invokePrivate('calculateScore', [[], $assets]));
+        $this->assertEquals(80, $this->invokePrivate('calculateScore', [[['severity' => 'high']], $assets]));
+        $this->assertEquals(90, $this->invokePrivate('calculateScore', [[['severity' => 'medium']], $assets]));
+        $this->assertEquals(95, $this->invokePrivate('calculateScore', [[['severity' => 'low']], $assets]));
     }
 
-    public function testCalculateScoreHighSeverityDeducts20(): void
+    public function testCalculateScoreOversizedDeductsAtMost30(): void
     {
-        $issues = [
-            ['severity' => 'high', 'type' => 'js_size', 'message' => 'Test'],
-        ];
-        $assets = [
-            'total' => ['size' => 300 * 1024],
-        ];
-
-        $result = $this->invokePrivate('calculateScore', [$issues, $assets]);
-
-        $this->assertEquals(80, $result);
-    }
-
-    public function testCalculateScoreMediumSeverityDeducts10(): void
-    {
-        $issues = [
-            ['severity' => 'medium', 'type' => 'css_size', 'message' => 'Test'],
-        ];
-        $assets = [
-            'total' => ['size' => 300 * 1024],
-        ];
-
-        $result = $this->invokePrivate('calculateScore', [$issues, $assets]);
-
-        $this->assertEquals(90, $result);
-    }
-
-    public function testCalculateScoreLowSeverityDeducts5(): void
-    {
-        $issues = [
-            ['severity' => 'low', 'type' => 'too_many_files', 'message' => 'Test'],
-        ];
-        $assets = [
-            'total' => ['size' => 300 * 1024],
-        ];
-
-        $result = $this->invokePrivate('calculateScore', [$issues, $assets]);
-
-        $this->assertEquals(95, $result);
-    }
-
-    public function testCalculateScoreMultipleIssues(): void
-    {
-        $issues = [
-            ['severity' => 'high', 'type' => 'js_size', 'message' => 'Test'],   // -20
-            ['severity' => 'medium', 'type' => 'css_size', 'message' => 'Test'], // -10
-            ['severity' => 'low', 'type' => 'too_many_files', 'message' => 'Test'], // -5
-        ];
-        $assets = [
-            'total' => ['size' => 300 * 1024],
-        ];
-
-        $result = $this->invokePrivate('calculateScore', [$issues, $assets]);
-
-        $this->assertEquals(65, $result); // 100 - 20 - 10 - 5
-    }
-
-    public function testCalculateScoreOversizedDeductsExtra(): void
-    {
-        $issues = [];
-        $assets = [
-            'total' => ['size' => 750 * 1024], // 50% over 500 KB threshold
-        ];
-
-        $result = $this->invokePrivate('calculateScore', [$issues, $assets]);
-
-        // 50% over = 50 points deduction, capped at 30
-        $this->assertEquals(70, $result); // 100 - 30
+        $assets = ['total' => ['gzipSize' => 750 * 1024]]; // 50 % über 500 KB
+        $this->assertEquals(70, $this->invokePrivate('calculateScore', [[], $assets]));
     }
 
     public function testCalculateScoreMinimumIsZero(): void
     {
-        $issues = array_fill(0, 10, ['severity' => 'high', 'type' => 'test', 'message' => 'Test']);
-        $assets = [
-            'total' => ['size' => 2000 * 1024], // Massively over
-        ];
-
-        $result = $this->invokePrivate('calculateScore', [$issues, $assets]);
-
-        $this->assertEquals(0, $result);
+        $issues = array_fill(0, 10, ['severity' => 'high']);
+        $assets = ['total' => ['gzipSize' => 2000 * 1024]];
+        $this->assertEquals(0, $this->invokePrivate('calculateScore', [$issues, $assets]));
     }
 
     // =================================================================
-    // deduplicateRecommendations() Tests
+    // overBudget()
     // =================================================================
 
-    public function testDeduplicateRemovesDuplicateTitles(): void
+    public function testOverBudgetIsZeroUnderThreshold(): void
+    {
+        $this->assertEquals('0 B', $this->invokePrivate('overBudget', [$this->assets(150 * 1024, 50 * 1024), 'js']));
+    }
+
+    public function testOverBudgetIsMeasuredDifference(): void
+    {
+        $this->assertEquals('50 KB', $this->invokePrivate('overBudget', [$this->assets(250 * 1024, 50 * 1024), 'js']));
+        $this->assertEquals('20 KB', $this->invokePrivate('overBudget', [$this->assets(50 * 1024, 120 * 1024), 'css']));
+    }
+
+    // =================================================================
+    // deduplicateRecommendations()
+    // =================================================================
+
+    public function testDeduplicateRemovesDuplicateTitlesAndSortsByPriority(): void
     {
         $recommendations = [
-            ['priority' => 'high', 'title' => 'Reduce JS Bundle', 'actions' => []],
-            ['priority' => 'high', 'title' => 'Reduce JS Bundle', 'actions' => []], // Duplicate
-            ['priority' => 'medium', 'title' => 'Optimize CSS', 'actions' => []],
+            ['priority' => 'low', 'title' => 'Low', 'actions' => []],
+            ['priority' => 'high', 'title' => 'High', 'actions' => []],
+            ['priority' => 'high', 'title' => 'High', 'actions' => []],
+            ['priority' => 'medium', 'title' => 'Medium', 'actions' => []],
         ];
 
         $result = $this->invokePrivate('deduplicateRecommendations', [$recommendations]);
 
-        $this->assertCount(2, $result);
-    }
-
-    public function testDeduplicateSortsByPriority(): void
-    {
-        $recommendations = [
-            ['priority' => 'low', 'title' => 'Low Priority', 'actions' => []],
-            ['priority' => 'high', 'title' => 'High Priority', 'actions' => []],
-            ['priority' => 'medium', 'title' => 'Medium Priority', 'actions' => []],
-        ];
-
-        $result = $this->invokePrivate('deduplicateRecommendations', [$recommendations]);
-
-        $this->assertEquals('High Priority', $result[0]['title']);
-        $this->assertEquals('Medium Priority', $result[1]['title']);
-        $this->assertEquals('Low Priority', $result[2]['title']);
+        $this->assertSame(['High', 'Medium', 'Low'], array_column($result, 'title'));
     }
 
     // =================================================================
-    // estimateSavings() Tests
+    // formatReport()
     // =================================================================
 
-    public function testEstimateSavingsUnderThreshold(): void
+    public function testFormatReportNamesThemeDirectoryAndGzip(): void
     {
-        $assets = [
-            'javascript' => ['totalSize' => 200 * 1024], // Under 300 KB
-            'css' => ['totalSize' => 100 * 1024],
-        ];
+        $dir = $this->createThemeDir('rep', [
+            'css/all.css' => 'a{}',
+            'js/storefront/storefront.js' => 'x',
+        ]);
 
-        $result = $this->invokePrivate('estimateSavings', [$assets, 'js']);
+        $report = $this->analyzer->formatReport($this->analyzer->analyzeThemeDirectory($dir));
 
-        $this->assertEquals('0 KB', $result);
-    }
-
-    public function testEstimateSavingsOverThreshold(): void
-    {
-        $assets = [
-            'javascript' => ['totalSize' => 500 * 1024], // 200 KB over threshold
-            'css' => ['totalSize' => 100 * 1024],
-        ];
-
-        $result = $this->invokePrivate('estimateSavings', [$assets, 'js']);
-
-        // 40% of 500 KB = 200 KB, but diff is 200 KB, so min(200, 200) = 200 KB
-        $this->assertStringContainsString('KB', $result);
-    }
-
-    // =================================================================
-    // formatReport() Tests
-    // =================================================================
-
-    public function testFormatReportContainsAllSections(): void
-    {
-        $analysis = [
-            'themeId' => 'test-theme',
-            'analyzedAt' => '2024-01-15T10:00:00+00:00',
-            'score' => 85,
-            'issues' => [
-                ['severity' => 'medium', 'type' => 'css_size', 'message' => 'CSS too large'],
-            ],
-            'recommendations' => [
-                [
-                    'priority' => 'medium',
-                    'title' => 'Optimize CSS',
-                    'actions' => ['Use PurgeCSS'],
-                    'expectedSavings' => '50 KB',
-                ],
-            ],
-            'assets' => [
-                'javascript' => ['totalSize' => 250000, 'fileCount' => 3],
-                'css' => ['totalSize' => 180000, 'fileCount' => 2],
-                'total' => ['size' => 430000],
-            ],
-        ];
-
-        $result = $this->analyzer->formatReport($analysis);
-
-        $this->assertStringContainsString('Theme Performance Analysis', $result);
-        $this->assertStringContainsString('test-theme', $result);
-        $this->assertStringContainsString('Score: 85/100', $result);
-        $this->assertStringContainsString('Assets', $result);
-        $this->assertStringContainsString('Issues', $result);
-        $this->assertStringContainsString('Recommendations', $result);
-        $this->assertStringContainsString('CSS too large', $result);
-        $this->assertStringContainsString('Optimize CSS', $result);
-        $this->assertStringContainsString('Use PurgeCSS', $result);
-    }
-
-    public function testFormatReportNoIssues(): void
-    {
-        $analysis = [
-            'themeId' => 'perfect-theme',
-            'analyzedAt' => '2024-01-15T10:00:00+00:00',
-            'score' => 100,
-            'issues' => [],
-            'recommendations' => [],
-            'assets' => [
-                'javascript' => ['totalSize' => 150000, 'fileCount' => 2],
-                'css' => ['totalSize' => 80000, 'fileCount' => 1],
-                'total' => ['size' => 230000],
-            ],
-        ];
-
-        $result = $this->analyzer->formatReport($analysis);
-
-        $this->assertStringContainsString('Score: 100/100', $result);
-        // Issues section should not appear if empty
-        $this->assertStringNotContainsString('[HIGH]', $result);
-        $this->assertStringNotContainsString('[MEDIUM]', $result);
+        $this->assertStringContainsString($dir, $report);
+        $this->assertStringContainsString('Einstiegs-JS', $report);
+        $this->assertStringNotContainsString('bundles/storefront', $report);
     }
 }

@@ -4,143 +4,204 @@ declare(strict_types=1);
 
 namespace App\Service;
 
-use Shopware\Core\System\SystemConfig\SystemConfigService;
-use Shopware\Storefront\Theme\ThemeService;
 use Psr\Log\LoggerInterface;
 
 /**
  * Theme Performance Analyzer
  *
- * Analysiert Theme-Assets auf Performance-Probleme und gibt
- * Optimierungsempfehlungen.
+ * Vermisst ein kompiliertes Theme unter public/theme/<prefix>/ — dort legt
+ * theme:compile CSS und JavaScript ab, die die Storefront ausliefert:
+ *
+ *   css/all.css                            gesamtes Theme-CSS, jede Seite
+ *   js/<technical-name>/<name>.js          Einstieg je Theme/Plugin, jede Seite
+ *   js/<technical-name>/<name>.<hash6>.js  Chunk, lädt nur bei Bedarf
+ *
+ * Unter public/bundles/storefront/ liegt kein Storefront-JavaScript.
+ * Gleiche Regeln wie scripts/analyze-bundle.sh.
+ *
+ * @see \Shopware\Storefront\Theme\ThemeCompiler::collectCompiledFiles()
+ * @see \Shopware\Storefront\Theme\ThemeCompiler::copyScriptFilesToTheme()
  */
 class ThemePerformanceAnalyzer
 {
-    // Schwellenwerte für Warnungen
-    private const THRESHOLD_JS_SIZE = 300 * 1024;  // 300 KB
-    private const THRESHOLD_CSS_SIZE = 150 * 1024; // 150 KB
-    private const THRESHOLD_TOTAL_SIZE = 500 * 1024; // 500 KB
+    // Grenzwerte gzip, abgestimmt auf config/lighthouse-budget.json
+    // (Lighthouse zählt übertragene, also komprimierte Bytes)
+    private const THRESHOLD_JS_SIZE = 200 * 1024;    // Einstiegs-JS
+    private const THRESHOLD_CSS_SIZE = 100 * 1024;   // all.css
+    private const THRESHOLD_TOTAL_SIZE = 500 * 1024; // beides zusammen
 
-    // Bekannte "schwere" Bibliotheken
-    private const HEAVY_LIBRARIES = [
-        'jquery' => ['size' => 229000, 'alternative' => 'Vanilla JS (ab SW 6.5 entfernt)'],
-        'flatpickr' => ['size' => 115000, 'alternative' => 'Native date input'],
-        'tiny-slider' => ['size' => 100000, 'alternative' => 'CSS Scroll Snap'],
-        'hammer' => ['size' => 72000, 'alternative' => 'Touch-Events direkt nutzen'],
-    ];
+    // Bibliotheken, die die Storefront als eigenen Chunk ausliefert
+    // (Dateiname storefront.<name>.<hash6>.js, gemessen in 6.6.10.6).
+    // flatpickr hat keinen eigenen Chunk: Es steckt im Chunk des
+    // DatePicker-Plugins (storefront.date-picker.plugin.<hash6>.js).
+    private const LIBRARY_CHUNKS = ['tiny-slider', 'hammer', 'three.module'];
 
     public function __construct(
-        private readonly ThemeService $themeService,
-        private readonly SystemConfigService $configService,
         private readonly string $projectDir,
         private readonly LoggerInterface $logger
-    ) {}
+    ) {
+    }
 
     /**
-     * Vollständige Theme-Analyse durchführen
+     * Neuestes kompiliertes Theme-Verzeichnis (public/theme/<prefix>)
+     */
+    public function findLatestThemeDirectory(): ?string
+    {
+        $candidates = glob($this->projectDir . '/public/theme/*/css/all.css') ?: [];
+        usort($candidates, fn (string $a, string $b) => filemtime($b) <=> filemtime($a));
+
+        return $candidates === [] ? null : \dirname($candidates[0], 2);
+    }
+
+    /**
+     * Vollständige Analyse eines Theme-Verzeichnisses
      *
-     * @param string $themeId
      * @return array{
+     *     themeDir: string,
+     *     analyzedAt: string,
      *     score: int,
-     *     issues: array,
-     *     recommendations: array,
-     *     assets: array
+     *     issues: array<int, array<string, mixed>>,
+     *     recommendations: array<int, array<string, mixed>>,
+     *     libraryChunks: array<int, array<string, mixed>>,
+     *     assets: array<string, mixed>
      * }
      */
-    public function analyzeTheme(string $themeId): array
+    public function analyzeThemeDirectory(string $themeDir): array
     {
-        $this->logger->info('Analyzing theme performance', ['themeId' => $themeId]);
+        if (!is_file($themeDir . '/css/all.css')) {
+            throw new \InvalidArgumentException(sprintf('Keine css/all.css in %s', $themeDir));
+        }
 
-        $assets = $this->collectAssets($themeId);
+        $this->logger->info('Analyzing theme performance', ['themeDir' => $themeDir]);
+
+        $assets = $this->collectAssets($themeDir);
         $issues = $this->detectIssues($assets);
-        $recommendations = $this->generateRecommendations($issues, $assets);
-        $score = $this->calculateScore($issues, $assets);
 
         return [
-            'themeId' => $themeId,
+            'themeDir' => $themeDir,
             'analyzedAt' => (new \DateTimeImmutable())->format('c'),
-            'score' => $score,
+            'score' => $this->calculateScore($issues, $assets),
             'issues' => $issues,
-            'recommendations' => $recommendations,
+            'recommendations' => $this->generateRecommendations($issues, $assets),
+            'libraryChunks' => $this->detectLibraryChunks($assets['chunks']['files']),
             'assets' => $assets,
         ];
     }
 
     /**
-     * Assets sammeln und analysieren
+     * Assets sammeln: Einstiegs-JS, Chunks, CSS
+     *
+     * @return array<string, mixed>
      */
-    private function collectAssets(string $themeId): array
+    private function collectAssets(string $themeDir): array
     {
-        $bundlePath = $this->projectDir . '/public/bundles/storefront';
+        $entries = [];
+        $chunks = [];
 
-        $jsFiles = $this->scanDirectory($bundlePath . '/js', '*.js');
-        $cssFiles = $this->scanDirectory($bundlePath . '/css', '*.css');
+        foreach ($this->scanDirectory($themeDir . '/js', 'js') as $file) {
+            if ($this->isChunk($file['name'])) {
+                $chunks[] = $file;
+            } else {
+                $entries[] = $file;
+            }
+        }
+
+        $cssFiles = $this->scanDirectory($themeDir . '/css', 'css');
 
         return [
-            'javascript' => [
-                'files' => $jsFiles,
-                'totalSize' => array_sum(array_column($jsFiles, 'size')),
-                'fileCount' => count($jsFiles),
-            ],
-            'css' => [
-                'files' => $cssFiles,
-                'totalSize' => array_sum(array_column($cssFiles, 'size')),
-                'fileCount' => count($cssFiles),
-            ],
+            'javascript' => $this->summarize($entries),
+            'chunks' => $this->summarize($chunks),
+            'css' => $this->summarize($cssFiles),
             'total' => [
-                'size' => array_sum(array_column($jsFiles, 'size')) +
-                          array_sum(array_column($cssFiles, 'size')),
+                'gzipSize' => array_sum(array_column($entries, 'gzipSize'))
+                    + array_sum(array_column($cssFiles, 'gzipSize')),
             ],
         ];
     }
 
     /**
-     * Verzeichnis scannen
+     * Webpack benennt Chunks im Production-Build [name].[chunkhash:6].js
      */
-    private function scanDirectory(string $path, string $pattern): array
+    private function isChunk(string $fileName): bool
+    {
+        return preg_match('/\.[0-9a-f]{6}\.js$/', $fileName) === 1;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $files
+     *
+     * @return array<string, mixed>
+     */
+    private function summarize(array $files): array
+    {
+        return [
+            'files' => $files,
+            'totalSize' => array_sum(array_column($files, 'size')),
+            'gzipSize' => array_sum(array_column($files, 'gzipSize')),
+            'fileCount' => \count($files),
+        ];
+    }
+
+    /**
+     * Verzeichnis rekursiv scannen (JS liegt in js/<technical-name>/)
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function scanDirectory(string $path, string $extension): array
     {
         if (!is_dir($path)) {
             return [];
         }
 
         $files = [];
-        $iterator = new \GlobIterator($path . '/' . $pattern);
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($path, \FilesystemIterator::SKIP_DOTS)
+        );
 
         foreach ($iterator as $file) {
-            $content = file_get_contents($file->getPathname());
-            $libraries = $this->detectLibraries($content);
+            if (!$file->isFile() || $file->getExtension() !== $extension) {
+                continue;
+            }
+
+            $content = (string) file_get_contents($file->getPathname());
 
             $files[] = [
                 'name' => $file->getFilename(),
                 'path' => $file->getPathname(),
                 'size' => $file->getSize(),
                 'sizeFormatted' => $this->formatBytes($file->getSize()),
-                'gzipSize' => strlen(gzencode($content, 9)),
-                'libraries' => $libraries,
+                'gzipSize' => \strlen((string) gzencode($content, 9)),
             ];
         }
 
         // Nach Grösse sortieren (grösste zuerst)
-        usort($files, fn($a, $b) => $b['size'] <=> $a['size']);
+        usort($files, fn ($a, $b) => $b['size'] <=> $a['size']);
 
         return $files;
     }
 
     /**
-     * Bibliotheken im Code erkennen
+     * Bibliotheks-Chunks erkennen — Info, kein Problem: Sie laden nur
+     * auf Seiten, deren Plugin sie braucht.
+     *
+     * @param list<array<string, mixed>> $chunks
+     *
+     * @return list<array<string, mixed>>
      */
-    private function detectLibraries(string $content): array
+    private function detectLibraryChunks(array $chunks): array
     {
         $detected = [];
 
-        foreach (self::HEAVY_LIBRARIES as $lib => $info) {
-            // Einfache Erkennung (kann verfeinert werden)
-            if (stripos($content, $lib) !== false) {
-                $detected[] = [
-                    'name' => $lib,
-                    'estimatedSize' => $info['size'],
-                    'alternative' => $info['alternative'],
-                ];
+        foreach ($chunks as $chunk) {
+            foreach (self::LIBRARY_CHUNKS as $library) {
+                if (str_contains($chunk['name'], '.' . $library . '.')) {
+                    $detected[] = [
+                        'library' => $library,
+                        'file' => $chunk['name'],
+                        'size' => $chunk['size'],
+                        'gzipSize' => $chunk['gzipSize'],
+                    ];
+                }
             }
         }
 
@@ -148,70 +209,45 @@ class ThemePerformanceAnalyzer
     }
 
     /**
-     * Probleme erkennen
+     * Probleme erkennen: nur, was jede Seite lädt, zählt gegen das Budget
+     *
+     * @param array<string, mixed> $assets
+     *
+     * @return list<array<string, mixed>>
      */
     private function detectIssues(array $assets): array
     {
         $issues = [];
 
-        // JavaScript zu gross
-        if ($assets['javascript']['totalSize'] > self::THRESHOLD_JS_SIZE) {
+        if ($assets['javascript']['gzipSize'] > self::THRESHOLD_JS_SIZE) {
             $issues[] = [
                 'severity' => 'high',
                 'type' => 'js_size',
                 'message' => sprintf(
-                    'JavaScript Bundle zu gross: %s (Limit: %s)',
-                    $this->formatBytes($assets['javascript']['totalSize']),
+                    'Einstiegs-JavaScript zu gross: %s gzip (Limit: %s)',
+                    $this->formatBytes($assets['javascript']['gzipSize']),
                     $this->formatBytes(self::THRESHOLD_JS_SIZE)
                 ),
                 'details' => [
-                    'current' => $assets['javascript']['totalSize'],
+                    'current' => $assets['javascript']['gzipSize'],
                     'threshold' => self::THRESHOLD_JS_SIZE,
                 ],
             ];
         }
 
-        // CSS zu gross
-        if ($assets['css']['totalSize'] > self::THRESHOLD_CSS_SIZE) {
+        if ($assets['css']['gzipSize'] > self::THRESHOLD_CSS_SIZE) {
             $issues[] = [
                 'severity' => 'medium',
                 'type' => 'css_size',
                 'message' => sprintf(
-                    'CSS Bundle zu gross: %s (Limit: %s)',
-                    $this->formatBytes($assets['css']['totalSize']),
+                    'all.css zu gross: %s gzip (Limit: %s)',
+                    $this->formatBytes($assets['css']['gzipSize']),
                     $this->formatBytes(self::THRESHOLD_CSS_SIZE)
                 ),
-            ];
-        }
-
-        // Schwere Bibliotheken
-        foreach ($assets['javascript']['files'] as $file) {
-            foreach ($file['libraries'] as $lib) {
-                $issues[] = [
-                    'severity' => 'medium',
-                    'type' => 'heavy_library',
-                    'message' => sprintf(
-                        'Schwere Bibliothek gefunden: %s (~%s)',
-                        $lib['name'],
-                        $this->formatBytes($lib['estimatedSize'])
-                    ),
-                    'details' => [
-                        'library' => $lib['name'],
-                        'alternative' => $lib['alternative'],
-                    ],
-                ];
-            }
-        }
-
-        // Zu viele separate Dateien (HTTP/2 hilft, aber trotzdem prüfen)
-        if ($assets['javascript']['fileCount'] > 10) {
-            $issues[] = [
-                'severity' => 'low',
-                'type' => 'too_many_files',
-                'message' => sprintf(
-                    '%d separate JS-Dateien. Erwäge Code-Splitting Optimierung.',
-                    $assets['javascript']['fileCount']
-                ),
+                'details' => [
+                    'current' => $assets['css']['gzipSize'],
+                    'threshold' => self::THRESHOLD_CSS_SIZE,
+                ],
             ];
         }
 
@@ -219,7 +255,12 @@ class ThemePerformanceAnalyzer
     }
 
     /**
-     * Empfehlungen generieren
+     * Empfehlungen zu den gefundenen Problemen
+     *
+     * @param list<array<string, mixed>> $issues
+     * @param array<string, mixed>       $assets
+     *
+     * @return list<array<string, mixed>>
      */
     private function generateRecommendations(array $issues, array $assets): array
     {
@@ -230,59 +271,43 @@ class ThemePerformanceAnalyzer
                 case 'js_size':
                     $recommendations[] = [
                         'priority' => 'high',
-                        'title' => 'JavaScript Bundle reduzieren',
+                        'title' => 'Einstiegs-JavaScript reduzieren',
                         'actions' => [
-                            'Nicht benötigte Plugins mit PluginManager.deregister() entfernen',
-                            'Selektive Bootstrap JS Imports verwenden',
-                            'Async/Dynamic Imports für selten genutzte Features',
-                            'Tree-Shaking aktivieren (Vite ab SW 6.7)',
+                            'Jedes aktive Plugin mit JavaScript bringt eine eigene Einstiegsdatei: unnötige Plugins deaktivieren',
+                            'Eigene Plugins mit PluginManager.register(name, () => import(...), selector) registrieren',
+                            'Zusammensetzung prüfen: scripts/analyze-bundle.sh --stats',
                         ],
-                        'expectedSavings' => $this->estimateSavings($assets, 'js'),
+                        'overBudget' => $this->overBudget($assets, 'js'),
                     ];
                     break;
 
                 case 'css_size':
                     $recommendations[] = [
                         'priority' => 'medium',
-                        'title' => 'CSS Bundle optimieren',
+                        'title' => 'all.css verkleinern',
                         'actions' => [
-                            '@StorefrontBootstrap statt @Storefront verwenden',
-                            'Bootstrap Komponenten selektiv importieren',
-                            'PurgeCSS für ungenutztes CSS',
-                            'Critical CSS für Above-the-Fold implementieren',
+                            '@StorefrontBootstrap statt @Storefront prüfen (lässt den Shopware-Skin weg)',
+                            'Critical CSS inline, all.css asynchron laden',
                         ],
-                        'expectedSavings' => $this->estimateSavings($assets, 'css'),
-                    ];
-                    break;
-
-                case 'heavy_library':
-                    $recommendations[] = [
-                        'priority' => 'medium',
-                        'title' => sprintf('Alternative für %s prüfen', $issue['details']['library']),
-                        'actions' => [
-                            $issue['details']['alternative'],
-                            'Lazy Loading implementieren wenn Bibliothek benötigt',
-                        ],
-                        'expectedSavings' => $this->formatBytes(
-                            self::HEAVY_LIBRARIES[$issue['details']['library']]['size'] ?? 0
-                        ),
+                        'overBudget' => $this->overBudget($assets, 'css'),
                     ];
                     break;
             }
         }
 
-        // Deduplizieren
         return $this->deduplicateRecommendations($recommendations);
     }
 
     /**
-     * Performance-Score berechnen (0-100)
+     * Performance-Score (0-100): Abzüge je Problem und für das Gesamtbudget
+     *
+     * @param list<array<string, mixed>> $issues
+     * @param array<string, mixed>       $assets
      */
     private function calculateScore(array $issues, array $assets): int
     {
         $score = 100;
 
-        // Punktabzug für Issues
         foreach ($issues as $issue) {
             switch ($issue['severity']) {
                 case 'high':
@@ -297,36 +322,34 @@ class ThemePerformanceAnalyzer
             }
         }
 
-        // Punktabzug für Grösse
-        if ($assets['total']['size'] > self::THRESHOLD_TOTAL_SIZE) {
-            $overPercent = (($assets['total']['size'] - self::THRESHOLD_TOTAL_SIZE)
+        if ($assets['total']['gzipSize'] > self::THRESHOLD_TOTAL_SIZE) {
+            $overPercent = (($assets['total']['gzipSize'] - self::THRESHOLD_TOTAL_SIZE)
                            / self::THRESHOLD_TOTAL_SIZE) * 100;
             $score -= min($overPercent, 30);
         }
 
-        return max(0, min(100, (int)$score));
+        return max(0, min(100, (int) $score));
     }
 
     /**
-     * Geschätzte Einsparungen
+     * Um wie viel das Budget überschritten ist (gzip) — gemessen, nicht geschätzt
+     *
+     * @param array<string, mixed> $assets
      */
-    private function estimateSavings(array $assets, string $type): string
+    private function overBudget(array $assets, string $type): string
     {
-        $current = $assets[$type === 'js' ? 'javascript' : 'css']['totalSize'];
+        $current = $assets[$type === 'js' ? 'javascript' : 'css']['gzipSize'];
         $target = $type === 'js' ? self::THRESHOLD_JS_SIZE : self::THRESHOLD_CSS_SIZE;
 
-        if ($current <= $target) {
-            return '0 KB';
-        }
-
-        // Konservative Schätzung: 40% Reduktion möglich
-        $savings = min($current - $target, $current * 0.4);
-
-        return $this->formatBytes((int)$savings);
+        return $this->formatBytes(max(0, $current - $target));
     }
 
     /**
-     * Doppelte Empfehlungen entfernen
+     * Doppelte Empfehlungen entfernen, nach Priorität sortieren
+     *
+     * @param list<array<string, mixed>> $recommendations
+     *
+     * @return list<array<string, mixed>>
      */
     private function deduplicateRecommendations(array $recommendations): array
     {
@@ -341,18 +364,15 @@ class ThemePerformanceAnalyzer
             }
         }
 
-        // Nach Priorität sortieren
         usort($unique, function ($a, $b) {
             $priority = ['high' => 0, 'medium' => 1, 'low' => 2];
+
             return $priority[$a['priority']] <=> $priority[$b['priority']];
         });
 
         return $unique;
     }
 
-    /**
-     * Bytes formatieren
-     */
     private function formatBytes(int $bytes): string
     {
         if ($bytes < 1024) {
@@ -367,39 +387,45 @@ class ThemePerformanceAnalyzer
     }
 
     /**
-     * CLI-freundliche Ausgabe generieren
+     * CLI-freundliche Ausgabe
+     *
+     * @param array<string, mixed> $analysis
      */
     public function formatReport(array $analysis): string
     {
+        $assets = $analysis['assets'];
         $output = [];
         $output[] = str_repeat('=', 60);
         $output[] = '  Theme Performance Analysis';
         $output[] = str_repeat('=', 60);
         $output[] = '';
-        $output[] = sprintf('Theme: %s', $analysis['themeId']);
+        $output[] = sprintf('Theme-Verzeichnis: %s', $analysis['themeDir']);
         $output[] = sprintf('Score: %d/100', $analysis['score']);
         $output[] = sprintf('Analyzed: %s', $analysis['analyzedAt']);
         $output[] = '';
 
-        // Assets
-        $output[] = '--- Assets ---';
+        $output[] = '--- Jede Seite (gzip) ---';
         $output[] = sprintf(
-            'JavaScript: %s (%d files)',
-            $this->formatBytes($analysis['assets']['javascript']['totalSize']),
-            $analysis['assets']['javascript']['fileCount']
+            'Einstiegs-JS: %s (%d Dateien)',
+            $this->formatBytes($assets['javascript']['gzipSize']),
+            $assets['javascript']['fileCount']
         );
+        $output[] = sprintf('CSS: %s', $this->formatBytes($assets['css']['gzipSize']));
         $output[] = sprintf(
-            'CSS: %s (%d files)',
-            $this->formatBytes($analysis['assets']['css']['totalSize']),
-            $analysis['assets']['css']['fileCount']
-        );
-        $output[] = sprintf(
-            'Total: %s',
-            $this->formatBytes($analysis['assets']['total']['size'])
+            'Chunks bei Bedarf: %d Dateien, %s gzip',
+            $assets['chunks']['fileCount'],
+            $this->formatBytes($assets['chunks']['gzipSize'])
         );
         $output[] = '';
 
-        // Issues
+        if (!empty($analysis['libraryChunks'])) {
+            $output[] = '--- Bibliotheken als Chunk (laden nur bei Bedarf) ---';
+            foreach ($analysis['libraryChunks'] as $lib) {
+                $output[] = sprintf('%s: %s gzip (%s)', $lib['library'], $this->formatBytes($lib['gzipSize']), $lib['file']);
+            }
+            $output[] = '';
+        }
+
         if (!empty($analysis['issues'])) {
             $output[] = '--- Issues ---';
             foreach ($analysis['issues'] as $issue) {
@@ -408,7 +434,6 @@ class ThemePerformanceAnalyzer
             $output[] = '';
         }
 
-        // Recommendations
         if (!empty($analysis['recommendations'])) {
             $output[] = '--- Recommendations ---';
             foreach ($analysis['recommendations'] as $rec) {
@@ -416,7 +441,7 @@ class ThemePerformanceAnalyzer
                 foreach ($rec['actions'] as $action) {
                     $output[] = sprintf('    - %s', $action);
                 }
-                $output[] = sprintf('    Expected savings: %s', $rec['expectedSavings']);
+                $output[] = sprintf('    Über Budget: %s', $rec['overBudget']);
                 $output[] = '';
             }
         }
