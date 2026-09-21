@@ -1,60 +1,50 @@
 # Kapitel 3: Core Web Vitals messen und optimieren
 
-Code-Beispiele und Tools für Tag 1-2 der 30-Tage-Roadmap.
+Code-Beispiele für Tag 1-2 der 30-Tage-Roadmap. Getestet gegen Shopware 6.6.10.6 (Dockware, prod) mit Chromium.
 
 ## Dateien
 
 | Datei | Beschreibung |
 |-------|--------------|
-| `scripts/cwv-diagnostics.js` | JavaScript-Snippets für DevTools-Console |
-| `templates/lcp-priority.html.twig` | Twig-Template für LCP-Bildpriorisierung |
-| `templates/font-preload.html.twig` | Font-Preloading Template |
-| `templates/third-party-lazy.html.twig` | Lazy Loading für Third-Party Scripts |
-| `.github/workflows/lighthouse.yml` | GitHub Actions für automatisierte Tests |
-| `lighthouserc.json` | Lighthouse CI Konfiguration |
+| `scripts/cwv-diagnostics.js` | Snippets für die DevTools-Console: LCP-Element, Layout Shifts, langsame Interaktionen (INP), grösste Ressourcen |
+| `src/Resources/views/storefront/element/cms-element-image.html.twig` | Erstes CMS-Bild der Seite mit `loading="eager"` + `fetchpriority="high"`, alle anderen bleiben lazy |
+| `src/Resources/views/storefront/layout/meta.html.twig` | Preload der Inter-Datei, die das Storefront-CSS nutzt |
+| `src/Resources/views/storefront/base.html.twig` | Drittanbieter-Skript (z. B. Chat) erst bei Interaktion oder nach 5 s laden |
+| `lighthouserc.json` | Lighthouse-CI-Konfiguration (mobil) |
+| `.github/workflows/lighthouse.yml` | GitHub-Actions-Workflow für Lighthouse CI |
+
+Die drei Twig-Dateien sind Overrides je eines Storefront-Templates. Sie gehören in Ihr Theme oder Plugin unter denselben Pfad (`src/Resources/views/storefront/…`), danach `bin/console cache:clear`. Sie sind unabhängig voneinander.
 
 ## Verwendung
 
 ### DevTools-Diagnose
 
-Öffnen Sie Chrome DevTools (F12) → Console und fügen Sie die Snippets ein:
-
-```javascript
-// LCP-Element finden
-// Kopieren Sie den Inhalt von scripts/cwv-diagnostics.js
-```
+Chrome DevTools (F12) → Console, eine Funktion aus `scripts/cwv-diagnostics.js` samt Aufruf einfügen. Die Werte gelten für diesen einen Aufruf in Ihrem Browser (Labordaten). Was Google bewertet, ist das 75. Perzentil echter Besuche über 28 Tage.
 
 ### Lighthouse CI
 
 ```bash
-# Lokal testen
-npm install -g @lhci/cli
-lhci autorun --config=lighthouserc.json
-
-# Oder via GitHub Actions (automatisch bei Push)
+npm install -g @lhci/cli@0.15.1
+lhci autorun --config=lighthouserc.json --collect.url=https://ihr-shop.ch/
 ```
+
+`@lhci/cli` 0.15.1 bringt Lighthouse 12.6.1 mit, nicht die Version der aktuellen DevTools. Die Konfiguration misst mobil und bricht ab, wenn das LCP-Bild lazy geladen wird (`lcp-lazy-loaded`) oder CLS über 0,1 liegt; LCP und TBT sind nur Warnungen, weil die simulierte Drosselung von Lighthouse sie stark streuen lässt. Berichte landen in `./lhci-reports`, nicht öffentlich.
 
 ## Core Web Vitals Zielwerte
 
 | Metrik | Gut | Verbesserungswürdig | Schlecht |
 |--------|-----|---------------------|----------|
-| LCP | < 2,5s | 2,5-4,0s | > 4,0s |
-| INP | < 200ms | 200-500ms | > 500ms |
-| CLS | < 0,1 | 0,1-0,25 | > 0,25 |
+| LCP | ≤ 2,5 s | > 2,5 s bis 4,0 s | > 4,0 s |
+| INP | ≤ 200 ms | > 200 ms bis 500 ms | > 500 ms |
+| CLS | ≤ 0,1 | > 0,1 bis 0,25 | > 0,25 |
 
-## Quick Wins Checkliste
-
-- [ ] `fetchpriority="high"` für LCP-Bilder
-- [ ] Alle Bilder haben `width` und `height`
-- [ ] `font-display: swap` für Web Fonts
-- [ ] Third-Party Scripts verzögert laden
-- [ ] Google Fonts mit Preconnect oder selbst gehostet
+Bewertet wird jeweils das 75. Perzentil der Seitenaufrufe.
 
 ## Statistiken (Web Almanac 2024)
 
-- 73% mobile / 83% desktop: LCP-Element ist ein Bild
-- 59% mobile / 72% desktop: Haben gutes LCP
-- 16% der Seiten laden LCP-Bild lazy (Anti-Pattern!)
+- 73 % mobil / 83 % Desktop: Das LCP-Element ist ein Bild
+- 59 % mobil / 74 % Desktop: gutes LCP
+- 16 % der mobilen Seiten mit Bild als LCP laden dieses Bild lazy
 
 ## Quellen
 
