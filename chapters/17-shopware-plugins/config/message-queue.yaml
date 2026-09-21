@@ -26,9 +26,10 @@ shopware:
     # mit AsyncMessageInterface zusätzlich in async und wird
     # zweimal verarbeitet.
     #
-    # Beispiel: Produkt-Indexing hinter async einreihen. Folge: Bei
-    # vollem async-Transport kommen Preis- und Verfügbarkeitsdaten
-    # im Listing später an - für grosse Importe gewollt, sonst prüfen.
+    # Beispiel: Produkt-Indexing hinter async einreihen. Betrifft nur
+    # Indexing über die Queue (etwa dal:refresh:index --use-queue).
+    # Folge: Solange async voll ist, kommen Preis und Bestand
+    # (cheapest-price, stock) im Listing später an.
     messenger:
         routing_overwrite:
             'Shopware\Core\Content\Product\DataAbstractionLayer\ProductIndexingMessage': low_priority
