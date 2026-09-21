@@ -50,3 +50,7 @@ composer.lock
 # Generiertes Artefakt von chapters/18-shopware-elasticsearch/scripts/extract-dictionary.sh
 de_dictionary.txt
 de_dictionary.txt.part
+
+# Kapitel 16: erzeugt von extract-critical-css.sh bzw. bin/build-storefront.sh
+chapters/16-shopware-themes/PerformanceTheme/src/Resources/views/storefront/critical/
+chapters/16-shopware-themes/PerformanceTheme/src/Resources/app/storefront/dist/

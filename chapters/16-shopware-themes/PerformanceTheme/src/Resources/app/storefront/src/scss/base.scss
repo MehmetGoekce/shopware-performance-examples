@@ -1,0 +1,17 @@
+// ============================================================
+// base.scss — eigene Styles nach @Storefront
+// ============================================================
+//
+// Hier sind Bootstrap- und Shopware-Variablen und -Mixins bereits
+// verfügbar, weil "@Storefront" in theme.json davor steht.
+//
+// Bootstrap NICHT erneut importieren: "@Storefront" bringt es schon mit.
+// `@import "~bootstrap/scss/grid"` bricht theme:compile ab (Shopware
+// kennt nur die Resolve-Zuordnung "vendor"), `~vendor/bootstrap/...`
+// kompiliert, liefert den Grid aber ein zweites Mal aus.
+
+@include media-breakpoint-up(lg) {
+    .cms-section-default .cms-block {
+        margin-bottom: $spacer * 2;
+    }
+}

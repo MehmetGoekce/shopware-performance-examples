@@ -1,0 +1,21 @@
+{#
+    sw_extends: nur den Block ersetzen, der sich ändern soll
+
+    Das Logo steht in layout/header/logo.html.twig. Überschrieben wird
+    nur das <img>; Link, <picture> und die <source>-Varianten für
+    Tablet und Mobil bleiben aus dem Original.
+
+    width/height geben dem Browser das Seitenverhältnis, bevor das Bild
+    geladen ist. Die Werte müssen zu Ihrem Logo passen.
+#}
+{% sw_extends '@Storefront/storefront/layout/header/logo.html.twig' %}
+
+{% block layout_header_logo_image_default %}
+    {% if theme_config('sw-logo-desktop') %}
+        <img src="{{ theme_config('sw-logo-desktop')|sw_encode_url }}"
+             alt="{{ 'header.logoLink'|trans|striptags }}"
+             class="img-fluid header-logo-main-img"
+             width="300"
+             height="60">
+    {% endif %}
+{% endblock %}

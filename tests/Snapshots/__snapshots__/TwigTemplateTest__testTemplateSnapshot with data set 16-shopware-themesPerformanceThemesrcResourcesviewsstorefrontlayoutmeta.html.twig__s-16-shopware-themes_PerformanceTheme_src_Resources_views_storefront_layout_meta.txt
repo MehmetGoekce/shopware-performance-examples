@@ -1,0 +1,33 @@
+{#
+    Critical CSS inline, all.css asynchron
+
+    Shopware bindet das Theme-CSS im Block layout_head_stylesheet ein
+    (layout/meta.html.twig), nicht in base.html.twig. Einen unbekannten
+    Block überschreibt Twig ohne Fehlermeldung: Der Code erscheint dann
+    einfach nicht.
+
+    Die Datei critical/critical.css.twig schreibt
+    scripts/extract-critical-css.sh. Erst danach den Schalter
+    «criticalCss» in der Theme-Konfiguration einschalten.
+#}
+{% sw_extends '@Storefront/storefront/layout/meta.html.twig' %}
+
+{% block layout_head_stylesheet %}
+    {% if isHMRMode or not theme_config('criticalCss') %}
+        {{ parent() }}
+    {% else %}
+        <style>
+            {% sw_include '@PerformanceTheme/storefront/critical/critical.css.twig' ignore missing %}
+        </style>
+
+        {% for file in theme_config('assets.css') %}
+            <link rel="preload"
+                  href="{{ asset(file, 'theme') }}"
+                  as="style"
+                  onload="this.onload=null;this.rel='stylesheet'">
+            <noscript>
+                <link rel="stylesheet" href="{{ asset(file, 'theme') }}">
+            </noscript>
+        {% endfor %}
+    {% endif %}
+{% endblock %}

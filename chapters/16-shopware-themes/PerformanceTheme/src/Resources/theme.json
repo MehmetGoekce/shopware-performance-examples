@@ -1,0 +1,38 @@
+{
+  "name": "PerformanceTheme",
+  "author": "MEMOTECH",
+  "views": [
+    "@Storefront",
+    "@Plugins",
+    "@PerformanceTheme"
+  ],
+  "style": [
+    "app/storefront/src/scss/overrides.scss",
+    "@Storefront",
+    "app/storefront/src/scss/base.scss"
+  ],
+  "script": [
+    "@Storefront",
+    "app/storefront/dist/storefront/js/performance-theme/performance-theme.js"
+  ],
+  "asset": [
+    "@Storefront"
+  ],
+  "config": {
+    "fields": {
+      "criticalCss": {
+        "label": {
+          "en-GB": "Inline critical CSS, load all.css asynchronously",
+          "de-DE": "Critical CSS inline, all.css asynchron laden"
+        },
+        "type": "switch",
+        "value": false,
+        "editable": true,
+        "helpText": {
+          "en-GB": "Only switch on after scripts/extract-critical-css.sh has written views/storefront/critical/critical.css.twig.",
+          "de-DE": "Erst einschalten, wenn scripts/extract-critical-css.sh die Datei views/storefront/critical/critical.css.twig geschrieben hat."
+        }
+      }
+    }
+  }
+}

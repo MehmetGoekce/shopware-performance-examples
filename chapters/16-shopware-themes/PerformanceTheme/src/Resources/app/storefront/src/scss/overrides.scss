@@ -1,0 +1,22 @@
+// ============================================================
+// overrides.scss — Bootstrap-Variablen vor @Storefront setzen
+// ============================================================
+//
+// Diese Datei steht in theme.json VOR "@Storefront". Nur dann greifen
+// die Werte: Bootstrap deklariert seine Variablen mit !default und
+// übernimmt einen Wert, der schon gesetzt ist. Steht die Datei hinter
+// "@Storefront", ist Bootstrap bereits kompiliert und der Wert wirkungslos.
+//
+// Nur Variablen, kein CSS (Warnung der Shopware-Doku): Beim Watcher
+// fügt Webpack diese Datei dynamisch ein, Selektoren landen dann
+// mehrfach im Build.
+//
+// Die Markenfarben aus der Theme-Konfiguration ($sw-color-brand-primary
+// usw.) verwendet der Shopware-Skin direkt. $primary ändert Bootstrap-
+// Komponenten, nicht jede blaue Stelle des Skins.
+//
+// @see https://developer.shopware.com/docs/guides/plugins/themes/styling/override-bootstrap-variables-in-a-theme.html
+
+$primary: #1a73e8;
+$border-radius: 0.375rem;
+$font-family-base: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;

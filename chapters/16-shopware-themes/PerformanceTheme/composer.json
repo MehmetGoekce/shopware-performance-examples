@@ -1,0 +1,23 @@
+{
+  "name": "memotech/performance-theme",
+  "description": "Kapitel 16: Theme mit Variablen-Overrides, asynchron registriertem Plugin und Critical CSS",
+  "type": "shopware-platform-plugin",
+  "license": "MIT",
+  "version": "1.0.0",
+  "require": {
+    "shopware/core": "~6.6.0 || ~6.7.0",
+    "shopware/storefront": "~6.6.0 || ~6.7.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "PerformanceTheme\\": "src/"
+    }
+  },
+  "extra": {
+    "shopware-plugin-class": "PerformanceTheme\\PerformanceTheme",
+    "label": {
+      "de-DE": "Performance Theme (Kapitel 16)",
+      "en-GB": "Performance Theme (chapter 16)"
+    }
+  }
+}

@@ -34,6 +34,9 @@ parameters:
         # Controllers not in standard Controller/ directory
         - chapters/12-real-user-monitoring/src/RumController.php
 
+        # Theme-Plugin-Klasse (Shopware Plugin + ThemeInterface)
+        - chapters/16-shopware-themes/PerformanceTheme/src/PerformanceTheme.php
+
     reportUnmatchedIgnoredErrors: false
 
     ignoreErrors:
