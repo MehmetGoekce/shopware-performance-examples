@@ -30,7 +30,8 @@ Als der Benutzer aufrufen, unter dem der Shop läuft:
 ```bash
 sudo -u www-data ./chapters/02-performance-audit/scripts/audit.sh /var/www/shopware
 
-# Mit Abruf-Test gegen die laufende Seite (zwei Abrufe als Gast, Age > 0 = Treffer)
+# Mit Abruf-Test gegen die laufende Seite (zwei Abrufe als Gast; Treffer, wenn Age
+# um mindestens die Pause wächst - beim MISS steht in Age die Renderdauer)
 SHOP_URL=https://ihr-shop.ch sudo -E -u www-data \
   ./chapters/02-performance-audit/scripts/audit.sh /var/www/shopware
 ```

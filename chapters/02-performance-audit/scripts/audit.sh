@@ -12,7 +12,9 @@
 #   2. Plugins: aktive Plugins über plugin:list --json.
 #      plugin:list --active gibt es nicht, plugin:list | wc -l zählt Tabellenrahmen.
 #   3. HTTP-Cache: SHOPWARE_HTTP_CACHE_ENABLED/_DEFAULT_TTL über debug:dotenv,
-#      mit SHOP_URL zusätzlich ein Abruf-Test als Gast (Age > 0 = Treffer).
+#      mit SHOP_URL zusätzlich zwei Abrufe als Gast. Treffer = Age wächst um
+#      mindestens die Pause. Age > 0 allein reicht nicht: Symfony setzt beim
+#      Speichern Age = Renderdauer in Sekunden, ein langsamer MISS hat Age 1..n.
 #      debug:config bricht in APP_ENV=prod mit "frozen ParameterBag" ab.
 #   4. OPcache der FPM-SAPI über php-fpmX.Y -i. php -i liest die CLI-Konfiguration.
 #   5. Message Queue: laufende CLI-Worker, Admin-Worker-Schalter, messenger:stats.
@@ -21,8 +23,8 @@
 #
 # Umgebungsvariablen:
 #   SHOP_URL        Basis-URL für den Abruf-Test (Default: leer = kein Test)
-#   AUDIT_WAIT      Pause zwischen den beiden Abrufen in Sekunden (Default: 2,
-#                   damit Age bei einem Treffer mindestens 1 ist)
+#   AUDIT_WAIT      Pause zwischen den beiden Abrufen in ganzen Sekunden
+#                   (Default: 2, mindestens 1)
 #   IMAGE_MIN_KB    Schwelle für grosse Bilder in KB (Default: 500)
 #   PHP_FPM_CMD     FPM-Binary; leer = alle php-fpm* unter /usr/sbin, /usr/local/sbin
 #   CONSOLE_CMD, PHP_CMD, CURL_CMD, REDIS_CLI_CMD, PGREP_CMD
@@ -54,6 +56,11 @@ show_usage() {
     echo "  sudo -u www-data $0 /var/www/shopware"
     echo "  SHOP_URL=https://ihr-shop.ch sudo -E -u www-data $0 /var/www/shopware"
 }
+
+if ! [[ "${AUDIT_WAIT}" =~ ^[0-9]+$ ]] || [[ "${AUDIT_WAIT}" -lt 1 ]]; then
+    echo "Fehler: AUDIT_WAIT muss eine ganze Zahl >= 1 sein: ${AUDIT_WAIT}" >&2
+    exit 2
+fi
 
 SHOPWARE_ROOT="."
 case "$#" in
@@ -157,18 +164,21 @@ echo "Container-Umgebung), gilt dort ein anderer Wert - der Abruf-Test zeigt die
 
 if [[ -n "${SHOP_URL}" ]]; then
     url="${SHOP_URL%/}/"
-    age=""
+    ages=()
     for i in 1 2; do
         sleep "${AUDIT_WAIT}"
         headers=$("${CURL[@]}" -s -o /dev/null -D - -w 'ttfb: %{time_starttransfer}\n' "$url" 2>/dev/null) || headers=""
         ttfb=$(awk 'tolower($1) == "ttfb:" { print $2; exit }' <<< "$headers")
         age=$(awk 'tolower($1) == "age:" { gsub(/\r/, "", $2); print $2; exit }' <<< "$headers")
         echo "Abruf ${i} (Gast, ohne Cookies): TTFB ${ttfb:-?} s, Age ${age:--}"
+        ages+=("${age}")
     done
-    if [[ "${age}" =~ ^[0-9]+$ && "${age}" -gt 0 ]]; then
-        echo "Treffer: der zweite Abruf kam aus dem Cache."
+    if [[ "${ages[0]}" =~ ^[0-9]+$ && "${ages[1]}" =~ ^[0-9]+$ ]] \
+        && [[ $((ages[1] - ages[0])) -ge "${AUDIT_WAIT}" ]]; then
+        echo "Treffer: Age ist um mindestens die Pause (${AUDIT_WAIT} s) gewachsen."
     else
-        echo "Kein Treffer erkennbar. Age: 0 allein ist kein Treffer."
+        echo "Kein Treffer erkennbar. Age > 0 allein ist kein Treffer: beim MISS"
+        echo "steht dort die Renderdauer in Sekunden."
         echo "Details: Kapitel 6, scripts/cache-debug.sh"
     fi
 else

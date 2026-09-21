@@ -78,7 +78,7 @@ EOF
     export PHP_FPM_CMD="$TMP/fpm"
     export PGREP_CMD="$TMP/pgrep"
     export REDIS_CLI_CMD="no-such-redis-cli"
-    export AUDIT_WAIT=0
+    export AUDIT_WAIT=1
 }
 
 teardown() {
@@ -183,27 +183,44 @@ code_lines() {
     [ "$output" = "0" ]
 }
 
-@test "audit.sh reports a cache hit when Age is above 0 on the second request" {
+# curl-Stub: Age-Werte je Abruf aus $FIX/ages (eine Zeile je Abruf)
+age_curl() {
+    printf '%s\n' "$@" > "$FIX/ages"
     cat > "$TMP/curl" <<'EOF'
 #!/bin/bash
 n=$(( $(cat "$FIX/calls" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$FIX/calls"
-printf 'HTTP/1.1 200 OK\r\ncache-control: no-cache, private\r\nage: %s\r\n\r\nttfb: 0.010\n' "$(( n - 1 ))"
+printf 'HTTP/1.1 200 OK\r\ncache-control: no-cache, private\r\nage: %s\r\n\r\nttfb: 0.010\n' "$(sed -n "${n}p" "$FIX/ages")"
 EOF
     chmod +x "$TMP/curl"
-    CURL_CMD="$TMP/curl" SHOP_URL="http://shop.test" run "$DIR/audit.sh" "$TMP/shop"
-    [[ "$output" == *"Abruf 2 (Gast, ohne Cookies): TTFB 0.010 s, Age 1"* ]]
-    [[ "$output" == *"Treffer: der zweite Abruf kam aus dem Cache."* ]]
+}
+
+@test "audit.sh reports a hit when Age grows by at least the pause" {
+    age_curl 0 2
+    AUDIT_WAIT=2 CURL_CMD="$TMP/curl" SHOP_URL="http://shop.test" run "$DIR/audit.sh" "$TMP/shop"
+    [[ "$output" == *"Abruf 2 (Gast, ohne Cookies): TTFB 0.010 s, Age 2"* ]]
+    [[ "$output" == *"Treffer: Age ist um mindestens die Pause (2 s) gewachsen."* ]]
 }
 
 @test "audit.sh does not count Age 0 as a hit" {
-    cat > "$TMP/curl" <<'EOF'
-#!/bin/bash
-printf 'HTTP/1.1 200 OK\r\nage: 0\r\n\r\nttfb: 0.500\n'
-EOF
-    chmod +x "$TMP/curl"
+    age_curl 0 0
     CURL_CMD="$TMP/curl" SHOP_URL="http://shop.test" run "$DIR/audit.sh" "$TMP/shop"
     [[ "$output" == *"Kein Treffer erkennbar"* ]]
-    [[ "$output" != *"Treffer: der zweite"* ]]
+    [[ "$output" != *"Treffer: Age"* ]]
+}
+
+@test "audit.sh does not count the Age of two slow misses as a hit" {
+    # Symfony setzt beim Speichern Age = Renderdauer: zwei MISS mit je 3 s
+    age_curl 3 3
+    AUDIT_WAIT=2 CURL_CMD="$TMP/curl" SHOP_URL="http://shop.test" run "$DIR/audit.sh" "$TMP/shop"
+    [[ "$output" == *"Kein Treffer erkennbar"* ]]
+    [[ "$output" != *"Treffer: Age"* ]]
+}
+
+@test "audit.sh exits 2 on an invalid AUDIT_WAIT" {
+    AUDIT_WAIT=0 run "$DIR/audit.sh" "$TMP/shop"
+    [ "$status" -eq 2 ]
+    AUDIT_WAIT=x run "$DIR/audit.sh" "$TMP/shop"
+    [ "$status" -eq 2 ]
 }
 
 @test "audit.sh skips the request test without SHOP_URL" {
