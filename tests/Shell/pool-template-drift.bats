@@ -111,8 +111,9 @@ fliesstext() {
             [ "$status" -eq 0 ]
         done
 
-        # Der alte, einheitliche Satz darf nicht zurueckkommen.
-        run grep -qF 'gewinnt die alphabetisch erste Datei' "$BATS_TEST_TMPDIR/k"
+        # Der alte, einheitliche Satz darf nicht zurueckkommen - auch nicht
+        # umgestellt. Die Vorrangzeilen selbst schreiben ERSTE/LETZTE gross.
+        run grep -qE 'gewinnt (immer |stets )?die alphabetisch (erste|letzte)|alphabetisch (erste|letzte) Datei gewinnt' "$BATS_TEST_TMPDIR/k"
         [ "$status" -ne 0 ]
     done
 }
