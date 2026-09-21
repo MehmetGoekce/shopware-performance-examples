@@ -48,6 +48,11 @@ läuft weiter über Webpack.
 - **`extract-critical-css.sh`** — Critical CSS einer Seite mit `critical` 9
   als `views/storefront/critical/critical.css.twig`.
 
+### `config/theme-style-storefront-bootstrap.json`
+
+`style`-Array für `@StorefrontBootstrap` statt `@Storefront` (mit dem von der
+Doku verlangten `@Plugins`). In `theme.json` einsetzen, dann `theme:compile`.
+
 ### `config/lighthouse-budget.json`
 
 Budget im Lighthouse-Format (ein **Array**). Für `treosh/lighthouse-ci-action`
@@ -86,7 +91,8 @@ SHOPWARE_ROOT=/var/www/html ./scripts/analyze-bundle.sh --stats
 
 Im Analyzer-Report stehen drei Grössen: **stat** (Quelltext der Module vor
 dem Minifizieren), **parsed** (ausgeliefert), **gzip** (übertragen). Beispiel
-tiny-slider in 6.6.10.6: stat 102 KB, parsed 32 KB, gzip 13 KB.
+tiny-slider in 6.6.10.6: stat 100 KB, parsed 31 KB, gzip 12,5 KB (1 KB = 1024 Byte,
+wie im Skript und in Lighthouse).
 
 Welche Chunks eine bestimmte Seite nachlädt, sehen nur Browser-Werkzeuge
 (DevTools > Netzwerk, Lighthouse).
@@ -115,7 +121,9 @@ HTML statt CSS.
   (`file not found for @import`). `~vendor/bootstrap/…` kompiliert, liefert den
   Grid aber doppelt aus (+13 KB).
 - `@StorefrontBootstrap` statt `@Storefront`: `all.css` −18 % roh, −10 % gzip
-  (400 → 328 KB roh). Die Doku verlangt dazu `@Plugins` im `style`-Array.
+  (391 → 320 KB roh, 54,8 → 49,5 KB gzip). Die Doku verlangt dazu `@Plugins`
+  im `style`-Array. Gemessen mit dem `style`-Array aus
+  `config/theme-style-storefront-bootstrap.json` (ersetzt das in `theme.json`).
 - Ein Block, den es nicht gibt (z. B. `base_head_stylesheets`), wird
   **ohne Meldung** ignoriert. Das Theme-CSS steht in `layout_head_stylesheet`
   in `layout/meta.html.twig`.

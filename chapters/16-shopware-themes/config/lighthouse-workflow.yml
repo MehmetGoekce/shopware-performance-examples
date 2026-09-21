@@ -1,0 +1,23 @@
+# Vorlage für .github/workflows/performance.yml im Shop-Repository
+#
+# Prüft eine Staging-Umgebung, auf der das Theme bereits gebaut ist.
+# Nicht gefahren: Die Eingaben stammen aus der action.yml von
+# treosh/lighthouse-ci-action@v12; das Budget selbst ist mit
+# @lhci/cli 0.15.1 (lhci assert --budgetsFile) gegen den Testshop geprüft.
+name: Theme Performance
+
+on: [push]
+
+jobs:
+  lighthouse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lighthouse Audit
+        uses: treosh/lighthouse-ci-action@v12
+        with:
+          urls: |
+            https://staging.mein-shop.de
+          budgetPath: ./config/lighthouse-budget.json
+          uploadArtifacts: true
