@@ -14,11 +14,7 @@ use TwigCsFixer\Rules\Delimiter\DelimiterSpacingRule;
 
 $finder = Finder::create()
     ->in(__DIR__ . '/chapters')
-    ->name('*.html.twig')
-    // Exclude templates with Shopware-specific tags (sw_thumbnails, sw_extends)
-    // that the standard Twig parser cannot handle
-    ->notPath('04-image-optimization/templates/cms-element-image.html.twig')
-    ->notPath('04-image-optimization/templates/sw-thumbnails-examples.html.twig');
+    ->name('*.html.twig');
 
 $ruleset = new Ruleset();
 $ruleset->addStandard(new TwigCsFixer());
