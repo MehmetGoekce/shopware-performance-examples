@@ -2,167 +2,87 @@
 
 Companion-Code zum Buchkapitel "Shopware 6 Plugins - Performance-Optimierung".
 
+Getestet mit Shopware 6.6.10.6 (Dockware, Demo-Daten): jede Klasse als Plugin
+installiert und gegen den laufenden Shop ausgeführt. Versionsgrenzen stehen im
+Kopfkommentar der jeweiligen Datei.
+
 ## Inhalt
 
 ```
 chapters/17-shopware-plugins/
 ├── src/
 │   ├── Service/
-│   │   ├── OptimizedProductService.php    # DAL Best Practices
-│   │   ├── FastIdLookupService.php        # DBAL für Performance
-│   │   └── CacheAwareService.php          # Cache-Integration
+│   │   ├── OptimizedProductService.php    # DAL: nur laden, was angezeigt wird
+│   │   ├── FastIdLookupService.php        # DBAL für ID-Lookups
+│   │   └── CustomTagInvalidator.php       # eigenes Cache-Tag invalidieren
 │   ├── Subscriber/
-│   │   ├── PerformanceAwareSubscriber.php # Loop-sicherer Subscriber
-│   │   ├── ChangesetAwareSubscriber.php   # Changeset-Handling
-│   │   ├── CacheTagSubscriber.php         # Custom Cache-Tags
-│   │   └── SelectiveCacheInvalidation.php # Kontrollierte Invalidierung
+│   │   ├── PerformanceAwareSubscriber.php # Guard-Clauses, DBAL-Write
+│   │   ├── ChangesetAwareSubscriber.php   # Changeset nur bei Bedarf
+│   │   └── CacheTagSubscriber.php         # eigenes Cache-Tag setzen
 │   ├── Indexer/
-│   │   └── OptimizedEntityIndexer.php     # Performanter Custom-Indexer
+│   │   └── OptimizedEntityIndexer.php     # eigener Entity-Indexer
 │   └── MessageQueue/
-│       ├── ProductImportMessage.php       # Async Message
-│       └── AsyncProductHandler.php        # Message Handler
+│       ├── ProductImportMessage.php       # Nachricht für low_priority
+│       └── AsyncProductHandler.php        # Handler im Worker
 ├── config/
-│   ├── services.xml                       # Service-Konfiguration
-│   ├── message-queue.yaml                 # Queue-Routing
-│   └── supervisor.conf                    # Supervisor-Konfiguration
-├── scripts/
-│   ├── profile-plugin.sh                  # Plugin-Performance-Test
-│   └── analyze-subscribers.php            # Subscriber-Analyse
-└── tests/
-    └── Performance/
-        └── DalPerformanceTest.php         # Performance-Tests
+│   ├── services.xml                       # Service-Definitionen
+│   └── message-queue.yaml                 # Admin-Worker aus, Routing
+└── scripts/
+    ├── profile-plugin.sh                  # Seite mit/ohne Plugin messen
+    └── analyze-subscribers.sh             # Listener je Namespace
 ```
 
-## Kernkonzepte
+Tests: `tests/Shell/plugin-scripts.bats` (beide Skripte, Stubs für
+`bin/console` und `curl`).
 
-### 1. DAL vs DBAL
+## Einbinden
 
-**DAL (Data Abstraction Layer)**: Shopwares ORM-Alternative
-- Verwenden für: API-Responses, komplexe Entity-Operationen
-- Vermeiden für: Interne Prozesse, ID-Lookups, Batch-Updates
+Die Klassen stehen im Namespace `App\`. Als Plugin: Dateien unter `src/`
+übernehmen, `App\` durch den Plugin-Namespace ersetzen und
+`config/services.xml` nach `src/Resources/config/services.xml` legen.
 
-**DBAL (Doctrine Database Abstraction Layer)**: Plain SQL
-- 10-100x schneller für einfache Operationen
-- Triggert keine Events (wichtig für Indexer!)
-- Empfohlen für Subscriber und Indexer
+`config/message-queue.yaml` gehört nach `config/packages/`. Die Worker selbst
+(`messenger:consume async low_priority` und `scheduled-task:run`) stehen in
+Anhang C: `chapters/anhang-c-konfigurationen/config/supervisor-shopware.conf`.
 
-### 2. Event-Subscriber Patterns
+## Was die Beispiele zeigen
 
-```php
-// Loop-Schutz
-if ($this->isProcessing) {
-    return;
-}
+| Datei | Kernpunkt |
+|---|---|
+| `OptimizedProductService` | Staffelpreise mit Sortierung begrenzen, sonst ist "der erste" beliebig; `searchIds()` hydriert nichts |
+| `FastIdLookupService` | `LIMIT :limit` braucht `ParameterType::INTEGER`, sonst `LIMIT '1000'` → MySQL-Fehler 1064 |
+| `PerformanceAwareSubscriber` | `name` kommt als `product_translation.written`, nicht als `product.written`; `custom_fields` liegt in `product_translation` |
+| `ChangesetAwareSubscriber` | `hasChanged('price')` ist bei JSON-Spalten auch ohne Änderung `true` - Inhalte vergleichen |
+| `ProductImportMessage` | `LowPriorityMessageInterface` statt `framework.messenger.routing` (sonst doppelt verarbeitet) |
+| `CacheTagSubscriber` + `CustomTagInvalidator` | `AddCacheTagEvent` (ab 6.6.6.0); Setzer und Invalidierer bauen das Tag mit derselben Methode |
+| `OptimizedEntityIndexer` | Varianten über die Datenbank auf das Hauptprodukt abbilden, nicht über den Payload |
 
-// Nur Live-Version
-if ($context->getVersionId() !== Defaults::LIVE_VERSION) {
-    return;
-}
+Den Schreibweg per DBAL samt Cache-Invalidierung zeigt Kapitel 7
+(`chapters/07-shopware-cache/src/Service/ProductUpdateService.php`).
 
-// DBAL statt DAL
-$this->connection->executeStatement(...);
-```
-
-### 3. Message Queue
+## Plugin-Kosten messen
 
 ```bash
-# Admin-Worker deaktivieren (shopware.yaml)
-shopware:
-    admin_worker:
-        enable_admin_worker: false
-
-# CLI-Worker starten
-bin/console messenger:consume async --time-limit=60 --memory-limit=256M
+# Als Benutzer des Webservers, NICHT auf dem Live-Shop:
+sudo -u www-data SHOPWARE_ROOT=/var/www/html \
+    ./scripts/profile-plugin.sh MyPlugin /Mein-Produkt/SW10001
 ```
 
-## Quick Start
-
-### 1. Services registrieren
-
-```xml
-<!-- config/services.xml -->
-<service id="App\Service\OptimizedProductService">
-    <argument type="service" id="product.repository"/>
-</service>
-
-<service id="App\Subscriber\PerformanceAwareSubscriber">
-    <argument type="service" id="Doctrine\DBAL\Connection"/>
-    <tag name="kernel.event_subscriber"/>
-</service>
-```
-
-### 2. Supervisor einrichten
+Misst A-B-A (mit, ohne, wieder mit), je Phase nach Cache-Leeren und
+Aufwärmen, jeden Aufruf am HTTP-Cache vorbei. Ist der Unterschied nicht
+grösser als die Abweichung der beiden Mit-Phasen, meldet das Skript ihn als
+nicht belastbar.
 
 ```bash
-sudo cp config/supervisor.conf /etc/supervisor/conf.d/shopware-messenger.conf
-sudo supervisorctl reread
-sudo supervisorctl update
-sudo supervisorctl start shopware-messenger:*
+./scripts/analyze-subscribers.sh               # Listener je Namespace
+./scripts/analyze-subscribers.sh 'Swag\PayPal' # Listener eines Plugins
 ```
 
-### 3. Plugin-Performance testen
-
-```bash
-chmod +x scripts/profile-plugin.sh
-./scripts/profile-plugin.sh MyPlugin /produkt/test-produkt
-```
-
-## Performance-Ziele
-
-| Metrik | Vorher | Nachher |
-|--------|--------|---------|
-| DAL-Query Zeit | 500ms+ | < 50ms |
-| Event-Processing | 100ms/Event | < 10ms/Event |
-| Indexer-Durchsatz | 100 Produkte/s | 1000+ Produkte/s |
-| Message-Queue-Lag | Minuten | Sekunden |
-
-## Anti-Patterns vermeiden
-
-### 1. Zu viele Assoziationen
-
-```php
-// SCHLECHT
-$criteria->addAssociation('categories.media.thumbnails');
-
-// BESSER
-$criteria->addAssociation('cover.media');
-```
-
-### 2. DAL in Indexern
-
-```php
-// SCHLECHT - triggert Events, Endlosschleife möglich
-$this->productRepository->update([...], $context);
-
-// BESSER - keine Events
-$this->connection->executeStatement('UPDATE product SET ...');
-```
-
-### 3. Synchrone schwere Operationen
-
-```php
-// SCHLECHT - blockiert Request
-$this->processAllProducts();
-
-// BESSER - async via Message Queue
-$this->messageBus->dispatch(new ProductImportMessage($ids));
-```
-
-## Profiling-Tools
-
-### Blackfire
-
-```bash
-blackfire run bin/console dal:refresh:index
-```
-
-### Tideways
-
-Automatisches Monitoring aller Requests mit detaillierten Traces.
+Die Zahl der Listener ist eine Orientierung, keine Messung.
 
 ## Weiterführende Links
 
-- [Shopware DAL Dokumentation](https://developer.shopware.com/docs/concepts/framework/data-abstraction-layer.html)
-- [Message Queue Guide](https://developer.shopware.com/docs/guides/hosting/infrastructure/message-queue.html)
+- [Shopware DAL](https://developer.shopware.com/docs/concepts/framework/data-abstraction-layer.html)
+- [Message Queue](https://developer.shopware.com/docs/guides/hosting/infrastructure/message-queue.html)
 - [Performance Tweaks](https://developer.shopware.com/docs/guides/hosting/performance/performance-tweaks.html)
-- [Blackfire Shopware Metrics](https://blog.blackfire.io/optimize-your-shopware-6-x-applications-with-new-specific-metrics.html)
+- [Eigener Indexer](https://developer.shopware.com/docs/guides/plugins/plugins/framework/data-handling/add-data-indexer.html)

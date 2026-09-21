@@ -1,192 +1,172 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
-# Plugin Performance Analyzer
+# Plugin-Kosten messen: dieselbe Seite mit und ohne Plugin.
 #
-# Measures the performance impact of a specific plugin
-# by comparing response times with and without the plugin.
+# Ablauf A-B-A: mit Plugin, ohne Plugin, wieder mit Plugin. Jede
+# Phase wärmt nach dem Cache-Leeren erst auf und misst dann RUNS
+# Aufrufe. Jeder Aufruf trägt einen eigenen Query-Parameter, damit
+# der HTTP-Cache nicht antwortet - sonst misst man einen Cache-Treffer,
+# bei dem die meisten Plugins gar nicht laufen. Der Object-Cache ist
+# nach dem Aufwärmen in allen Phasen warm.
 #
-# Usage:
-#   ./profile-plugin.sh <plugin-name> [test-url]
-#   ./profile-plugin.sh MyCustomPlugin /produkt/test-produkt
+# Verglichen werden Mediane. Weichen die beiden A-Phasen stärker
+# voneinander ab als A von B, ist der Unterschied Rauschen (Last,
+# CPU-Takt, andere Prozesse) und kein Plugin-Effekt.
 #
-# Requirements:
-#   - curl
-#   - bc (for floating point math)
-#   - Shopware 6 CLI (bin/console)
+# NICHT auf einem Live-Shop ausführen: Das Plugin ist während der
+# B-Phase deaktiviert, und jede Phase leert den Cache. Als Benutzer
+# des Webservers aufrufen (sudo -u www-data ...), sonst gehören die
+# neu erzeugten Cache-Dateien root.
 #
+# Getestet gegen Shopware 6.6.10.6 (Dockware).
+#
+# @see Kapitel 17, "Plugin-Performance analysieren"
 
 set -euo pipefail
 
-# Configuration
 SHOPWARE_ROOT="${SHOPWARE_ROOT:-/var/www/html}"
-ITERATIONS="${ITERATIONS:-5}"
-WARMUP="${WARMUP:-2}"
 BASE_URL="${BASE_URL:-http://localhost}"
+RUNS="${RUNS:-10}"
+WARMUP="${WARMUP:-3}"
+CONSOLE="${CONSOLE:-${SHOPWARE_ROOT}/bin/console}"
+CURL="${CURL:-curl}"
+PHP="${PHP:-php}"
 
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") <PluginName> [pfad]
 
-# Arguments
-PLUGIN_NAME="${1:-}"
-TEST_URL="${2:-/}"
+Misst die Antwortzeit von <pfad> (Vorgabe: /) mit und ohne Plugin.
 
-# Help
-show_help() {
-    echo "Usage: $0 <plugin-name> [test-url]"
-    echo ""
-    echo "Arguments:"
-    echo "  plugin-name    Name of the plugin to test"
-    echo "  test-url       URL path to test (default: /)"
-    echo ""
-    echo "Environment variables:"
-    echo "  SHOPWARE_ROOT  Shopware installation path (default: /var/www/html)"
-    echo "  ITERATIONS     Number of test iterations (default: 5)"
-    echo "  BASE_URL       Base URL for requests (default: http://localhost)"
-    echo ""
-    echo "Examples:"
-    echo "  $0 MyPlugin"
-    echo "  $0 PayPal /checkout/cart"
-    echo "  ITERATIONS=10 $0 CustomTheme /kategorie/test"
-    echo ""
+Umgebungsvariablen:
+  SHOPWARE_ROOT  Shopware-Verzeichnis     (Vorgabe: /var/www/html)
+  BASE_URL       Basis-URL des Shops      (Vorgabe: http://localhost)
+  RUNS           Messungen je Phase       (Vorgabe: 10)
+  WARMUP         Aufwärm-Aufrufe je Phase (Vorgabe: 3)
+
+Exit-Codes: 0 gemessen, 1 Fehler, 2 falscher Aufruf
+EOF
 }
 
-if [[ -z "${PLUGIN_NAME}" ]]; then
-    show_help
+case "${1:-}" in
+    -h|--help) usage; exit 0 ;;
+    '') usage >&2; exit 2 ;;
+esac
+
+PLUGIN="$1"
+URL_PATH="${2:-/}"
+
+if ! [[ "$RUNS" =~ ^[1-9][0-9]*$ && "$WARMUP" =~ ^[0-9]+$ ]]; then
+    echo "Fehler: RUNS muss >= 1 und WARMUP >= 0 sein." >&2
+    exit 2
+fi
+
+# Ist das Plugin installiert und aktiv? Nur ein aktives Plugin darf das
+# Skript deaktivieren - es aktiviert es am Ende wieder.
+plugin_state() {
+    "$CONSOLE" plugin:list --json 2>/dev/null | "$PHP" -r '
+        $name = $argv[1];
+        foreach (json_decode(stream_get_contents(STDIN), true) ?? [] as $p) {
+            if (($p["name"] ?? null) === $name) {
+                echo $p["active"] ? "active" : "inactive";
+                exit(0);
+            }
+        }
+        echo "missing";
+    ' "$PLUGIN"
+}
+
+if ! STATE="$(plugin_state)"; then
+    echo "Fehler: bin/console plugin:list ist fehlgeschlagen." >&2
+    exit 1
+fi
+if [[ "$STATE" != active ]]; then
+    echo "Fehler: Plugin '${PLUGIN}' ist nicht aktiv (Status: ${STATE})." >&2
     exit 1
 fi
 
-# Functions
-measure_url() {
-    local url=$1
-    local total=0
-    local times=()
-
-    # Warmup requests
-    for ((i=1; i<=${WARMUP}; i++)); do
-        curl -s -o /dev/null -w '' "${BASE_URL}${url}" || true
-    done
-
-    # Measured requests
-    for ((i=1; i<=${ITERATIONS}; i++)); do
-        time=$(curl -s -o /dev/null -w '%{time_total}' "${BASE_URL}${url}")
-        times+=("${time}")
-        total=$(echo "${total} + ${time}" | bc)
-    done
-
-    # Calculate average
-    avg=$(echo "scale=4; ${total} / ${ITERATIONS}" | bc)
-
-    # Calculate min/max
-    min=$(printf '%s\n' "${times[@]}" | sort -n | head -1)
-    max=$(printf '%s\n' "${times[@]}" | sort -n | tail -1)
-
-    echo "${avg} ${min} ${max}"
+DEACTIVATED=0
+restore() {
+    if [[ "$DEACTIVATED" == 1 ]]; then
+        echo "Aktiviere ${PLUGIN} wieder ..." >&2
+        "$CONSOLE" plugin:activate --clearCache "$PLUGIN" >/dev/null
+    fi
 }
 
-clear_cache() {
-    cd "${SHOPWARE_ROOT}"
-    bin/console cache:clear > /dev/null 2>&1
-    bin/console cache:clear > /dev/null 2>&1
+SEP='?'
+[[ "$URL_PATH" == *\?* ]] && SEP='&'
+
+# Ein Aufruf, am HTTP-Cache vorbei; gibt Sekunden aus (curl time_total).
+# Nur HTTP 200 zählt: Eine Weiterleitung oder Fehlerseite misst nicht
+# die Seite. SEO-URLs deshalb direkt angeben, nicht /detail/<id>.
+# fetch läuft in $(...), also in einer Subshell: Ein Zähler würde dort
+# nicht hochzählen. Der Parameter kommt deshalb aus der Uhrzeit.
+fetch() {
+    local out code
+    if ! out="$("$CURL" -s -o /dev/null -w '%{http_code} %{time_total}' \
+        "${BASE_URL}${URL_PATH}${SEP}plugin_profile=${EPOCHREALTIME/[.,]/}${RANDOM}")"; then
+        echo "Fehler: ${BASE_URL}${URL_PATH} nicht erreichbar." >&2
+        return 1
+    fi
+    code="${out%% *}"
+    if [[ "$code" != 200 ]]; then
+        echo "Fehler: ${BASE_URL}${URL_PATH} antwortet mit HTTP ${code}." >&2
+        return 1
+    fi
+    echo "${out#* }"
 }
 
-echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}  Plugin Performance Analyzer${NC}"
-echo -e "${BLUE}========================================${NC}"
-echo ""
-echo -e "Plugin:      ${YELLOW}${PLUGIN_NAME}${NC}"
-echo -e "URL:         ${TEST_URL}"
-echo -e "Iterations:  ${ITERATIONS}"
-echo -e "Warmup:      ${WARMUP}"
-echo ""
+# Median in Millisekunden aus einer Liste von Sekundenwerten
+median_ms() {
+    sort -g | awk '{ v[NR] = $1 * 1000 }
+        END {
+            if (NR == 0) { exit 1 }
+            m = (NR % 2) ? v[(NR + 1) / 2] : (v[NR / 2] + v[NR / 2 + 1]) / 2
+            printf "%.1f\n", m
+        }'
+}
 
-# Check if plugin exists
-cd "${SHOPWARE_ROOT}"
-if ! bin/console plugin:list | grep -q "${PLUGIN_NAME}"; then
-    echo -e "${RED}Error: Plugin '${PLUGIN_NAME}' not found${NC}"
-    echo ""
-    echo "Available plugins:"
-    bin/console plugin:list --columns=name,active | head -20
-    exit 1
-fi
+measure() {
+    local label="$1" i times=""
+    "$CONSOLE" cache:clear >/dev/null
+    for ((i = 0; i < WARMUP; i++)); do fetch >/dev/null; done
+    for ((i = 0; i < RUNS; i++)); do times+="$(fetch)"$'\n'; done
+    printf '%s' "$times" | median_ms > "$TMP/$label"
+    echo "  ${label}: Median $(cat "$TMP/$label") ms (${RUNS} Aufrufe)"
+}
 
-# Phase 1: Measure with plugin active
-echo -e "${YELLOW}Phase 1: Measuring WITH plugin active...${NC}"
-clear_cache
+TMP="$(mktemp -d)"
+trap 'restore; rm -rf "$TMP"' EXIT
 
-read -r with_avg with_min with_max <<< "$(measure_url "${TEST_URL}")"
-
-echo -e "  Average: ${with_avg}s (min: ${with_min}s, max: ${with_max}s)"
-
-# Phase 2: Deactivate plugin
-echo -e "${YELLOW}Phase 2: Deactivating plugin...${NC}"
-bin/console plugin:deactivate "${PLUGIN_NAME}" > /dev/null 2>&1
-clear_cache
-
-# Phase 3: Measure without plugin
-echo -e "${YELLOW}Phase 3: Measuring WITHOUT plugin...${NC}"
-read -r without_avg without_min without_max <<< "$(measure_url "${TEST_URL}")"
-
-echo -e "  Average: ${without_avg}s (min: ${without_min}s, max: ${without_max}s)"
-
-# Phase 4: Reactivate plugin
-echo -e "${YELLOW}Phase 4: Reactivating plugin...${NC}"
-bin/console plugin:activate "${PLUGIN_NAME}" > /dev/null 2>&1
-clear_cache
-
-# Calculate difference
-diff=$(echo "scale=4; ${with_avg} - ${without_avg}" | bc)
-percent=$(echo "scale=1; (${diff} / ${without_avg}) * 100" | bc 2>/dev/null || echo "0")
-
-echo ""
-echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}  Results${NC}"
-echo -e "${BLUE}========================================${NC}"
-echo ""
-echo -e "With plugin:    ${with_avg}s"
-echo -e "Without plugin: ${without_avg}s"
+echo "Plugin: ${PLUGIN}"
+echo "Seite:  ${BASE_URL}${URL_PATH}"
 echo ""
 
-# Determine impact
-if (( $(echo "${diff} > 0.1" | bc -l) )); then
-    echo -e "Impact:         ${RED}+${diff}s (+${percent}%)${NC}"
-    echo ""
-    echo -e "${RED}[WARNING] Plugin has significant performance impact!${NC}"
-    echo ""
-    echo "Recommendations:"
-    echo "  1. Profile with Blackfire or Tideways"
-    echo "  2. Check for debug logging"
-    echo "  3. Review event subscribers"
-    echo "  4. Check database queries"
-    EXIT_CODE=1
-elif (( $(echo "${diff} > 0.05" | bc -l) )); then
-    echo -e "Impact:         ${YELLOW}+${diff}s (+${percent}%)${NC}"
-    echo ""
-    echo -e "${YELLOW}[MODERATE] Plugin has noticeable impact${NC}"
-    EXIT_CODE=0
-else
-    echo -e "Impact:         ${GREEN}+${diff}s (+${percent}%)${NC}"
-    echo ""
-    echo -e "${GREEN}[OK] Plugin has minimal performance impact${NC}"
-    EXIT_CODE=0
-fi
+measure "A1-mit"
 
-# Additional metrics if available
-echo ""
-echo -e "${BLUE}Additional Analysis:${NC}"
+"$CONSOLE" plugin:deactivate "$PLUGIN" >/dev/null
+DEACTIVATED=1
+measure "B-ohne"
 
-# Check if plugin has event subscribers
-SUBSCRIBER_COUNT=$(grep -r "EventSubscriberInterface" "${SHOPWARE_ROOT}/custom/plugins/${PLUGIN_NAME}" 2>/dev/null | wc -l || echo "0")
-echo -e "  Event Subscribers: ${SUBSCRIBER_COUNT}"
+"$CONSOLE" plugin:activate "$PLUGIN" >/dev/null
+DEACTIVATED=0
+measure "A2-mit"
 
-# Check for slow patterns
-DBAL_COUNT=$(grep -r "createQueryBuilder\|executeStatement" "${SHOPWARE_ROOT}/custom/plugins/${PLUGIN_NAME}" 2>/dev/null | wc -l || echo "0")
-DAL_COUNT=$(grep -r "EntityRepository\|->search\|->create\|->update" "${SHOPWARE_ROOT}/custom/plugins/${PLUGIN_NAME}" 2>/dev/null | wc -l || echo "0")
-echo -e "  DBAL Operations: ${DBAL_COUNT}"
-echo -e "  DAL Operations: ${DAL_COUNT}"
-
-echo ""
-exit ${EXIT_CODE:-0}
+awk -v a1="$(cat "$TMP/A1-mit")" -v b="$(cat "$TMP/B-ohne")" -v a2="$(cat "$TMP/A2-mit")" '
+    BEGIN {
+        a = (a1 + a2) / 2
+        drift = a1 - a2; if (drift < 0) drift = -drift
+        diff = a - b; adiff = diff < 0 ? -diff : diff
+        printf "\nMit Plugin (Mittel A1/A2): %.1f ms\n", a
+        printf "Ohne Plugin:               %.1f ms\n", b
+        printf "Unterschied:               %+.1f ms", diff
+        if (b > 0) printf " (%+.1f %%)", diff / b * 100
+        printf "\nStreuung A1 gegen A2:      %.1f ms\n\n", drift
+        if (adiff <= drift) {
+            print "Der Unterschied liegt innerhalb der Streuung - nicht belastbar."
+            print "Mehr Aufrufe (RUNS) oder ein Profiler (Blackfire, Tideways)."
+        } else {
+            print "Der Unterschied ist grösser als die Streuung. Wo die Zeit"
+            print "liegt, zeigt ein Profiler (Blackfire, Tideways)."
+        }
+    }'
