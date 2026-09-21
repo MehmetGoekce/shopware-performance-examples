@@ -1,77 +1,58 @@
 <?xml version="1.0" ?>
+<!--
+    Service-Definitionen zu Kapitel 17.
+
+    Als Plugin: nach src/Resources/config/services.xml kopieren und den
+    Namespace App\ durch den des Plugins ersetzen.
+
+    Getestet mit Shopware 6.6.10.6 (Dockware).
+-->
 <container xmlns="http://symfony.com/schema/dic/services"
            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
            xsi:schemaLocation="http://symfony.com/schema/dic/services
            http://symfony.com/schema/dic/services/services-1.0.xsd">
 
     <services>
-        <!-- ============================================ -->
         <!-- Services -->
-        <!-- ============================================ -->
-
-        <!-- Optimized Product Service -->
         <service id="App\Service\OptimizedProductService">
             <argument type="service" id="product.repository"/>
         </service>
 
-        <!-- Fast ID Lookup Service (DBAL-based) -->
         <service id="App\Service\FastIdLookupService">
             <argument type="service" id="Doctrine\DBAL\Connection"/>
-            <argument type="service" id="Psr\Log\LoggerInterface"/>
         </service>
 
-        <!-- ============================================ -->
-        <!-- Event Subscribers -->
-        <!-- ============================================ -->
+        <service id="App\Service\CustomTagInvalidator">
+            <argument type="service" id="Shopware\Core\Framework\Adapter\Cache\CacheInvalidator"/>
+        </service>
 
-        <!-- Performance-Aware Subscriber -->
+        <!-- Event-Subscriber -->
         <service id="App\Subscriber\PerformanceAwareSubscriber">
             <argument type="service" id="Doctrine\DBAL\Connection"/>
-            <argument type="service" id="Psr\Log\LoggerInterface"/>
             <tag name="kernel.event_subscriber"/>
         </service>
 
-        <!-- Changeset-Aware Subscriber -->
         <service id="App\Subscriber\ChangesetAwareSubscriber">
-            <argument type="service" id="Psr\Log\LoggerInterface"/>
+            <argument type="service" id="logger"/>
             <tag name="kernel.event_subscriber"/>
         </service>
 
-        <!-- Cache Tag Subscriber -->
         <service id="App\Subscriber\CacheTagSubscriber">
-            <argument type="service" id="Shopware\Core\Framework\Adapter\Cache\CacheTagCollector"/>
+            <argument type="service" id="event_dispatcher"/>
             <tag name="kernel.event_subscriber"/>
         </service>
 
-        <!-- Selective Cache Invalidation Subscriber -->
-        <service id="App\Subscriber\SelectiveCacheInvalidationSubscriber">
-            <argument type="service" id="Shopware\Core\Framework\Adapter\Cache\CacheInvalidator"/>
-            <tag name="kernel.event_subscriber"/>
-        </service>
-
-        <!-- ============================================ -->
-        <!-- Entity Indexer -->
-        <!-- ============================================ -->
-
-        <!-- Optimized Entity Indexer -->
+        <!-- Entity-Indexer: der Tag meldet ihn bei dal:refresh:index an -->
         <service id="App\Indexer\OptimizedEntityIndexer">
             <argument type="service" id="Doctrine\DBAL\Connection"/>
-            <argument type="service" id="Psr\Log\LoggerInterface"/>
-            <!-- Register as entity indexer -->
-            <tag name="shopware.entity_indexer" priority="-1000"/>
+            <tag name="shopware.entity_indexer"/>
         </service>
 
-        <!-- ============================================ -->
-        <!-- Message Handlers -->
-        <!-- ============================================ -->
-
-        <!-- Async Product Handler -->
+        <!-- Message-Handler: der Tag ersetzt Autoconfiguration -->
         <service id="App\MessageQueue\AsyncProductHandler">
             <argument type="service" id="Doctrine\DBAL\Connection"/>
-            <argument type="service" id="Psr\Log\LoggerInterface"/>
-            <!-- Symfony Messenger will auto-detect due to #[AsMessageHandler] -->
+            <argument type="service" id="logger"/>
             <tag name="messenger.message_handler"/>
         </service>
-
     </services>
 </container>

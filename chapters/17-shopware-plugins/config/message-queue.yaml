@@ -1,94 +1,34 @@
-# Message Queue Configuration
+# Message Queue für Produktion - Kapitel 17
 #
-# This configuration optimizes the Shopware message queue for production.
+# Nach config/packages/shopware.yaml übernehmen (oder als eigene
+# Datei config/packages/zz-message-queue.yaml ablegen).
 #
-# Key settings:
-# - Disable admin worker (use CLI worker instead)
-# - Route heavy messages to separate queue
-# - Configure retry strategies
+# Getestet mit Shopware 6.6.10.6 (Dockware).
 #
-# Place in: config/packages/shopware.yaml or config/packages/message-queue.yaml
+# Die Worker selbst (messenger:consume async low_priority und
+# scheduled-task:run) stehen in Anhang C:
+#   chapters/anhang-c-konfigurationen/config/supervisor-shopware.conf
+# Ohne scheduled-task:run laufen nach dem Abschalten des
+# Admin-Workers keine Scheduled Tasks mehr - auch nicht die
+# verzögerte Cache-Invalidierung.
 
 shopware:
-    # ============================================
-    # Admin Worker Settings
-    # ============================================
     admin_worker:
-        # IMPORTANT: Disable in production!
-        # Admin worker is slow and causes high CPU when multiple admins are logged in
+        # WICHTIG: In Production deaktivieren! Ab Werk true.
         enable_admin_worker: false
 
-        # How often to poll for new messages (ms)
-        # Only relevant if admin_worker is enabled
-        poll_interval: 30000
-
-        # Transports to consume via admin worker
-        # Empty = all transports
-        transports: []
-
-
-# ============================================
-# Framework Messenger Configuration
-# ============================================
-framework:
+    # Transporte async, low_priority und failed liefert Shopware
+    # bereits aus. Eigene Nachrichten nach low_priority: am
+    # einfachsten per LowPriorityMessageInterface (ab 6.5.7.0).
+    #
+    # Fremde Nachrichten umleiten: routing_overwrite (ab 6.6.4.0).
+    # NICHT framework.messenger.routing - dort landet eine Klasse
+    # mit AsyncMessageInterface zusätzlich in async und wird
+    # zweimal verarbeitet.
+    #
+    # Beispiel: Produkt-Indexing hinter async einreihen. Folge: Bei
+    # vollem async-Transport kommen Preis- und Verfügbarkeitsdaten
+    # im Listing später an - für grosse Importe gewollt, sonst prüfen.
     messenger:
-        # Transport configuration
-        transports:
-            # Main async transport (default)
-            async:
-                dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
-                options:
-                    auto_setup: true
-                    use_notify: true
-                    check_delayed_interval: 1000
-                retry_strategy:
-                    max_retries: 3
-                    delay: 1000
-                    multiplier: 2
-                    max_delay: 60000
-
-            # Low priority transport for heavy tasks
-            low_priority:
-                dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
-                options:
-                    auto_setup: true
-                    queue_name: low_priority
-                retry_strategy:
-                    max_retries: 3
-                    delay: 5000
-                    multiplier: 3
-                    max_delay: 300000
-
-            # Failed messages transport
-            failed:
-                dsn: 'doctrine://default?queue_name=failed'
-
-        # Failure transport for all transports
-        failure_transport: failed
-
-        # Default bus configuration
-        default_bus: messenger.bus.shopware
-
-        # Message routing (heavy tasks -> low priority queue)
-        routing:
+        routing_overwrite:
             'Shopware\Core\Content\Product\DataAbstractionLayer\ProductIndexingMessage': low_priority
-            'Shopware\Core\Content\ProductExport\ScheduledTask\ProductExportGenerateTask': low_priority
-            'Shopware\Core\Content\Sitemap\ScheduledTask\SitemapGenerateTaskHandler': low_priority
-            'App\MessageQueue\ProductImportMessage': low_priority
-
-# ============================================
-# Notes
-# ============================================
-#
-# Start workers with:
-#   bin/console messenger:consume async --time-limit=60 --memory-limit=256M
-#   bin/console messenger:consume low_priority --time-limit=120 --memory-limit=512M
-#
-# Monitor failed messages:
-#   bin/console messenger:failed:show
-#
-# Retry failed messages:
-#   bin/console messenger:failed:retry
-#
-# For RabbitMQ instead of database:
-#   MESSENGER_TRANSPORT_DSN=amqp://guest:guest@localhost:5672/%2f/messages
