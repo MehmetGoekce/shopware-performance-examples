@@ -1,0 +1,34 @@
+{#
+ # Schrift vorladen: die Inter-Datei, die das Storefront-CSS wirklich nutzt
+ # Kapitel 3: Core Web Vitals messen und optimieren
+ #
+ # Ablage im eigenen Theme/Plugin:
+ #   src/Resources/views/storefront/layout/meta.html.twig
+ #
+ # Shopware 6.6 liefert Inter selbst gehostet aus (font-display: fallback).
+ # Die Dateien liegen unter /theme/<Theme-ID>/assets/font/, nicht unter
+ # /bundles/storefront/. asset(..., 'theme') baut fuer Pfade, die mit
+ # /assets beginnen, genau diesen Ordner.
+ #
+ # Die Preload-URL muss Byte fuer Byte der URL im CSS entsprechen, sonst
+ # laedt der Browser die Schrift zweimal. asset() haengt einen
+ # Versions-Parameter an (?1790…), das CSS nicht – deshalb wird er
+ # abgeschnitten.
+ #
+ # Nur die eine Datei vorladen, die fuer lateinischen Text gebraucht wird.
+ # Wer eine eigene Schrift einbindet, setzt hier deren Pfad ein.
+ #
+ # @see https://github.com/MehmetGoekce/shopware-performance-examples
+ #}
+{% sw_extends '@Storefront/storefront/layout/meta.html.twig' %}
+
+{% block layout_head_stylesheet %}
+    {% set fontUrl = asset('/assets/font/Inter-Variable-Roman-Latin.woff2', 'theme')|split('?')|first %}
+    <link rel="preload"
+          href="{{ fontUrl }}"
+          as="font"
+          type="font/woff2"
+          crossorigin>
+
+    {{ parent() }}
+{% endblock %}

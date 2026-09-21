@@ -1,0 +1,56 @@
+{#
+ # LCP-Bild priorisieren: CMS-Bildelement
+ # Kapitel 3: Core Web Vitals messen und optimieren
+ #
+ # Ablage im eigenen Theme/Plugin:
+ #   src/Resources/views/storefront/element/cms-element-image.html.twig
+ #
+ # Ab Werk setzt Shopware 6.6 fuer JEDES CMS-Bild loading="lazy" – auch fuer
+ # das Hero-Bild ganz oben, das meist das LCP-Element ist. Dieses Override
+ # laedt das Bild im ersten Block der ersten Sektion sofort und mit hoher
+ # Prioritaet; alle anderen CMS-Bilder bleiben lazy. sw_thumbnails bleibt
+ # erhalten, damit srcset und sizes nicht verloren gehen.
+ #
+ # Der Block ist eine Kopie von element_image_media aus Shopware 6.6.10.6,
+ # ergaenzt um die markierten Zeilen. Nach einem Shopware-Update mit dem
+ # Original vergleichen.
+ #
+ # Bekannte Grenzen:
+ # - Gilt nur fuer das Element «Bild». Bild-Slider und Galerie haben eigene
+ #   Templates (die Galerie setzt fetchpriority="high" ab Werk selbst).
+ # - «Erster Block der ersten Sektion» ist eine Naeherung fuer «oben
+ #   sichtbar». Welches Element wirklich LCP ist, zeigt das Snippet aus
+ #   scripts/cwv-diagnostics.js.
+ #
+ # @see https://github.com/MehmetGoekce/shopware-performance-examples
+ #}
+{% sw_extends '@Storefront/storefront/element/cms-element-image.html.twig' %}
+
+{% block element_image_media %}
+    {% set attributes = {
+        'class': 'cms-image',
+        'alt': element.translated.config.isDecorative.value ? ' ' : (element.data.media.translated.alt ?: ''),
+        'title': element.translated.config.isDecorative.value ? '' : (element.data.media.translated.title ?: ''),
+        'loading': 'lazy'
+    } %}
+
+    {% if isCover or element.translated.config.displayMode.value == 'contain' %}
+        {% set attributes = attributes|merge({ 'data-object-fit': element.translated.config.displayMode.value }) %}
+    {% endif %}
+
+    {# --- Ergaenzung Kapitel 3: erstes CMS-Bild der Seite sofort laden --- #}
+    {# Der CmsPageLoader sortiert Sektionen und Bloecke nach position,     #}
+    {# «first» ist also der oberste Block.                                 #}
+    {% set isFirstCmsBlock = cmsPage is defined and section is defined and block is defined
+        and cmsPage.sections.first.id == section.id
+        and section.blocks.first.id == block.id %}
+
+    {% if isFirstCmsBlock %}
+        {% set attributes = attributes|merge({ 'loading': 'eager', 'fetchpriority': 'high' }) %}
+    {% endif %}
+    {# --- Ende Ergaenzung --- #}
+
+    {% sw_thumbnails 'cms-image-thumbnails' with {
+        media: element.data.media
+    } %}
+{% endblock %}

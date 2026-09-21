@@ -1,0 +1,55 @@
+{#
+ # Drittanbieter-Skript erst bei Bedarf laden (Beispiel: Chat-Widget)
+ # Kapitel 3: Core Web Vitals messen und optimieren
+ #
+ # Ablage im eigenen Theme/Plugin:
+ #   src/Resources/views/storefront/base.html.twig
+ #
+ # Das Skript wird erst geladen, wenn der Besucher scrollt, tippt, klickt
+ # oder eine Taste drueckt – spaetestens nach 5 Sekunden. So laeuft sein
+ # Code nicht mehr waehrend des Seitenaufbaus auf dem Main Thread.
+ #
+ # Nur fuer Skripte, die keine Einwilligung brauchen (z. B. ein Chat ohne
+ # Tracking). Analytics, Pixel und Tag Manager gehoeren hinter den
+ # Cookie-Consent – siehe Kapitel 21.
+ #
+ # base_body_script ist in Shopware 6.6 leer und steht am Ende von <body>;
+ # das DOM ist dort schon da, ein DOMContentLoaded-Handler ist unnoetig.
+ #
+ # @see https://github.com/MehmetGoekce/shopware-performance-examples
+ #}
+{% sw_extends '@Storefront/storefront/base.html.twig' %}
+
+{% block base_body_script %}
+    {{ parent() }}
+
+    {# Eigene Widget-URL eintragen #}
+    {% set lazyWidgetUrl = 'https://chat-widget.example.com/widget.js' %}
+
+    <script>
+    (function () {
+        var loaded = false;
+        var events = ['scroll', 'pointerdown', 'keydown', 'touchstart'];
+
+        function loadWidget() {
+            if (loaded) {
+                return;
+            }
+            loaded = true;
+            events.forEach(function (name) {
+                window.removeEventListener(name, loadWidget, { passive: true });
+            });
+
+            var script = document.createElement('script');
+            script.src = {{ lazyWidgetUrl|json_encode|raw }};
+            script.async = true;
+            document.body.appendChild(script);
+        }
+
+        events.forEach(function (name) {
+            window.addEventListener(name, loadWidget, { passive: true });
+        });
+        window.setTimeout(loadWidget, 5000);
+    })();
+    </script>
+{% endblock %}
