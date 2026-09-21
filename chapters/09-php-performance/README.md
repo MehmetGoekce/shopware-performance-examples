@@ -43,7 +43,8 @@ php-fpm8.3 -i | grep -E '^opcache\.(enable|memory_consumption|max_accelerated_fi
 > `/etc/php/8.3/mods-available/opcache.ini`, und **nur dort** steht
 > `zend_extension=opcache.so`. Wer sie ueberschreibt, laedt die Erweiterung
 > nicht mehr - OPcache ist dann komplett aus, obwohl in der Konfiguration
-> `opcache.enable=1` steht. `php-fpm8.3 -t` meldet trotzdem
+> `opcache.enable=1` steht, und zwar auch in der CLI: `cp` folgt dem Symlink
+> und ueberschreibt die gemeinsame Datei. `php-fpm8.3 -t` meldet trotzdem
 > "test is successful", der Ausfall ist also lautlos.
 
 > **`php -i | grep opcache` beantwortet die Frage nicht.** CLI und FPM lesen
@@ -84,8 +85,10 @@ Zwei Dinge, die sonst schiefgehen:
 
 - **Das Logverzeichnis legt PHP-FPM nicht selbst an.** Fehlt `/var/log/php-fpm`,
   startet FPM gar nicht: `Unable to create or open slowlog(...)`.
-- **Den mitgelieferten Pool `www.conf` abschalten.** Sonst laufen zwei Pools
-  nebeneinander und `pm.max_children` zaehlt doppelt.
+- **Den mitgelieferten Pool `www.conf` abschalten.** Sonst laeuft ein zweiter
+  Pool mit, den niemand anspricht: ab Werk zwei Worker im Leerlauf, hoechstens
+  fuenf, ausserhalb jeder RAM-Rechnung - und was Sie in `www.conf` eintragen,
+  wirkt nicht auf den Shopware-Pool.
 
 ### 3. Monitoring einrichten
 
