@@ -1,76 +1,40 @@
 # Kapitel 4: Bildoptimierung
 
-Code-Beispiele und Tools für Tag 3-4 der 30-Tage-Roadmap.
+Code-Beispiele für Tag 3-4 der 30-Tage-Roadmap. Getestet gegen Shopware 6.6.10.6 (Dockware, prod) mit Chromium; `optimize-images.sh` zusätzlich unter Ubuntu 24.04 (ImageMagick 6, pngquant, cwebp aus `apt`).
 
 ## Dateien
 
 | Datei | Beschreibung |
 |-------|--------------|
-| `scripts/image-analysis.js` | DevTools-Snippet zur Bildgrößen-Analyse |
-| `scripts/optimize-images.sh` | Bash-Skript für Bulk-Optimierung |
-| `templates/cms-element-image.html.twig` | CMS-Bild mit Lazy Loading Steuerung |
-| `templates/sw-thumbnails-examples.html.twig` | sw_thumbnails Best Practices |
-| `config/frosh_thumbnail.yaml` | FroshPlatformThumbnailProcessor Config |
+| `scripts/image-analysis.js` | DevTools-Snippet: gewählte srcset-Datei, benötigte gegen echte Pixelbreite, KB, `loading` |
+| `scripts/optimize-images.sh` | Bilder vor dem Upload verkleinern und komprimieren – Originale bleiben unangetastet |
+| `src/Resources/views/storefront/component/product/card/box-standard.html.twig` | `sizes` der Produktbox an die echte Bildbreite anpassen |
+
+Das Twig-Override gehört in Ihr Theme oder Plugin unter denselben Pfad, danach `bin/console cache:clear`. Das LCP-Bild (Hero) behandelt Kapitel 3 (`chapters/03-core-web-vitals/`).
 
 ## Verwendung
 
-### Bildgrößen im Frontend analysieren
+### Bild-Analyse
 
-Öffnen Sie Chrome DevTools (F12) → Console:
+Seite im Browser laden, bis zum Ende scrollen (lazy Bilder laden erst dann), Inhalt von `scripts/image-analysis.js` in die DevTools-Console einfügen. Spalte `Faktor`: Dateibreite geteilt durch benötigte Breite (CSS-Breite × Pixeldichte). Werte über 1,5 bedeuten eine zu grosse Datei.
 
-```javascript
-// Kopieren Sie den Inhalt von scripts/image-analysis.js
-```
-
-### Bilder vor Upload optimieren
+### Bilder vor dem Upload optimieren
 
 ```bash
-# Skript ausführbar machen
-chmod +x scripts/optimize-images.sh
-
-# Alle Bilder in einem Ordner optimieren
-./scripts/optimize-images.sh /pfad/zu/bildern
+sudo apt install imagemagick pngquant webp
+./scripts/optimize-images.sh --dry-run ./fotos ./fotos-optimiert
+./scripts/optimize-images.sh --webp ./fotos ./fotos-optimiert
 ```
 
-### FroshThumbnailProcessor installieren
+Verkleinert auf höchstens 2000 × 2000 px, wendet die EXIF-Drehung an und entfernt EXIF/IPTC/XMP, behält das ICC-Farbprofil, JPEG mit Qualität 80 (progressiv), PNG über pngquant. Mit `--webp` entsteht je Bild zusätzlich eine WebP-Datei. Shopware erzeugt Thumbnails im Format des hochgeladenen Originals: ein WebP-Original ergibt WebP-Thumbnails, ohne Plugin.
 
-```bash
-composer require frosh/platform-thumbnail-processor
-bin/console plugin:refresh
-bin/console plugin:install --activate FroshPlatformThumbnailProcessor
+## Was dieses Kapitel bewusst nicht mitliefert
 
-# Konfiguration kopieren
-cp config/frosh_thumbnail.yaml /pfad/zu/shop/config/packages/
-```
-
-## Bildformat-Vergleich
-
-| Format | Kompression vs. JPEG | Browser-Support |
-|--------|---------------------|-----------------|
-| **WebP** | 25-34% kleiner | ~96% |
-| **AVIF** | 35-50% kleiner | ~94% |
-
-## Shopware Thumbnail-Größen (Standard)
-
-| Größe | Verwendung |
-|-------|------------|
-| 400×400 | Produktboxen, Warenkorb |
-| 800×800 | Produktdetail (Mobile) |
-| 1920×1920 | Hero-Bilder, Produktdetail (Desktop) |
-
-## Quick Wins Checkliste
-
-- [ ] Bildgrößen im Frontend analysiert
-- [ ] Unnötige Thumbnail-Größen entfernt
-- [ ] WebP aktiviert (FroshThumbnailProcessor)
-- [ ] `sw_thumbnails` mit `sizes`-Attribut
-- [ ] Hero-Bilder: `loading="eager"` + `fetchpriority="high"`
-- [ ] Below-the-fold: `loading="lazy"`
+- **Keine YAML-Konfiguration für `FroshPlatformThumbnailProcessor`.** Das Plugin hat keinen Symfony-Konfigurationszweig; eine Datei `config/packages/frosh_thumbnail.yaml` lässt `cache:clear` scheitern und die Storefront mit HTTP 500 antworten (getestet). Konfiguriert wird es in der Administration – und es braucht einen Bilddienst dahinter, sonst liefert jede srcset-Stufe das Original.
 
 ## Quellen
 
+- [Shopware: Media](https://developer.shopware.com/docs/guides/plugins/plugins/content/media/)
+- [Shopware: Remote Thumbnail Generation](https://developer.shopware.com/docs/guides/plugins/plugins/content/media/remote-thumbnail-generation.html)
+- [FroshPlatformThumbnailProcessor](https://github.com/FriendsOfShopware/FroshPlatformThumbnailProcessor)
 - [Web Almanac 2024 - Page Weight](https://almanac.httparchive.org/en/2024/page-weight)
-- [Google WebP Study](https://developers.google.com/speed/webp/docs/webp_study)
-- [caniuse: WebP](https://caniuse.com/webp)
-- [caniuse: AVIF](https://caniuse.com/avif)
-- [Shopware Docs: Media](https://developer.shopware.com/docs/guides/plugins/plugins/content/media)

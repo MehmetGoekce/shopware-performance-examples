@@ -4,6 +4,7 @@ import js from '@eslint/js';
 const browserGlobals = {
     window: 'readonly',
     document: 'readonly',
+    Image: 'readonly',
     navigator: 'readonly',
     location: 'readonly',
     console: 'readonly',
