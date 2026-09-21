@@ -287,6 +287,15 @@ jobs:
             cp /code/chapters/09-php-performance/config/99-shopware-opcache.ini /etc/php/8.3/fpm/conf.d/
             mkdir -p /var/log/php-fpm && chown www-data:www-data /var/log/php-fpm
 
+            # MEM-298: Kapitel 9, Anhang C und beide Vorlagen begruenden das
+            # Abschalten von www.conf mit dessen Vorgaben - zwei Worker im
+            # Leerlauf, hoechstens fuenf. Aendert das Paket sie, stimmt der Satz nicht mehr.
+            WWW=/etc/php/8.3/fpm/pool.d/www.conf
+            grep -qx "pm = dynamic" "$WWW" && grep -qx "pm.max_children = 5" "$WWW" \
+              && grep -qx "pm.start_servers = 2" "$WWW" \
+              || { echo "www.conf hat nicht mehr dynamic/5/2 - Kapitel 9 und Anhang C nachziehen"; exit 1; }
+            echo "ok: www.conf ab Werk dynamic, max 5, start 2"
+
             php-fpm8.3 -t
             php-fpm8.3 -D
             sleep 2
@@ -338,7 +347,18 @@ jobs:
             # zend_extension=opcache.so traegt. Wird er ueberschrieben, ist
             # OPcache weg - und `-t` meldet weiterhin Erfolg. Die Warnung in
             # der Vorlage steht und faellt mit diesem Verhalten.
+            # Positivkontrolle: Ohne geladenes OPcache in der CLI waere die
+            # CLI-Zusicherung unten trivial gruen.
+            php -m | grep -qi "zend opcache" \
+              || { echo "Gegenprobe 2: Die CLI laedt OPcache schon vorher nicht - die Probe waere wertlos."; exit 1; }
             cp /code/chapters/09-php-performance/config/99-shopware-opcache.ini /etc/php/8.3/fpm/conf.d/10-opcache.ini
+            [ -L /etc/php/8.3/fpm/conf.d/10-opcache.ini ] \
+              || { echo "Gegenprobe 2: 10-opcache.ini ist kein Symlink mehr - cp ist ihm nicht gefolgt."; exit 1; }
+            # Nur wirksame Zeilen: die Vorlage nennt zend_extension im Kommentar.
+            if grep -q "^zend_extension" /etc/php/8.3/mods-available/opcache.ini; then
+              echo "Gegenprobe 2: mods-available/opcache.ini laedt noch zend_extension - cp hat sie nicht getroffen."
+              exit 1
+            fi
             if php-fpm8.3 -m | grep -qi "zend opcache"; then
               echo "Gegenprobe 2: OPcache ist noch geladen - die Warnung waere gegenstandslos."
               exit 1
@@ -349,12 +369,12 @@ jobs:
             fi
             # MEM-298: cp folgt dem Symlink und trifft mods-available/opcache.ini,
             # auf die auch die CLI zeigt. Vorlage und Kapitel sagen deshalb, dass
-            # auch die CLI OPcache verliert.
+            # auch der CLI die Erweiterung danach fehlt.
             if php -m | grep -qi "zend opcache"; then
-              echo "Gegenprobe 2: Die CLI laedt OPcache noch - 'auch die CLI' waere falsch."
+              echo "Gegenprobe 2: Die CLI laedt OPcache noch - der Satz zur CLI waere falsch."
               exit 1
             fi
-            echo "ok: OPcache weg in FPM und CLI, -t meldet trotzdem Erfolg"
+            echo "ok: OPcache-Erweiterung weg in FPM und CLI, -t meldet trotzdem Erfolg"
           '
 
   shellcheck:

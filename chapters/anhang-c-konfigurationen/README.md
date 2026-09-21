@@ -32,7 +32,7 @@ doppelt vor (Kapitel 9 und Kapitel 22, beide nach
 | Datei | Ziel auf dem Server | Geprueft mit |
 |---|---|---|
 | `config/nginx-shopware.conf` | `/etc/nginx/sites-available/shopware.conf` | `nginx -t` (nginx 1.27.5) + Header- und ACME-Abfrage am laufenden nginx |
-| `config/php-fpm-pool.conf` | `/etc/php/8.3/fpm/pool.d/shopware.conf` | `php-fpm -t` + FastCGI-Request (`cgi-fcgi`) gegen `php:8.3-fpm` |
+| `config/php-fpm-pool.conf` | `/etc/php/8.3/fpm/pool.d/shopware.conf` | `php-fpm -t` gegen `php:8.3-fpm` (CI); FastCGI-Request (`cgi-fcgi`) von Hand auf `ubuntu:24.04` |
 | `config/mysql-shopware.cnf` | `/etc/mysql/mysql.conf.d/shopware.cnf` | `mysqld --validate-config` + Start von `mysql:8.0` auf frischem Datadir, `SHOW VARIABLES` und Groesse von `#innodb_redo` |
 | `config/supervisor-shopware.conf` | `/etc/supervisor/conf.d/shopware-worker.conf` | `supervisord -n`, alle drei Prozesse erreichen RUNNING |
 | `config/env.local.example` | `<shop>/.env.local` | im Testshop (Shopware 6.6.10.6) eingespielt, Shop antwortet mit 200, Keys in beiden Redis-Instanzen |

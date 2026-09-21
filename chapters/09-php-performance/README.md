@@ -43,8 +43,8 @@ php-fpm8.3 -i | grep -E '^opcache\.(enable|memory_consumption|max_accelerated_fi
 > `/etc/php/8.3/mods-available/opcache.ini`, und **nur dort** steht
 > `zend_extension=opcache.so`. Wer sie ueberschreibt, laedt die Erweiterung
 > nicht mehr - OPcache ist dann komplett aus, obwohl in der Konfiguration
-> `opcache.enable=1` steht, und zwar auch in der CLI: `cp` folgt dem Symlink
-> und ueberschreibt die gemeinsame Datei. `php-fpm8.3 -t` meldet trotzdem
+> `opcache.enable=1` steht. `cp` folgt dabei dem Symlink und ueberschreibt die
+> gemeinsame Datei - auch der CLI fehlt die Erweiterung danach. `php-fpm8.3 -t` meldet trotzdem
 > "test is successful", der Ausfall ist also lautlos.
 
 > **`php -i | grep opcache` beantwortet die Frage nicht.** CLI und FPM lesen
