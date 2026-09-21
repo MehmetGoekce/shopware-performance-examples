@@ -1,152 +1,136 @@
-# Kapitel 16: Shopware 6 Themes - Companion Code
+# Kapitel 16: Shopware 6 Themes — Companion Code
 
-Performance-optimierte Theme-Komponenten, SCSS-Strukturen und Build-Konfigurationen
-für Shopware 6 Storefronts.
+Companion-Code zum Buch **«Shop-Performance in 30 Tagen»**.
+
+Getestet gegen **Shopware 6.6.10.6** (Dockware, PHP 8.3, Node.js 20 im
+Container, Node.js 22 auf dem Host für `critical`).
+
+- **Gefahren und gemessen:** das Theme-Plugin `PerformanceTheme/` (byte-gleich
+  im Testshop installiert, mit `bin/build-storefront.sh` gebaut, per
+  `theme:change` zugewiesen), beide Skripte, `config/lighthouse-budget.json`
+  (mit `@lhci/cli` 0.15.1 `assert` gegen den Testshop).
+- **Nicht gefahren:** die GitHub-Action `treosh/lighthouse-ci-action` selbst
+  und Shopware 6.7. Wo sich 6.7 unterscheidet, steht es an der Datei.
+
+## Das Wichtigste zuerst
+
+**Die Storefront liefert Theme-CSS und -JavaScript aus `public/theme/<prefix>/`
+aus, nicht aus `public/bundles/storefront/`.** `theme:compile` legt dort
+`css/all.css` und je Theme/Plugin `js/<technical-name>/` ab. Wer unter
+`public/bundles/storefront/js/` misst, misst nichts — dort liegt kein
+Storefront-JavaScript.
+
+**Die Storefront baut mit Webpack, auch in Shopware 6.7.** Die Umstellung auf
+Vite in 6.7 betrifft die Administration. Ab 6.7.11 baut Vite in der Storefront
+zusätzlich ein Laufzeitmodul und die neuen Komponenten — Theme- und Plugin-JS
+läuft weiter über Webpack.
 
 ## Inhalt
 
-### SCSS (`scss/`)
+### `PerformanceTheme/` — installierbares Theme-Plugin
 
-- **base.scss** - Optimierte Basis-Styles mit selektiven Bootstrap-Imports
-- **overrides.scss** - Bootstrap-Variablen-Overrides (vor @Storefront)
-- **critical/** - Above-the-Fold CSS für schnelles First Paint
+| Datei | Zweck |
+|---|---|
+| `src/Resources/theme.json` | `overrides.scss` **vor** `@Storefront`, eigenes JS, Schalter `criticalCss` |
+| `src/Resources/app/storefront/src/scss/overrides.scss` | nur Bootstrap-Variablen |
+| `src/Resources/app/storefront/src/scss/base.scss` | eigene Styles nach `@Storefront`, ohne Bootstrap-Re-Import |
+| `src/Resources/app/storefront/src/main.js` | Plugin asynchron registrieren |
+| `src/Resources/app/storefront/src/plugin/async-slider/async-slider.plugin.js` | lädt tiny-slider erst bei Interaktion |
+| `src/Resources/views/storefront/layout/meta.html.twig` | Critical CSS inline, `all.css` asynchron |
+| `src/Resources/views/storefront/layout/header/logo.html.twig` | `sw_extends`: nur das `<img>` ersetzen |
 
-### Templates (`templates/`)
+### `scripts/`
 
-- **base.html.twig** - Optimierte Basis mit Critical CSS und async Loading
-- **optimized/** - Performance-optimierte Template-Overrides
+- **`analyze-bundle.sh`** — vermisst `public/theme/<prefix>/`: Einstieg (jede
+  Seite) getrennt von Chunks (nur bei Bedarf), roh und gzip, optional mit
+  Budget. Mit `--stats` baut es die Storefront mit Webpack-Statistik und
+  schreibt je Webpack-Compiler einen `webpack-bundle-analyzer`-Report.
+- **`extract-critical-css.sh`** — Critical CSS einer Seite mit `critical` 9
+  als `views/storefront/critical/critical.css.twig`.
 
-### Source (`src/`)
+### `config/lighthouse-budget.json`
 
-- **ThemePerformanceAnalyzer.php** - Analysiert Theme-Assets auf Performance
-- **AsyncPluginLoader.js** - Async Loading für JavaScript-Plugins
-- **PerformancePlugin.js** - Beispiel für optimiertes Plugin
+Budget im Lighthouse-Format (ein **Array**). Für `treosh/lighthouse-ci-action`
+(`budgetPath`) oder `lhci assert --budgetsFile`.
 
-### Scripts (`scripts/`)
+### `src/ThemePerformanceAnalyzer.php`
 
-- **analyze-bundle.sh** - Bundle-Analyse mit source-map-explorer
-- **extract-critical-css.sh** - Critical CSS Extraktion
-- **build-theme.sh** - Optimierter Theme-Build
+PHP-Gegenstück zu `analyze-bundle.sh` für eigene Commands oder Reports:
+`analyzeThemeDirectory()` mit denselben Regeln, Grenzwerte gzip wie im
+Lighthouse-Budget.
 
-### Config (`config/`)
-
-- **theme.json** - Optimierte Theme-Konfiguration
-- **vite.config.mts** - Vite-Konfiguration für Shopware 6.7+
-- **lighthouse-budget.json** - Performance-Budget für CI/CD
-
-## Quick Start
-
-### 1. Theme-Konfiguration anpassen
-
-```json
-// theme.json
-{
-  "style": [
-    "app/storefront/src/scss/overrides.scss",
-    "@Storefront",
-    "app/storefront/src/scss/base.scss"
-  ]
-}
-```
-
-### 2. Bootstrap selektiv laden
-
-```scss
-// scss/base.scss
-@import "~bootstrap/scss/functions";
-@import "~bootstrap/scss/variables";
-@import "~bootstrap/scss/mixins";
-
-// Nur benötigte Komponenten
-@import "~bootstrap/scss/grid";
-@import "~bootstrap/scss/buttons";
-@import "~bootstrap/scss/forms";
-```
-
-### 3. JavaScript-Plugins optimieren
-
-```javascript
-// Nicht benötigte Plugins deregistrieren
-window.PluginManager.deregister('DatePicker');    // -115 KB
-window.PluginManager.deregister('ImageZoom');     // -72 KB
-```
-
-### 4. Bundle analysieren
+## Installation
 
 ```bash
-./scripts/analyze-bundle.sh
+cp -r PerformanceTheme /var/www/html/custom/plugins/
+cd /var/www/html
+bin/console plugin:refresh
+bin/console plugin:install --activate PerformanceTheme
+bin/build-storefront.sh                 # baut das JS (Webpack), dann assets:install + theme:compile
+bin/console theme:change --all PerformanceTheme
 ```
 
-## Performance-Ziele
+`bin/build-storefront.sh` braucht Node.js und die npm-Abhängigkeiten der
+Storefront. Nur SCSS oder Twig geändert? Dann genügt `bin/console theme:compile`
+bzw. `bin/console cache:clear`.
 
-| Metrik | Vorher | Nachher | Reduktion |
-|--------|--------|---------|-----------|
-| JavaScript | 750 KB | 300 KB | -60% |
-| CSS | 180 KB | 90 KB | -50% |
-| LCP | 3.2s | 2.1s | -34% |
-| FCP | 1.8s | 0.9s | -50% |
-
-## Shopware 6.7 Vite Migration
-
-Für Shopware 6.7+ ist die Vite-Konfiguration in `config/vite.config.mts` enthalten:
+## Messen
 
 ```bash
-# Altes Webpack-Build ersetzen
-rm src/Resources/app/storefront/webpack.config.js
+# Was jede Seite lädt, aus dem Theme der gegebenen Seite
+./scripts/analyze-bundle.sh --url https://shop.example.com/ --budget-js 200 --budget-css 100
 
-# Vite-Config kopieren
-cp config/vite.config.mts src/Resources/app/storefront/
+# Zusammensetzung je Modul (braucht Node.js im Shopware-Verzeichnis)
+SHOPWARE_ROOT=/var/www/html ./scripts/analyze-bundle.sh --stats
 ```
 
-## Bundle-Grössen (Standard vs. Optimiert)
+Im Analyzer-Report stehen drei Grössen: **stat** (Quelltext der Module vor
+dem Minifizieren), **parsed** (ausgeliefert), **gzip** (übertragen). Beispiel
+tiny-slider in 6.6.10.6: stat 102 KB, parsed 32 KB, gzip 13 KB.
 
-### JavaScript
+Welche Chunks eine bestimmte Seite nachlädt, sehen nur Browser-Werkzeuge
+(DevTools > Netzwerk, Lighthouse).
 
-| Bibliothek | Standard | Optimiert | Aktion |
-|------------|----------|-----------|--------|
-| jQuery | 229 KB | 0 KB | Entfernt (SW 6.5+) |
-| Bootstrap JS | 129 KB | 45 KB | Selektive Imports |
-| Flatpickr | 115 KB | 0 KB | Deregistriert |
-| TinySlider | 100 KB | 100 KB | Lazy Loading |
-| Hammer.js | 72 KB | 0 KB | Deregistriert |
-| Custom | 105 KB | 80 KB | Tree-Shaking |
+## Critical CSS
 
-### CSS
-
-| Teil | Standard | Optimiert | Aktion |
-|------|----------|-----------|--------|
-| Bootstrap | 150 KB | 60 KB | Selektive Imports |
-| Shopware Skin | 80 KB | 30 KB | @StorefrontBootstrap |
-| Custom | 20 KB | 15 KB | Purge unused |
-
-## Integration
-
-### In bestehendes Theme
-
-1. SCSS-Struktur kopieren
-2. Theme.json anpassen (Reihenfolge!)
-3. Templates mit sw_extends überschreiben
-4. Bundle analysieren
-
-### CI/CD
-
-```yaml
-# .github/workflows/theme-performance.yml
-- name: Build Theme
-  run: npm run build
-
-- name: Analyze Bundle
-  run: ./scripts/analyze-bundle.sh
-
-- name: Lighthouse Audit
-  uses: treosh/lighthouse-ci-action@v12
-  with:
-    budgetPath: ./config/lighthouse-budget.json
+```bash
+npx playwright install chromium          # einmalig, für die Render-Engine
+./scripts/extract-critical-css.sh https://shop.example.com/ \
+    --views-dir /var/www/html/custom/plugins/PerformanceTheme/src/Resources/views/storefront
+bin/console cache:clear
 ```
+
+Danach in der Administration unter «Inhalte > Themes > PerformanceTheme»
+den Schalter «Critical CSS inline, all.css asynchron laden» einschalten.
+
+`critical` 9 braucht Node.js ≥ 22.13. Die Optionen `--base` und `--output`
+aus älteren Anleitungen gibt es nicht mehr, und `--inline` liefert das ganze
+HTML statt CSS.
+
+## Stolperstellen (gemessen)
+
+- `overrides.scss` **hinter** `@Storefront` wirkt nicht: Der Marker
+  `$primary` kam einmal statt 91-mal im CSS an.
+- `@import "~bootstrap/scss/grid"` bricht `theme:compile` ab
+  (`file not found for @import`). `~vendor/bootstrap/…` kompiliert, liefert den
+  Grid aber doppelt aus (+13 KB).
+- `@StorefrontBootstrap` statt `@Storefront`: `all.css` −18 % roh, −10 % gzip
+  (400 → 328 KB roh). Die Doku verlangt dazu `@Plugins` im `style`-Array.
+- Ein Block, den es nicht gibt (z. B. `base_head_stylesheets`), wird
+  **ohne Meldung** ignoriert. Das Theme-CSS steht in `layout_head_stylesheet`
+  in `layout/meta.html.twig`.
+- `sw_include` ohne `ignore missing` auf eine fehlende Datei: HTTP 500 — auch
+  wenn der Zweig mit dem Include nie ausgeführt wird.
+- `{% sw_use %}` gibt es erst ab 6.7.0.0; in 6.6 HTTP 500 (`Unknown "sw_use" tag`).
+- `import('tiny-slider')` im Theme bündelt die Bibliothek ein zweites Mal
+  (eigener Webpack-Compiler je Theme/Plugin).
+- `PluginManager.deregister('DatePicker')` spart auf Start-, Kategorie- und
+  Produktseite nichts: Der Chunk lädt dort ohnehin nicht.
 
 ## Referenzen
 
-- Kapitel 16 im Buch: "Shopware 6 Themes"
-- [Shopware Theme Documentation](https://developer.shopware.com/docs/guides/plugins/themes/)
-- [Bootstrap 5 Customization](https://getbootstrap.com/docs/5.3/customize/sass/)
-- [Vite Configuration](https://vitejs.dev/config/)
+- Kapitel 16 im Buch: «Shopware 6 Themes»
+- [Override Bootstrap Variables](https://developer.shopware.com/docs/guides/plugins/themes/styling/override-bootstrap-variables-in-a-theme.html)
+- [Theme with Bootstrap Styling](https://developer.shopware.com/docs/guides/plugins/themes/inheritance/add-theme-inheritance-without-resources.html)
+- [critical](https://github.com/addyosmani/critical)
+- [webpack-bundle-analyzer](https://github.com/webpack-contrib/webpack-bundle-analyzer)

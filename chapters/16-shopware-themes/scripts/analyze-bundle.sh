@@ -1,256 +1,167 @@
 #!/bin/bash
 #
-# Bundle Analyzer für Shopware 6 Themes
+# analyze-bundle.sh — was die Storefront wirklich ausliefert
 #
-# Analysiert JavaScript- und CSS-Bundles auf Größe und Zusammensetzung.
+# Shopware kopiert das kompilierte Theme nach public/theme/<prefix>/:
+#   css/all.css                   das gesamte Theme-CSS
+#   js/<technical-name>/<name>.js Einstieg je Theme/Plugin, lädt auf jeder Seite
+#   js/<technical-name>/*.<hash6>.js  Chunks, laden nur bei Bedarf
+# Unter public/bundles/storefront/ liegt KEIN Storefront-JavaScript.
 #
-# Verwendung:
-#   ./analyze-bundle.sh [theme-name]
+# Modus 1 (Standard): Dateien unter public/theme/<prefix>/ vermessen.
+# Modus 2 (--stats):  Storefront mit Webpack-Statistik neu bauen und je
+#                     Compiler einen webpack-bundle-analyzer-Report
+#                     schreiben. Der Production-Build selbst schreibt
+#                     weder stats.json noch Source Maps.
 #
-# Voraussetzungen:
-#   - Node.js mit source-map-explorer oder webpack-bundle-analyzer
-#   - Shopware 6 Installation
+# Usage: analyze-bundle.sh [--url URL | --theme-dir DIR] [--stats]
+#                          [--budget-js KB] [--budget-css KB]
 #
+# Exit-Codes: 0 ok, 1 Budget überschritten, 2 Aufruf- oder Umgebungsfehler
+#
+# @see ThemeCompiler.php (collectCompiledFiles, copyScriptFilesToTheme)
+# @see webpack.config.js der Storefront (devtool: false, stats: 'minimal')
 
 set -euo pipefail
 
-# Konfiguration
-THEME_NAME="${1:-PerformanceTheme}"
 SHOPWARE_ROOT="${SHOPWARE_ROOT:-/var/www/html}"
-PUBLIC_DIR="${SHOPWARE_ROOT}/public"
-BUNDLE_DIR="${PUBLIC_DIR}/bundles"
-OUTPUT_DIR="./reports"
+OUT_DIR="${OUT_DIR:-./bundle-report}"
+CURL="${CURL:-curl}"
+NPX="${NPX:-npx}"
+ANALYZER_VERSION="${ANALYZER_VERSION:-4}"
 
-# Farben
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+URL=""
+THEME_DIR=""
+STATS=false
+BUDGET_JS=""
+BUDGET_CSS=""
 
-# Schwellenwerte (in KB)
-THRESHOLD_JS=300
-THRESHOLD_CSS=150
-THRESHOLD_TOTAL=500
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") [--url URL | --theme-dir DIR] [--stats] [--budget-js KB] [--budget-css KB]
 
-echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}  Shopware Theme Bundle Analyzer${NC}"
-echo -e "${BLUE}========================================${NC}"
-echo ""
+  --url URL         Theme-Verzeichnis aus dem HTML dieser Seite ermitteln
+  --theme-dir DIR   Theme-Verzeichnis direkt angeben (public/theme/<prefix>)
+                    Ohne beides: neuestes public/theme/*/css/all.css
+  --stats           Zusätzlich Webpack-Statistik bauen und Reports schreiben
+                    (braucht Node.js und npx im Shopware-Verzeichnis)
+  --budget-js KB    Grenze für Einstiegs-JS, gzip, in KB (Exit 1 bei Überschreitung)
+  --budget-css KB   Grenze für all.css, gzip, in KB (Exit 1 bei Überschreitung)
+  -h, --help        Diese Hilfe
 
-# Verzeichnis erstellen
-mkdir -p "${OUTPUT_DIR}"
-
-# Funktion: Dateigröße formatieren
-format_size() {
-    local size=$1
-    if [[ "${size}" -lt 1024 ]]; then
-        echo "${size} B"
-    elif [[ "${size}" -lt 1048576 ]]; then
-        echo "$(echo "scale=1; ${size} / 1024" | bc) KB"
-    else
-        echo "$(echo "scale=2; ${size} / 1048576" | bc) MB"
-    fi
+Umgebung: SHOPWARE_ROOT (${SHOPWARE_ROOT}), OUT_DIR (${OUT_DIR})
+EOF
 }
 
-# Funktion: Gzip-Größe berechnen
-gzip_size() {
-    local file=$1
-    if command -v gzip &> /dev/null; then
-        gzip -c "${file}" | wc -c
-    else
-        echo "0"
-    fi
-}
+die() { echo "Fehler: $*" >&2; exit 2; }
 
-# Funktion: Brotli-Größe berechnen
-brotli_size() {
-    local file=$1
-    if command -v brotli &> /dev/null; then
-        brotli -c "${file}" | wc -c
-    else
-        echo "0"
-    fi
-}
-
-# JavaScript-Bundles analysieren
-echo -e "${YELLOW}Analysiere JavaScript-Bundles...${NC}"
-echo ""
-
-JS_DIR="${BUNDLE_DIR}/storefront/js"
-TOTAL_JS=0
-JS_FILES=()
-
-if [[ -d "${JS_DIR}" ]]; then
-    while IFS= read -r -d '' file; do
-        size=$(stat -f%z "${file}" 2>/dev/null || stat -c%s "${file}" 2>/dev/null)
-        TOTAL_JS=$((TOTAL_JS + size))
-        JS_FILES+=("${size}:${file}")
-    done < <(find "${JS_DIR}" -name "*.js" -type f -print0)
-
-    # Nach Größe sortieren
-    mapfile -t sorted < <(printf '%s\n' "${JS_FILES[@]}" | sort -t: -k1 -rn)
-
-    echo "JavaScript-Dateien (nach Größe):"
-    echo "--------------------------------"
-    for entry in "${sorted[@]}"; do
-        size="${entry%%:*}"
-        file="${entry#*:}"
-        filename=$(basename "${file}")
-        gzip=$(gzip_size "${file}")
-        echo -e "  $(format_size ${size}) (gzip: $(format_size ${gzip})) - ${filename}"
-    done
-    echo ""
-else
-    echo -e "${RED}JavaScript-Verzeichnis nicht gefunden: ${JS_DIR}${NC}"
-fi
-
-# CSS-Bundles analysieren
-echo -e "${YELLOW}Analysiere CSS-Bundles...${NC}"
-echo ""
-
-CSS_DIR="${BUNDLE_DIR}/storefront/css"
-TOTAL_CSS=0
-CSS_FILES=()
-
-if [[ -d "${CSS_DIR}" ]]; then
-    while IFS= read -r -d '' file; do
-        size=$(stat -f%z "${file}" 2>/dev/null || stat -c%s "${file}" 2>/dev/null)
-        TOTAL_CSS=$((TOTAL_CSS + size))
-        CSS_FILES+=("${size}:${file}")
-    done < <(find "${CSS_DIR}" -name "*.css" -type f -print0)
-
-    # Nach Größe sortieren
-    mapfile -t sorted < <(printf '%s\n' "${CSS_FILES[@]}" | sort -t: -k1 -rn)
-
-    echo "CSS-Dateien (nach Größe):"
-    echo "------------------------"
-    for entry in "${sorted[@]}"; do
-        size="${entry%%:*}"
-        file="${entry#*:}"
-        filename=$(basename "${file}")
-        gzip=$(gzip_size "${file}")
-        echo -e "  $(format_size ${size}) (gzip: $(format_size ${gzip})) - ${filename}"
-    done
-    echo ""
-else
-    echo -e "${RED}CSS-Verzeichnis nicht gefunden: ${CSS_DIR}${NC}"
-fi
-
-# Zusammenfassung
-TOTAL=$((TOTAL_JS + TOTAL_CSS))
-TOTAL_KB=$((TOTAL / 1024))
-JS_KB=$((TOTAL_JS / 1024))
-CSS_KB=$((TOTAL_CSS / 1024))
-
-echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}  Zusammenfassung${NC}"
-echo -e "${BLUE}========================================${NC}"
-echo ""
-echo -e "JavaScript:  $(format_size ${TOTAL_JS})"
-echo -e "CSS:         $(format_size ${TOTAL_CSS})"
-echo -e "Gesamt:      $(format_size ${TOTAL})"
-echo ""
-
-# Bewertung
-echo -e "${YELLOW}Bewertung:${NC}"
-echo ""
-
-if [[ "${JS_KB}" -gt "${THRESHOLD_JS}" ]]; then
-    echo -e "  ${RED}[WARNUNG]${NC} JavaScript überschreitet Limit (${JS_KB}KB > ${THRESHOLD_JS}KB)"
-else
-    echo -e "  ${GREEN}[OK]${NC} JavaScript unter Limit (${JS_KB}KB <= ${THRESHOLD_JS}KB)"
-fi
-
-if [[ "${CSS_KB}" -gt "${THRESHOLD_CSS}" ]]; then
-    echo -e "  ${RED}[WARNUNG]${NC} CSS überschreitet Limit (${CSS_KB}KB > ${THRESHOLD_CSS}KB)"
-else
-    echo -e "  ${GREEN}[OK]${NC} CSS unter Limit (${CSS_KB}KB <= ${THRESHOLD_CSS}KB)"
-fi
-
-if [[ "${TOTAL_KB}" -gt "${THRESHOLD_TOTAL}" ]]; then
-    echo -e "  ${RED}[WARNUNG]${NC} Gesamt überschreitet Limit (${TOTAL_KB}KB > ${THRESHOLD_TOTAL}KB)"
-else
-    echo -e "  ${GREEN}[OK]${NC} Gesamt unter Limit (${TOTAL_KB}KB <= ${THRESHOLD_TOTAL}KB)"
-fi
-
-echo ""
-
-# Bekannte Libraries erkennen
-echo -e "${YELLOW}Erkannte Libraries:${NC}"
-echo ""
-
-LIBRARIES=(
-    "jquery:jQuery:229"
-    "bootstrap:Bootstrap:129"
-    "flatpickr:Flatpickr:115"
-    "tiny-slider:TinySlider:100"
-    "hammer:Hammer.js:72"
-    "luxon:Luxon:65"
-    "lodash:Lodash:70"
-    "moment:Moment.js:230"
-)
-
-for lib_info in "${LIBRARIES[@]}"; do
-    IFS=':' read -r pattern name size <<< "${lib_info}"
-
-    if [[ -d "${JS_DIR}" ]]; then
-        if grep -rq "${pattern}" "${JS_DIR}" 2>/dev/null; then
-            echo -e "  ${YELLOW}[GEFUNDEN]${NC} ${name} (~${size}KB)"
-        fi
-    fi
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --url) [[ $# -ge 2 ]] || die "--url braucht einen Wert"; URL="$2"; shift 2 ;;
+        --theme-dir) [[ $# -ge 2 ]] || die "--theme-dir braucht einen Wert"; THEME_DIR="$2"; shift 2 ;;
+        --stats) STATS=true; shift ;;
+        --budget-js) [[ $# -ge 2 ]] || die "--budget-js braucht einen Wert"; BUDGET_JS="$2"; shift 2 ;;
+        --budget-css) [[ $# -ge 2 ]] || die "--budget-css braucht einen Wert"; BUDGET_CSS="$2"; shift 2 ;;
+        -h|--help) usage; exit 0 ;;
+        *) usage >&2; exit 2 ;;
+    esac
 done
 
-echo ""
+for b in "$BUDGET_JS" "$BUDGET_CSS"; do
+    [[ -z "$b" || "$b" =~ ^[0-9]+$ ]] || die "Budget muss eine ganze Zahl in KB sein: $b"
+done
 
-# JSON-Report erstellen
-REPORT_FILE="${OUTPUT_DIR}/bundle-report-$(date +%Y%m%d-%H%M%S).json"
+# Bytes → «123.4 KB», ohne bc
+kb() { awk -v b="$1" 'BEGIN { printf "%.1f KB", b / 1024 }'; }
+gz_bytes() { gzip -9 -c "$1" | wc -c | tr -d ' '; }
+file_bytes() { wc -c < "$1" | tr -d ' '; }
 
-cat > "${REPORT_FILE}" << EOF
-{
-  "timestamp": "$(date -Iseconds)",
-  "theme": "${THEME_NAME}",
-  "summary": {
-    "javascript": {
-      "totalBytes": ${TOTAL_JS},
-      "totalKB": ${JS_KB},
-      "threshold": ${THRESHOLD_JS},
-      "passed": $([ "${JS_KB}" -le "${THRESHOLD_JS}" ] && echo "true" || echo "false")
-    },
-    "css": {
-      "totalBytes": ${TOTAL_CSS},
-      "totalKB": ${CSS_KB},
-      "threshold": ${THRESHOLD_CSS},
-      "passed": $([ "${CSS_KB}" -le "${THRESHOLD_CSS}" ] && echo "true" || echo "false")
-    },
-    "total": {
-      "totalBytes": ${TOTAL},
-      "totalKB": ${TOTAL_KB},
-      "threshold": ${THRESHOLD_TOTAL},
-      "passed": $([ "${TOTAL_KB}" -le "${THRESHOLD_TOTAL}" ] && echo "true" || echo "false")
-    }
-  }
-}
-EOF
+# --- Theme-Verzeichnis bestimmen ------------------------------------------
+if [[ -n "$URL" ]]; then
+    html="$("$CURL" -fsSL "$URL")" || die "Seite nicht erreichbar: $URL"
+    prefix="$(printf '%s' "$html" | grep -oE '/theme/[0-9a-f]{32}/css/all\.css' | head -n 1 | cut -d/ -f3 || true)"
+    [[ -n "$prefix" ]] || die "Kein /theme/<prefix>/css/all.css im HTML von $URL"
+    THEME_DIR="${SHOPWARE_ROOT}/public/theme/${prefix}"
+elif [[ -z "$THEME_DIR" ]]; then
+    newest="$(ls -t "${SHOPWARE_ROOT}"/public/theme/*/css/all.css 2>/dev/null | head -n 1 || true)"
+    [[ -n "$newest" ]] || die "Kein kompiliertes Theme unter ${SHOPWARE_ROOT}/public/theme/ (theme:compile gelaufen?)"
+    THEME_DIR="$(dirname "$(dirname "$newest")")"
+fi
+[[ -f "${THEME_DIR}/css/all.css" ]] || die "Keine css/all.css in ${THEME_DIR}"
 
-echo -e "${GREEN}Report gespeichert: ${REPORT_FILE}${NC}"
-echo ""
+echo "Theme-Verzeichnis: ${THEME_DIR}"
+echo
 
-# Empfehlungen
-if [[ "${TOTAL_KB}" -gt "${THRESHOLD_TOTAL}" ]]; then
-    echo -e "${YELLOW}Empfehlungen zur Optimierung:${NC}"
-    echo ""
-    echo "  1. Nicht benötigte Plugins mit PluginManager.deregister() entfernen"
-    echo "  2. @StorefrontBootstrap statt @Storefront verwenden"
-    echo "  3. Selektive Bootstrap-Imports nutzen"
-    echo "  4. Async Loading für selten genutzte Plugins"
-    echo "  5. Vite statt Webpack für besseres Tree-Shaking (SW 6.7+)"
-    echo ""
+# --- CSS ------------------------------------------------------------------
+css="${THEME_DIR}/css/all.css"
+css_raw="$(file_bytes "$css")"
+css_gz="$(gz_bytes "$css")"
+echo "CSS (lädt auf jeder Seite)"
+printf '  %-12s %-12s %s\n' "$(kb "$css_raw")" "gzip $(kb "$css_gz")" "css/all.css"
+echo
+
+# --- JavaScript -----------------------------------------------------------
+entry_raw=0; entry_gz=0; chunk_raw=0; chunk_gz=0; chunks=0
+echo "JavaScript-Einstieg (lädt auf jeder Seite)"
+while IFS= read -r f; do
+    [[ -n "$f" ]] || continue
+    raw="$(file_bytes "$f")"; gz="$(gz_bytes "$f")"
+    if [[ "$(basename "$f")" =~ \.[0-9a-f]{6}\.js$ ]]; then
+        chunk_raw=$((chunk_raw + raw)); chunk_gz=$((chunk_gz + gz)); chunks=$((chunks + 1))
+    else
+        entry_raw=$((entry_raw + raw)); entry_gz=$((entry_gz + gz))
+        printf '  %-12s %-12s %s\n' "$(kb "$raw")" "gzip $(kb "$gz")" "${f#"${THEME_DIR}/"}"
+    fi
+done < <(find "${THEME_DIR}/js" -name '*.js' -type f 2>/dev/null | sort)
+echo
+echo "Chunks (laden nur, wenn die Seite das Plugin braucht)"
+printf '  %s Dateien, %s, gzip %s\n' "$chunks" "$(kb "$chunk_raw")" "$(kb "$chunk_gz")"
+echo "  Welche davon eine Seite lädt, zeigt nur der Browser (DevTools > Netzwerk, Lighthouse)."
+echo
+echo "Pflichtanteil jeder Seite: JS $(kb "$entry_raw") (gzip $(kb "$entry_gz")), CSS $(kb "$css_raw") (gzip $(kb "$css_gz"))"
+
+# --- Budget ---------------------------------------------------------------
+rc=0
+if [[ -n "$BUDGET_JS" ]] && (( entry_gz > BUDGET_JS * 1024 )); then
+    echo "BUDGET: Einstiegs-JS gzip $(kb "$entry_gz") > ${BUDGET_JS} KB" >&2; rc=1
+fi
+if [[ -n "$BUDGET_CSS" ]] && (( css_gz > BUDGET_CSS * 1024 )); then
+    echo "BUDGET: all.css gzip $(kb "$css_gz") > ${BUDGET_CSS} KB" >&2; rc=1
 fi
 
-# Exit-Code basierend auf Ergebnis
-if [[ "${TOTAL_KB}" -gt "${THRESHOLD_TOTAL}" ]]; then
-    exit 1
-else
-    exit 0
+# --- Modus 2: Webpack-Statistik -------------------------------------------
+if [[ "$STATS" == true ]]; then
+    app="${SHOPWARE_ROOT}/vendor/shopware/storefront/Resources/app/storefront"
+    [[ -f "${app}/webpack.config.js" ]] || die "Storefront-App nicht gefunden: ${app}"
+    command -v node >/dev/null || die "node fehlt (für --stats nötig)"
+    mkdir -p "$OUT_DIR"
+    out="$(cd "$OUT_DIR" && pwd)"
+    echo
+    echo "Baue Storefront mit Webpack-Statistik (Production-Modus) ..."
+    # --stats=normal überstimmt stats: 'minimal' aus der Config; ohne das
+    # enthält stats.json weder Assets noch Module.
+    (cd "$app" && PROJECT_ROOT="$SHOPWARE_ROOT" NODE_ENV=production \
+        "$NPX" webpack --config webpack.config.js --stats=normal --json="${out}/stats.json" > "${out}/webpack.log" 2>&1) \
+        || die "Webpack-Build fehlgeschlagen, siehe ${out}/webpack.log"
+    # Mit Theme- oder Plugin-JS ist stats.json ein Multi-Compiler-Ergebnis:
+    # je Compiler ein eigener outputPath. webpack-bundle-analyzer kennt nur
+    # ein Bundle-Verzeichnis, also je Compiler eine eigene Datei.
+    node -e '
+        const fs = require("fs");
+        const [file, dir] = process.argv.slice(1);
+        const s = JSON.parse(fs.readFileSync(file, "utf8"));
+        const list = (s.children && s.children.length) ? s.children : [s];
+        for (const c of list) {
+            fs.writeFileSync(`${dir}/stats-${c.name}.json`, JSON.stringify(c));
+            console.log(`${c.name}\t${c.outputPath}`);
+        }' "${out}/stats.json" "$out" > "${out}/compilers.tsv"
+    while IFS=$'\t' read -r name path; do
+        "$NPX" --yes "webpack-bundle-analyzer@${ANALYZER_VERSION}" "${out}/stats-${name}.json" "$path" \
+            -m static -r "${out}/report-${name}.html" --no-open > "${out}/analyzer-${name}.log" 2>&1 \
+            || die "webpack-bundle-analyzer fehlgeschlagen, siehe ${out}/analyzer-${name}.log"
+        echo "  Report: ${out}/report-${name}.html"
+    done < "${out}/compilers.tsv"
+    echo "  Im Report: stat = Quelltext der Module, parsed = ausgeliefert, gzip = übertragen."
 fi
+
+exit "$rc"

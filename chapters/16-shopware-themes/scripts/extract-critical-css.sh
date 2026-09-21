@@ -1,247 +1,109 @@
 #!/bin/bash
 #
-# Critical CSS Extractor für Shopware 6 Themes
+# extract-critical-css.sh — Critical CSS einer Seite als Twig-Include schreiben
 #
-# Extrahiert Above-the-Fold CSS aus einer URL für inline Loading.
+# Nutzt `critical` ab Version 9 (Node.js >= 22.13). Die CLI hat sich mit
+# v9 geändert: --base und --output gibt es nicht mehr (Abbruch mit
+# «Unknown option»), die Ausgabe heisst -o/--out. Mit --inline liefert
+# critical in jeder Version das komplette HTML, nicht das CSS — deshalb
+# hier ohne --inline.
 #
-# Verwendung:
-#   ./extract-critical-css.sh https://shop.example.com
-#   ./extract-critical-css.sh https://shop.example.com --viewport 1920x1080
+# Engine «render» (Standard) misst im echten Browser (Playwright) und
+# liefert nur das CSS über dem Fold. Engine «static» kommt ohne Browser
+# aus, liefert aber das CSS aller Elemente der Seite (eine Obermenge).
 #
-# Voraussetzungen:
-#   - Node.js (>= 18)
-#   - critical (npm install -g critical)
-#   - puppeteer (wird automatisch installiert)
+# Ergebnis: <views-dir>/critical/critical.css.twig, eingebunden von
+# PerformanceTheme/src/Resources/views/storefront/layout/meta.html.twig.
 #
+# Usage: extract-critical-css.sh URL [--views-dir DIR] [--width PX] [--height PX] [--engine render|static]
+#
+# Exit-Codes: 0 ok, 1 Extraktion fehlgeschlagen, 2 Aufruf- oder Umgebungsfehler
+#
+# @see https://github.com/addyosmani/critical
 
 set -euo pipefail
 
-# Konfiguration
-URL="${1:-}"
-OUTPUT_DIR="./dist/critical"
-VIEWPORT_WIDTH="${VIEWPORT_WIDTH:-1300}"
-VIEWPORT_HEIGHT="${VIEWPORT_HEIGHT:-900}"
-TIMEOUT="${TIMEOUT:-30000}"
+NPX="${NPX:-npx}"
+NODE="${NODE:-node}"
+CRITICAL_VERSION="${CRITICAL_VERSION:-9}"
+PLAYWRIGHT_VERSION="${PLAYWRIGHT_VERSION:-latest}"
 
-# Farben
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
+URL=""
+VIEWS_DIR="./PerformanceTheme/src/Resources/views/storefront"
+WIDTH=1300
+HEIGHT=900
+ENGINE="render"
 
-# Hilfe anzeigen
-show_help() {
-    echo "Usage: $0 <url> [options]"
-    echo ""
-    echo "Options:"
-    echo "  --viewport WxH    Viewport size (default: 1300x900)"
-    echo "  --output DIR      Output directory (default: ./dist/critical)"
-    echo "  --timeout MS      Timeout in milliseconds (default: 30000)"
-    echo "  --help            Show this help"
-    echo ""
-    echo "Examples:"
-    echo "  $0 https://shop.example.com"
-    echo "  $0 https://shop.example.com --viewport 1920x1080"
-    echo ""
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") URL [--views-dir DIR] [--width PX] [--height PX] [--engine render|static]
+
+  URL               Seite, deren Above-the-fold-CSS extrahiert wird
+  --views-dir DIR   Ziel: <DIR>/critical/critical.css.twig
+                    (Standard: ${VIEWS_DIR})
+  --width PX        Viewport-Breite (Standard: ${WIDTH})
+  --height PX       Viewport-Höhe (Standard: ${HEIGHT})
+  --engine NAME     render (Browser, Standard) oder static (ohne Browser, Obermenge)
+  -h, --help        Diese Hilfe
+
+Für --engine render einmalig: npx playwright install chromium
+EOF
 }
 
-# Argumente parsen
+die() { echo "Fehler: $*" >&2; exit 2; }
+
 while [[ $# -gt 0 ]]; do
-    case $1 in
-        --viewport)
-            IFS='x' read -r VIEWPORT_WIDTH VIEWPORT_HEIGHT <<< "$2"
-            shift 2
-            ;;
-        --output)
-            OUTPUT_DIR="$2"
-            shift 2
-            ;;
-        --timeout)
-            TIMEOUT="$2"
-            shift 2
-            ;;
-        --help)
-            show_help
-            exit 0
-            ;;
-        *)
-            if [[ -z "${URL}" ]]; then
-                URL="$1"
-            fi
-            shift
-            ;;
+    case "$1" in
+        --views-dir) [[ $# -ge 2 ]] || die "--views-dir braucht einen Wert"; VIEWS_DIR="$2"; shift 2 ;;
+        --width) [[ $# -ge 2 ]] || die "--width braucht einen Wert"; WIDTH="$2"; shift 2 ;;
+        --height) [[ $# -ge 2 ]] || die "--height braucht einen Wert"; HEIGHT="$2"; shift 2 ;;
+        --engine) [[ $# -ge 2 ]] || die "--engine braucht einen Wert"; ENGINE="$2"; shift 2 ;;
+        -h|--help) usage; exit 0 ;;
+        -*) usage >&2; exit 2 ;;
+        *) [[ -z "$URL" ]] || die "Nur eine URL erlaubt"; URL="$1"; shift ;;
     esac
 done
 
-# URL prüfen
-if [[ -z "${URL}" ]]; then
-    echo -e "${RED}Fehler: URL ist erforderlich${NC}"
-    echo ""
-    show_help
+[[ -n "$URL" ]] || { usage >&2; exit 2; }
+[[ "$WIDTH" =~ ^[0-9]+$ && "$HEIGHT" =~ ^[0-9]+$ ]] || die "--width/--height müssen ganze Zahlen sein"
+[[ "$ENGINE" == render || "$ENGINE" == static ]] || die "--engine muss render oder static sein"
+[[ -d "$VIEWS_DIR" ]] || die "Views-Verzeichnis fehlt: $VIEWS_DIR"
+
+# critical 9 verlangt Node.js >= 22.13
+node_version="$("$NODE" -p 'process.versions.node' 2>/dev/null)" || die "node fehlt"
+IFS=. read -r major minor _ <<< "$node_version"
+if (( major < 22 || (major == 22 && minor < 13) )); then
+    die "critical ${CRITICAL_VERSION} braucht Node.js >= 22.13, gefunden: ${node_version}"
+fi
+
+packages=(-p "critical@${CRITICAL_VERSION}")
+[[ "$ENGINE" == render ]] && packages+=(-p "playwright@${PLAYWRIGHT_VERSION}")
+
+target_dir="${VIEWS_DIR}/critical"
+target="${target_dir}/critical.css.twig"
+mkdir -p "$target_dir"
+tmp_css="$(mktemp)"
+trap 'rm -f "$tmp_css" "${target}.part"' EXIT
+
+echo "Extrahiere Critical CSS: ${URL} (${WIDTH}x${HEIGHT}, Engine ${ENGINE}) ..."
+if ! "$NPX" --yes "${packages[@]}" critical "$URL" -e "$ENGINE" -w "$WIDTH" -h "$HEIGHT" -o "$tmp_css"; then
+    echo "Extraktion fehlgeschlagen. Für --engine render: npx playwright install chromium" >&2
     exit 1
 fi
+[[ -s "$tmp_css" ]] || { echo "critical hat eine leere Datei geliefert" >&2; exit 1; }
 
-echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}  Critical CSS Extractor${NC}"
-echo -e "${BLUE}========================================${NC}"
-echo ""
-echo -e "URL:       ${URL}"
-echo -e "Viewport:  ${VIEWPORT_WIDTH}x${VIEWPORT_HEIGHT}"
-echo -e "Timeout:   ${TIMEOUT}ms"
-echo -e "Output:    ${OUTPUT_DIR}"
-echo ""
+# verbatim: Twig soll im CSS nie nach {{ oder {% suchen
+{
+    echo "{# Erzeugt von extract-critical-css.sh aus ${URL} (${WIDTH}x${HEIGHT}, ${ENGINE}) — nicht von Hand pflegen #}"
+    echo "{% verbatim %}"
+    cat "$tmp_css"
+    echo
+    echo "{% endverbatim %}"
+} > "${target}.part"
+mv "${target}.part" "$target"
 
-# Verzeichnis erstellen
-mkdir -p "${OUTPUT_DIR}"
-
-# Prüfen ob critical installiert ist
-if ! command -v critical &> /dev/null && ! npx critical --version &> /dev/null; then
-    echo -e "${YELLOW}Installing critical package...${NC}"
-    npm install -g critical
-fi
-
-# Temporäre HTML-Datei für critical
-TEMP_HTML=$(mktemp)
-TEMP_CSS=$(mktemp)
-
-# HTML herunterladen
-echo -e "${YELLOW}Lade HTML von ${URL}...${NC}"
-curl -sL "${URL}" > "${TEMP_HTML}"
-
-# Critical CSS extrahieren
-echo -e "${YELLOW}Extrahiere Critical CSS...${NC}"
-
-# Node.js Script für critical
-cat > "${TEMP_CSS}.mjs" << 'NODESCRIPT'
-import { generate } from 'critical';
-import { readFileSync, writeFileSync } from 'fs';
-import { resolve } from 'path';
-
-const args = process.argv.slice(2);
-const url = args[0];
-const outputDir = args[1];
-const width = parseInt(args[2], 10);
-const height = parseInt(args[3], 10);
-const timeout = parseInt(args[4], 10);
-
-async function extractCritical() {
-  try {
-    const { css, html } = await generate({
-      src: url,
-      width: width,
-      height: height,
-      timeout: timeout,
-      inline: false,
-      extract: true,
-      penthouse: {
-        timeout: timeout,
-        renderWaitTime: 500,
-        blockJSRequests: true,
-      },
-    });
-
-    // Critical CSS speichern
-    writeFileSync(resolve(outputDir, 'critical.css'), css);
-
-    // Statistiken ausgeben
-    const originalSize = css.length;
-    console.log(JSON.stringify({
-      success: true,
-      size: originalSize,
-      sizeKB: (originalSize / 1024).toFixed(2),
-    }));
-
-  } catch (error) {
-    console.log(JSON.stringify({
-      success: false,
-      error: error.message,
-    }));
-    process.exit(1);
-  }
-}
-
-extractCritical();
-NODESCRIPT
-
-# Critical ausführen
-RESULT=$(node "${TEMP_CSS}.mjs" "${URL}" "${OUTPUT_DIR}" "${VIEWPORT_WIDTH}" "${VIEWPORT_HEIGHT}" "${TIMEOUT}" 2>/dev/null || echo '{"success":false,"error":"Critical extraction failed"}')
-
-# Aufräumen
-rm -f "${TEMP_HTML}" "${TEMP_CSS}" "${TEMP_CSS}.mjs"
-
-# Ergebnis prüfen
-SUCCESS=$(echo "${RESULT}" | grep -o '"success":\s*true' || true)
-
-if [[ -n "${SUCCESS}" ]]; then
-    SIZE_KB=$(echo "${RESULT}" | grep -o '"sizeKB":"[^"]*"' | cut -d'"' -f4)
-
-    echo -e "${GREEN}Critical CSS erfolgreich extrahiert!${NC}"
-    echo ""
-    echo -e "Größe: ${SIZE_KB} KB"
-    echo -e "Datei: ${OUTPUT_DIR}/critical.css"
-    echo ""
-
-    # Twig-Template erstellen
-    TWIG_FILE="${OUTPUT_DIR}/critical.css.twig"
-    cat > "${TWIG_FILE}" << 'TWIG'
-{#
-    Auto-generated Critical CSS
-
-    Einbindung in base.html.twig:
-
-    {% block base_head_stylesheets %}
-        <style>{% sw_include '@YourTheme/storefront/critical/critical.css.twig' %}</style>
-        {{ parent() }}
-    {% endblock %}
-#}
-TWIG
-
-    cat "${OUTPUT_DIR}/critical.css" >> "${TWIG_FILE}"
-    echo -e "Twig:  ${TWIG_FILE}"
-
-    # Minified Version
-    if command -v cssnano &> /dev/null || npx cssnano --version &> /dev/null 2>&1; then
-        echo ""
-        echo -e "${YELLOW}Minifying...${NC}"
-        npx cssnano "${OUTPUT_DIR}/critical.css" "${OUTPUT_DIR}/critical.min.css" 2>/dev/null || true
-
-        if [[ -f "${OUTPUT_DIR}/critical.min.css" ]]; then
-            MIN_SIZE=$(stat -f%z "${OUTPUT_DIR}/critical.min.css" 2>/dev/null || stat -c%s "${OUTPUT_DIR}/critical.min.css" 2>/dev/null)
-            echo -e "Minified: $(echo "scale=2; ${MIN_SIZE} / 1024" | bc) KB"
-        fi
-    fi
-
-    echo ""
-    echo -e "${BLUE}Empfehlungen:${NC}"
-    echo "  1. Critical CSS sollte < 14 KB sein (für erstes TCP-Paket)"
-    echo "  2. Inline in <head> mit <style> Tag"
-    echo "  3. Rest-CSS async mit preload laden"
-    echo "  4. Bei jeder Theme-Änderung neu generieren"
-    echo ""
-
-else
-    ERROR=$(echo "${RESULT}" | grep -o '"error":"[^"]*"' | cut -d'"' -f4)
-    echo -e "${RED}Fehler bei Critical CSS Extraktion:${NC}"
-    echo -e "${ERROR}"
-    echo ""
-    echo -e "${YELLOW}Mögliche Lösungen:${NC}"
-    echo "  1. URL erreichbar? (curl -I ${URL})"
-    echo "  2. puppeteer installiert? (npm install puppeteer)"
-    echo "  3. Timeout erhöhen (--timeout 60000)"
-    echo ""
-    exit 1
-fi
-
-# Empfohlene Limits prüfen
-CRITICAL_SIZE=$(stat -f%z "${OUTPUT_DIR}/critical.css" 2>/dev/null || stat -c%s "${OUTPUT_DIR}/critical.css" 2>/dev/null)
-CRITICAL_KB=$((CRITICAL_SIZE / 1024))
-
-if [[ "${CRITICAL_KB}" -gt 14 ]]; then
-    echo -e "${YELLOW}Warnung: Critical CSS ist größer als 14 KB (${CRITICAL_KB} KB)${NC}"
-    echo "  - Erwäge manuelle Optimierung"
-    echo "  - Entferne Styles für Elemente unter dem Fold"
-    echo ""
-fi
-
-exit 0
+raw="$(wc -c < "$tmp_css" | tr -d ' ')"
+gz="$(gzip -9 -c "$tmp_css" | wc -c | tr -d ' ')"
+awk -v r="$raw" -v g="$gz" 'BEGIN { printf "Critical CSS: %.1f KB, gzip %.1f KB\n", r / 1024, g / 1024 }'
+echo "Geschrieben: ${target}"
+echo "Danach: theme:compile nicht nötig, aber cache:clear; Schalter «criticalCss» in der Theme-Konfiguration einschalten."

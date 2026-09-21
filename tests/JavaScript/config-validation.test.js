@@ -92,20 +92,28 @@ describe('Lighthouse Config Validation', () => {
         expect(config).not.toBeNull();
     });
 
-    it('should have budgets defined', () => {
+    // Lighthouse/LHCI verlangen ein Array von Budgets auf oberster Ebene
+    // («Budget file is not defined as an array of budgets»).
+    it('should be an array of budgets', () => {
         if (!config) return;
 
-        expect(config).toHaveProperty('budgets');
-        expect(Array.isArray(config.budgets)).toBe(true);
-        expect(config.budgets.length).toBeGreaterThan(0);
+        expect(Array.isArray(config)).toBe(true);
+        expect(config.length).toBeGreaterThan(0);
     });
 
     it('should have valid budget structure', () => {
-        if (!config || !config.budgets) return;
+        if (!Array.isArray(config)) return;
 
-        config.budgets.forEach((budget) => {
+        const validTypes = ['document', 'font', 'image', 'media', 'other', 'script',
+            'stylesheet', 'third-party', 'total'];
+
+        config.forEach((budget) => {
             expect(budget).toHaveProperty('resourceSizes');
             expect(Array.isArray(budget.resourceSizes)).toBe(true);
+            [...budget.resourceSizes, ...(budget.resourceCounts || [])].forEach((entry) => {
+                expect(validTypes).toContain(entry.resourceType);
+                expect(Number.isInteger(entry.budget)).toBe(true);
+            });
         });
     });
 });
