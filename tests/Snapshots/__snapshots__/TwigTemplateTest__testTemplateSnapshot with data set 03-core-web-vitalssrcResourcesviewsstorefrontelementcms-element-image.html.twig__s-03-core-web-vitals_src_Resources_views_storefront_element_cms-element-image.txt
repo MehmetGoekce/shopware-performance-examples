@@ -12,7 +12,8 @@
  # erhalten, damit srcset und sizes nicht verloren gehen.
  #
  # Der Block ist eine Kopie von element_image_media aus Shopware 6.6.10.6,
- # ergaenzt um die markierten Zeilen. Nach einem Shopware-Update mit dem
+ # ergaenzt um die markierten Zeilen (Schreibweise der Hash-Keys an den
+ # Linter dieses Repos angepasst). Nach einem Shopware-Update mit dem
  # Original vergleichen.
  #
  # Bekannte Grenzen:
@@ -28,14 +29,14 @@
 
 {% block element_image_media %}
     {% set attributes = {
-        'class': 'cms-image',
-        'alt': element.translated.config.isDecorative.value ? ' ' : (element.data.media.translated.alt ?: ''),
-        'title': element.translated.config.isDecorative.value ? '' : (element.data.media.translated.title ?: ''),
-        'loading': 'lazy'
+        class: 'cms-image',
+        alt: element.translated.config.isDecorative.value ? ' ' : (element.data.media.translated.alt ?: ''),
+        title: element.translated.config.isDecorative.value ? '' : (element.data.media.translated.title ?: ''),
+        loading: 'lazy'
     } %}
 
     {% if isCover or element.translated.config.displayMode.value == 'contain' %}
-        {% set attributes = attributes|merge({ 'data-object-fit': element.translated.config.displayMode.value }) %}
+        {% set attributes = attributes|merge({'data-object-fit': element.translated.config.displayMode.value}) %}
     {% endif %}
 
     {# --- Ergaenzung Kapitel 3: erstes CMS-Bild der Seite sofort laden --- #}
@@ -46,7 +47,7 @@
         and section.blocks.first.id == block.id %}
 
     {% if isFirstCmsBlock %}
-        {% set attributes = attributes|merge({ 'loading': 'eager', 'fetchpriority': 'high' }) %}
+        {% set attributes = attributes|merge({loading: 'eager', fetchpriority: 'high'}) %}
     {% endif %}
     {# --- Ende Ergaenzung --- #}
 
