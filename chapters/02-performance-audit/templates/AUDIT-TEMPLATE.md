@@ -2,8 +2,8 @@
 
 **Datum:** [YYYY-MM-DD]
 **Auditor:** [Name]
-**Shopware Version:** [z.B. 6.5.8.0]
-**PHP Version:** [z.B. 8.2.15]
+**Shopware Version:** [z.B. 6.6.10.6]
+**PHP Version (FPM):** [z.B. 8.3.23] (`php -v` zeigt nur die CLI)
 **Hosting:** [Provider/Setup]
 
 ---
@@ -23,7 +23,7 @@
 
 **Gesamtbewertung:** [Schlecht/Akzeptabel/Gut/Exzellent]
 
-**Lighthouse Score (Mobile):** [X]/100
+**Lighthouse Score (Mobile):** [X]/100 (Lighthouse-Version: [z.B. 13.5])
 
 ---
 
@@ -44,10 +44,10 @@
 
 **LCP Element:** [z.B. Hero Image, h1 Text]
 
-**Opportunities:**
-1. [Opportunity 1]
-2. [Opportunity 2]
-3. [Opportunity 3]
+**Insights (Lighthouse 13):**
+1. [Insight 1]
+2. [Insight 2]
+3. [Insight 3]
 
 ### Top-Kategorie (/kategorie/[name]/)
 
@@ -84,7 +84,10 @@
 | INP | [X]ms | |
 | TTFB | [X]ms | |
 
-### Checkout (/checkout/confirm/)
+### Checkout (/checkout/register/)
+
+Als Gast leitet `/checkout/confirm` auf `/checkout/register` um - PageSpeed Insights misst also
+diese Seite. `/checkout/confirm` selbst nur in DevTools mit gefülltem Warenkorb messen.
 
 | Metrik | Wert | Status |
 |--------|------|--------|
@@ -102,8 +105,8 @@
 | Check | Status | Wert |
 |-------|--------|------|
 | PHP Version | ✅/⚠️/❌ | [Version] |
-| PHP OPcache | ✅/⚠️/❌ | [aktiviert/deaktiviert] |
-| JIT Compiler | ✅/⚠️/❌ | [aktiviert/deaktiviert] |
+| PHP OPcache (FPM, nicht `php -i`) | ✅/⚠️/❌ | [aktiviert/deaktiviert] |
+| JIT Compiler | - | [an/aus] (Kapitel 9 lässt JIT begründet aus) |
 | Memory Limit | ✅/⚠️/❌ | [MB] |
 
 ### Datenbank
@@ -127,7 +130,7 @@
 
 | Check | Status | Wert |
 |-------|--------|------|
-| Elasticsearch | ✅/⚠️/❌ | [Health Status] |
+| Elasticsearch/OpenSearch | ✅/⚠️/❌ | [Health Status oder «MySQL-Suche»] |
 | CLI Worker | ✅/⚠️/❌ | [X] Prozesse |
 | Message Queue | ✅/⚠️/❌ | [X] Jobs pending |
 
@@ -135,7 +138,7 @@
 
 | Check | Status | Wert |
 |-------|--------|------|
-| Aktive Plugins | ✅/⚠️/❌ | [Anzahl] |
+| Aktive Plugins | - | [Anzahl] (keine belegte Obergrenze; Kosten je Plugin: Kapitel 17) |
 | Ungenutzte Plugins | ⚠️ | [Anzahl] |
 
 ---
@@ -176,15 +179,15 @@
 
 ---
 
-## 5. Empfohlene Maßnahmen
+## 5. Empfohlene Massnahmen
 
-| # | Maßnahme | Impact | Aufwand | Priorität |
+| # | Massnahme | Impact | Aufwand | Priorität |
 |---|----------|--------|---------|-----------|
-| 1 | [Maßnahme] | [Hoch/Mittel/Niedrig] | [X]h | P1 |
-| 2 | [Maßnahme] | [Hoch/Mittel/Niedrig] | [X]h | P1 |
-| 3 | [Maßnahme] | [Hoch/Mittel/Niedrig] | [X]h | P2 |
-| 4 | [Maßnahme] | [Hoch/Mittel/Niedrig] | [X]h | P2 |
-| 5 | [Maßnahme] | [Hoch/Mittel/Niedrig] | [X]h | P3 |
+| 1 | [Massnahme] | [Hoch/Mittel/Niedrig] | [X]h | P1 |
+| 2 | [Massnahme] | [Hoch/Mittel/Niedrig] | [X]h | P1 |
+| 3 | [Massnahme] | [Hoch/Mittel/Niedrig] | [X]h | P2 |
+| 4 | [Massnahme] | [Hoch/Mittel/Niedrig] | [X]h | P2 |
+| 5 | [Massnahme] | [Hoch/Mittel/Niedrig] | [X]h | P3 |
 
 ### Quick Wins (hoher Impact, niedriger Aufwand)
 
@@ -196,9 +199,9 @@
 
 ## 6. Ressourcen-Analyse
 
-### Größte Ressourcen (Top 10)
+### Grösste Ressourcen (Top 10)
 
-| # | Datei | Größe | Typ |
+| # | Datei | Grösse | Typ |
 |---|-------|-------|-----|
 | 1 | [Datei] | [KB/MB] | [JS/CSS/Image] |
 | 2 | [Datei] | [KB/MB] | [JS/CSS/Image] |
@@ -206,14 +209,14 @@
 
 ### JavaScript Coverage
 
-| Datei | Größe | Unused | Unused % |
+| Datei | Grösse | Unused | Unused % |
 |-------|-------|--------|----------|
-| [app.js] | [KB] | [KB] | [%] |
-| [vendor.js] | [KB] | [KB] | [%] |
+| [storefront.js] | [KB] | [KB] | [%] |
+| [Plugin-/Drittanbieter-Bundle] | [KB] | [KB] | [%] |
 
 ### Third-Party Scripts
 
-| Script | Größe | Blocking | Empfehlung |
+| Script | Grösse | Blocking | Empfehlung |
 |--------|-------|----------|------------|
 | [Google Analytics] | [KB] | [Ja/Nein] | [Behalten/Entfernen/Optimieren] |
 | [Facebook Pixel] | [KB] | [Ja/Nein] | [Behalten/Entfernen/Optimieren] |
@@ -224,14 +227,14 @@
 
 ### Diese Woche
 
-- [ ] [Maßnahme 1]
-- [ ] [Maßnahme 2]
-- [ ] [Maßnahme 3]
+- [ ] [Massnahme 1]
+- [ ] [Massnahme 2]
+- [ ] [Massnahme 3]
 
 ### Dieser Monat
 
-- [ ] [Maßnahme 4]
-- [ ] [Maßnahme 5]
+- [ ] [Massnahme 4]
+- [ ] [Massnahme 5]
 
 ### Re-Audit
 

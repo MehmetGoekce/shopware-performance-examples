@@ -1,129 +1,112 @@
 #!/bin/bash
 #
-# Bildgrößen-Analyse für Shopware 6
+# Bildgrössen-Analyse für Shopware 6
 # Kapitel 2: Performance-Audit
 #
-# Verwendung: ./analyze-images.sh /pfad/zu/media
+# Zählt Originalbilder nach Format, listet die grössten über einer Schwelle
+# und zeigt den WebP-Anteil. Liest nur, ändert nichts.
+#
+# public/media enthält die hochgeladenen Originale; an den Browser gehen meist
+# die Thumbnails aus public/thumbnail. Ein grosses Original ist deshalb erst
+# dann ein Problem, wenn es ungekürzt ausgeliefert wird (Network-Panel, Filter
+# "Img"). Bildoptimierung: Kapitel 4.
+#
+# Verwendung:
+#   ./analyze-images.sh [media-verzeichnis] [schwelle-kb]
+#   ./analyze-images.sh /var/www/shopware/public/media 500
+#
+# Exit-Codes: 0 Analyse gelaufen, 1 Verzeichnis fehlt, 2 falscher Aufruf
 #
 # @see https://github.com/MehmetGoekce/shopware-performance-examples
 
-set -e
+set -euo pipefail
 
-# Farben für Output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
+show_usage() {
+    echo "Usage: $0 [media-verzeichnis] [schwelle-kb]"
+    echo ""
+    echo "Defaults: public/media, 500 KB"
+}
+
+case "${1:-}" in
+    -h|--help) show_usage; exit 0 ;;
+    -*) echo "Unbekannte Option: $1" >&2; show_usage >&2; exit 2 ;;
+esac
+if [[ $# -gt 2 ]]; then
+    show_usage >&2
+    exit 2
+fi
 
 MEDIA_PATH="${1:-public/media}"
 THRESHOLD_KB="${2:-500}"
 
-echo -e "${BLUE}╔════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║       BILDGRÖSSEN-ANALYSE                                   ║${NC}"
-echo -e "${BLUE}╚════════════════════════════════════════════════════════════╝${NC}"
-echo ""
-echo "Pfad: ${MEDIA_PATH}"
-echo "Schwellwert: ${THRESHOLD_KB}KB"
-echo ""
-
+if ! [[ "${THRESHOLD_KB}" =~ ^[0-9]+$ ]]; then
+    echo "Fehler: Schwelle muss eine ganze Zahl in KB sein: ${THRESHOLD_KB}" >&2
+    exit 2
+fi
 if [[ ! -d "${MEDIA_PATH}" ]]; then
-    echo -e "${RED}Fehler: Verzeichnis nicht gefunden: ${MEDIA_PATH}${NC}"
+    echo "Fehler: Verzeichnis nicht gefunden: ${MEDIA_PATH}" >&2
     exit 1
 fi
 
-# Statistiken sammeln
-echo -e "${BLUE}Analysiere...${NC}"
+# Anzahl Dateien mit einer der Endungen (Gross-/Kleinschreibung egal)
+count_ext() {
+    local expr=() ext
+    for ext in "$@"; do
+        [[ ${#expr[@]} -gt 0 ]] && expr+=(-o)
+        expr+=(-iname "*.${ext}")
+    done
+    find "${MEDIA_PATH}" -type f \( "${expr[@]}" \) 2>/dev/null | grep -c . || true
+}
+
+JPG=$(count_ext jpg jpeg)
+PNG=$(count_ext png)
+GIF=$(count_ext gif)
+WEBP=$(count_ext webp)
+AVIF=$(count_ext avif)
+TOTAL=$((JPG + PNG + GIF + WEBP + AVIF))
+
+echo "Pfad:      ${MEDIA_PATH}"
+echo "Schwelle:  ${THRESHOLD_KB} KB"
 echo ""
+echo "Bilder gesamt: ${TOTAL}"
+echo "  JPEG: ${JPG}"
+echo "  PNG:  ${PNG}"
+echo "  GIF:  ${GIF}"
+echo "  WebP: ${WEBP}"
+echo "  AVIF: ${AVIF}"
 
-# Gesamtanzahl Bilder
-TOTAL_IMAGES=$(find "${MEDIA_PATH}" -type f \( -name "*.jpg" -o -name "*.jpeg" -o -name "*.png" -o -name "*.gif" -o -name "*.webp" \) 2>/dev/null | wc -l)
-
-# Bilder über Schwellwert
-LARGE_IMAGES=$(find "${MEDIA_PATH}" -type f \( -name "*.jpg" -o -name "*.jpeg" -o -name "*.png" -o -name "*.gif" \) -size +${THRESHOLD_KB}k 2>/dev/null | wc -l)
-
-# WebP-Bilder
-WEBP_IMAGES=$(find "${MEDIA_PATH}" -type f -name "*.webp" 2>/dev/null | wc -l)
-
-# Gesamt-Größe
-TOTAL_SIZE=$(find "${MEDIA_PATH}" -type f \( -name "*.jpg" -o -name "*.jpeg" -o -name "*.png" -o -name "*.gif" -o -name "*.webp" \) -exec du -ch {} + 2>/dev/null | tail -1 | cut -f1)
-
-echo -e "${BLUE}┌──────────────────────────────────────────────────────────────┐${NC}"
-echo -e "${BLUE}│ ÜBERSICHT                                                    │${NC}"
-echo -e "${BLUE}└──────────────────────────────────────────────────────────────┘${NC}"
-echo ""
-echo "Gesamtanzahl Bilder: ${TOTAL_IMAGES}"
-echo "Gesamt-Größe: ${TOTAL_SIZE}"
-echo ""
-
-# WebP-Status
-echo -n "WebP-Bilder: "
-if [[ "${WEBP_IMAGES}" -gt 0 ]]; then
-    WEBP_PERCENT=$((WEBP_IMAGES * 100 / TOTAL_IMAGES))
-    echo -e "${GREEN}${WEBP_IMAGES} (${WEBP_PERCENT}%) ✓${NC}"
-else
-    echo -e "${YELLOW}0 (WebP-Konvertierung empfohlen)${NC}"
-fi
-
-echo ""
-echo -n "Bilder > ${THRESHOLD_KB}KB: "
-if [[ "${LARGE_IMAGES}" -eq 0 ]]; then
-    echo -e "${GREEN}0 ✓${NC}"
-else
-    LARGE_PERCENT=$((LARGE_IMAGES * 100 / TOTAL_IMAGES))
-    echo -e "${RED}${LARGE_IMAGES} (${LARGE_PERCENT}%)${NC}"
-fi
-
-# Format-Verteilung
-echo ""
-echo -e "${BLUE}┌──────────────────────────────────────────────────────────────┐${NC}"
-echo -e "${BLUE}│ FORMAT-VERTEILUNG                                            │${NC}"
-echo -e "${BLUE}└──────────────────────────────────────────────────────────────┘${NC}"
-echo ""
-
-JPG_COUNT=$(find "${MEDIA_PATH}" -type f \( -name "*.jpg" -o -name "*.jpeg" \) 2>/dev/null | wc -l)
-PNG_COUNT=$(find "${MEDIA_PATH}" -type f -name "*.png" 2>/dev/null | wc -l)
-GIF_COUNT=$(find "${MEDIA_PATH}" -type f -name "*.gif" 2>/dev/null | wc -l)
-
-echo "JPEG: ${JPG_COUNT}"
-echo "PNG:  ${PNG_COUNT}"
-echo "GIF:  ${GIF_COUNT}"
-echo "WebP: ${WEBP_IMAGES}"
-
-# Große Bilder auflisten
-if [[ "${LARGE_IMAGES}" -gt 0 ]]; then
+if [[ ${TOTAL} -eq 0 ]]; then
     echo ""
-    echo -e "${BLUE}┌──────────────────────────────────────────────────────────────┐${NC}"
-    echo -e "${BLUE}│ GRÖßTE BILDER (TOP 20)                                       │${NC}"
-    echo -e "${BLUE}└──────────────────────────────────────────────────────────────┘${NC}"
-    echo ""
-    find "${MEDIA_PATH}" -type f \( -name "*.jpg" -o -name "*.jpeg" -o -name "*.png" -o -name "*.gif" \) -size +${THRESHOLD_KB}k -exec ls -lhS {} \; 2>/dev/null | head -20 | awk '{print $5 "\t" $9}'
+    echo "Keine Bilder gefunden (externer Speicher wie S3?)."
+    exit 0
+fi
+
+# Grösste Dateien über der Schwelle (stat -c läuft mit GNU und BusyBox)
+sizes=$(find "${MEDIA_PATH}" -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.gif' \) \
+    -size "+${THRESHOLD_KB}k" -exec stat -c '%s %n' {} + 2>/dev/null | sort -rn) || true
+LARGE=0
+[[ -n "$sizes" ]] && LARGE=$(grep -c . <<< "$sizes")
+
+echo ""
+echo "Über ${THRESHOLD_KB} KB: ${LARGE} ($((LARGE * 100 / TOTAL)) %)"
+if [[ ${LARGE} -gt 0 ]]; then
+    echo "Die 20 grössten (Bytes, Pfad):"
+    n=0
+    while IFS= read -r line; do
+        echo "  ${line}"
+        n=$((n + 1))
+        [[ $n -ge 20 ]] && break
+    done <<< "$sizes"
 fi
 
 echo ""
-echo -e "${BLUE}╔════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║       EMPFEHLUNGEN                                         ║${NC}"
-echo -e "${BLUE}╚════════════════════════════════════════════════════════════╝${NC}"
-echo ""
-
-if [[ "${LARGE_IMAGES}" -gt 0 ]]; then
-    echo -e "${YELLOW}! ${LARGE_IMAGES} Bilder sind größer als ${THRESHOLD_KB}KB${NC}"
-    echo "  → Diese Bilder komprimieren oder in WebP konvertieren"
-    echo ""
+if [[ $((WEBP + AVIF)) -eq 0 ]]; then
+    echo "Keine WebP/AVIF-Dateien. Shopware erzeugt ab Werk Thumbnails im Format"
+    echo "des Originals; WebP braucht ein Plugin oder eine Konvertierung vor dem Upload."
+    echo "WebP ist laut Google-Studie 25-34 % kleiner als JPEG bei gleicher SSIM"
+    echo "(developers.google.com/speed/webp/docs/webp_study). Wege: Kapitel 4."
 fi
-
-if [[ "${WEBP_IMAGES}" -eq 0 ]]; then
-    echo -e "${YELLOW}! Keine WebP-Bilder gefunden${NC}"
-    echo "  → WebP-Konvertierung spart 25-34% Dateigröße"
-    echo "  → Shopware 6 unterstützt automatische WebP-Generierung"
-    echo ""
+if [[ ${PNG} -gt $((TOTAL / 4)) ]]; then
+    echo "PNG-Anteil über 25 %: PNG nur für Grafiken mit Transparenz,"
+    echo "Fotos als JPEG, WebP oder AVIF."
 fi
-
-if [[ "${PNG_COUNT}" -gt "$((TOTAL_IMAGES / 4))" ]]; then
-    echo -e "${YELLOW}! Hoher PNG-Anteil (${PNG_COUNT} Bilder)${NC}"
-    echo "  → PNG nur für Grafiken mit Transparenz verwenden"
-    echo "  → Fotos als JPEG oder WebP speichern"
-    echo ""
-fi
-
-echo "Fertig."

@@ -1,228 +1,301 @@
 #!/bin/bash
 #
-# Shopware 6 Performance Audit Script
+# Shopware 6 Performance-Audit: Bestandsaufnahme auf dem Server
 # Kapitel 2: Performance-Audit — Wo stehen Sie?
 #
-# Verwendung: ./audit.sh [shopware-root-pfad]
+# Liest nur, ändert nichts. Aufruf als der Benutzer, unter dem der Shop läuft
+# (meist www-data), im Shopware-Verzeichnis oder mit dem Pfad als Argument.
+#
+# Geprüft wird (getestet mit Shopware 6.6.10.6):
+#   1. Versionen: Shopware, PHP-CLI und jede gefundene PHP-FPM-Binary.
+#      php -v zeigt nur die CLI; der Webserver kann eine andere Version nutzen.
+#   2. Plugins: aktive Plugins über plugin:list --json.
+#      plugin:list --active gibt es nicht, plugin:list | wc -l zählt Tabellenrahmen.
+#   3. HTTP-Cache: SHOPWARE_HTTP_CACHE_ENABLED/_DEFAULT_TTL über debug:dotenv,
+#      mit SHOP_URL zusätzlich ein Abruf-Test als Gast (Age > 0 = Treffer).
+#      debug:config bricht in APP_ENV=prod mit "frozen ParameterBag" ab.
+#   4. OPcache der FPM-SAPI über php-fpmX.Y -i. php -i liest die CLI-Konfiguration.
+#   5. Message Queue: laufende CLI-Worker, Admin-Worker-Schalter, messenger:stats.
+#   6. Redis (redis-cli ping) und OpenSearch/Elasticsearch, falls eingeschaltet.
+#   7. Grosse Originalbilder unter public/media.
+#
+# Umgebungsvariablen:
+#   SHOP_URL        Basis-URL für den Abruf-Test (Default: leer = kein Test)
+#   AUDIT_WAIT      Pause zwischen den beiden Abrufen in Sekunden (Default: 2,
+#                   damit Age bei einem Treffer mindestens 1 ist)
+#   IMAGE_MIN_KB    Schwelle für grosse Bilder in KB (Default: 500)
+#   PHP_FPM_CMD     FPM-Binary; leer = alle php-fpm* unter /usr/sbin, /usr/local/sbin
+#   CONSOLE_CMD, PHP_CMD, CURL_CMD, REDIS_CLI_CMD, PGREP_CMD
+#                   Befehle (Defaults: bin/console, php, curl, redis-cli, pgrep),
+#                   für Tests austauschbar
+#
+# Exit-Codes: 0 Audit gelaufen, 1 kein Shopware-Verzeichnis, 2 falscher Aufruf
 #
 # @see https://github.com/MehmetGoekce/shopware-performance-examples
 
-set -e
+set -euo pipefail
 
-# Farben für Output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+SHOP_URL="${SHOP_URL:-}"
+AUDIT_WAIT="${AUDIT_WAIT:-2}"
+IMAGE_MIN_KB="${IMAGE_MIN_KB:-500}"
+read -r -a CONSOLE <<< "${CONSOLE_CMD:-bin/console}"
+read -r -a PHP <<< "${PHP_CMD:-php}"
+read -r -a CURL <<< "${CURL_CMD:-curl}"
+read -r -a REDIS_CLI <<< "${REDIS_CLI_CMD:-redis-cli}"
+read -r -a PGREP <<< "${PGREP_CMD:-pgrep}"
 
-# Shopware Root (default: aktuelles Verzeichnis)
-SHOPWARE_ROOT="${1:-.}"
+show_usage() {
+    echo "Usage: $0 [shopware-verzeichnis]"
+    echo ""
+    echo "Bestandsaufnahme für das Performance-Audit (liest nur)."
+    echo "Ohne Argument wird das aktuelle Verzeichnis geprüft."
+    echo ""
+    echo "Beispiele:"
+    echo "  sudo -u www-data $0 /var/www/shopware"
+    echo "  SHOP_URL=https://ihr-shop.ch sudo -E -u www-data $0 /var/www/shopware"
+}
 
-echo -e "${BLUE}╔════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║       SHOPWARE 6 PERFORMANCE AUDIT                         ║${NC}"
-echo -e "${BLUE}║       Kapitel 2: Performance-Audit                         ║${NC}"
-echo -e "${BLUE}╚════════════════════════════════════════════════════════════╝${NC}"
-echo ""
-echo -e "Datum: $(date '+%Y-%m-%d %H:%M:%S')"
-echo -e "Shopware Root: ${SHOPWARE_ROOT}"
-echo ""
+SHOPWARE_ROOT="."
+case "$#" in
+    0) ;;
+    1)
+        case "$1" in
+            -h|--help) show_usage; exit 0 ;;
+            -*) echo "Unbekannte Option: $1" >&2; show_usage >&2; exit 2 ;;
+            *) SHOPWARE_ROOT="$1" ;;
+        esac
+        ;;
+    *) show_usage >&2; exit 2 ;;
+esac
 
-# Prüfen ob Shopware-Verzeichnis existiert
 if [[ ! -f "${SHOPWARE_ROOT}/bin/console" ]]; then
-    echo -e "${RED}Fehler: Kein Shopware-Verzeichnis gefunden.${NC}"
-    echo "Verwendung: ./audit.sh /pfad/zu/shopware"
+    echo "Fehler: ${SHOPWARE_ROOT}/bin/console nicht gefunden - kein Shopware-Verzeichnis." >&2
     exit 1
 fi
-
 cd "${SHOPWARE_ROOT}"
 
-echo -e "${BLUE}┌──────────────────────────────────────────────────────────────┐${NC}"
-echo -e "${BLUE}│ 1. SYSTEM-VERSIONEN                                          │${NC}"
-echo -e "${BLUE}└──────────────────────────────────────────────────────────────┘${NC}"
+section() {
+    echo ""
+    echo "== $1 =="
+}
 
-# Shopware Version
-echo -n "Shopware Version: "
-SHOPWARE_VERSION=$(bin/console --version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' || echo "unbekannt")
-echo -e "${GREEN}${SHOPWARE_VERSION}${NC}"
+# Erste Zeile einer Ausgabe, ohne head (SIGPIPE unter pipefail)
+first_line() {
+    printf '%s\n' "${1%%$'\n'*}"
+}
 
-# PHP Version
-echo -n "PHP Version: "
-PHP_VERSION=$(php -v | head -n 1 | grep -oP '\d+\.\d+\.\d+')
-PHP_MAJOR=$(echo "${PHP_VERSION}" | cut -d. -f1)
-PHP_MINOR=$(echo "${PHP_VERSION}" | cut -d. -f2)
-if [[ "${PHP_MAJOR}" -ge 8 ]] && [[ "${PHP_MINOR}" -ge 2 ]]; then
-    echo -e "${GREEN}${PHP_VERSION} ✓${NC}"
+# Wert einer Direktive aus "php -i"-Ausgabe: "name => lokal => master"
+ini_value() {
+    awk -F ' => ' -v name="$1" '$1 == name { print $2; exit }' <<< "$2"
+}
+
+# Wert einer Variablen aus der debug:dotenv-Tabelle (leer, wenn nicht gesetzt)
+dotenv_value() {
+    awk -v name="$1" '$1 == name { print $2; exit }' <<< "$2"
+}
+
+echo "Shopware Performance-Audit - $(date '+%Y-%m-%d %H:%M')"
+echo "Verzeichnis: $(pwd)"
+
+# --- 1. Versionen ------------------------------------------------------------
+section "1. Versionen"
+
+sw_version=$("${CONSOLE[@]}" --version 2>/dev/null) || sw_version="nicht ermittelbar"
+echo "Shopware:  $(first_line "$sw_version")"
+
+php_cli=$("${PHP[@]}" -r 'echo PHP_VERSION;' 2>/dev/null) || php_cli="nicht ermittelbar"
+echo "PHP (CLI): ${php_cli}"
+
+fpm_bins=()
+if [[ -n "${PHP_FPM_CMD:-}" ]]; then
+    fpm_bins=("${PHP_FPM_CMD}")
 else
-    echo -e "${YELLOW}${PHP_VERSION} (8.2+ empfohlen)${NC}"
+    for f in /usr/sbin/php-fpm* /usr/local/sbin/php-fpm*; do
+        [[ -x "$f" ]] && fpm_bins+=("$f")
+    done
+fi
+if [[ ${#fpm_bins[@]} -eq 0 ]]; then
+    echo "PHP-FPM:   keine php-fpm-Binary gefunden (Apache mit mod_php? Dann phpinfo() im Web prüfen)"
+fi
+for f in "${fpm_bins[@]}"; do
+    v=$("$f" -v 2>/dev/null) || v="nicht ermittelbar"
+    echo "PHP-FPM:   ${f}: $(first_line "$v")"
+done
+if [[ ${#fpm_bins[@]} -gt 1 ]]; then
+    echo "           Mehrere FPM-Versionen installiert: welche der Webserver nutzt,"
+    echo "           steht in der nginx-/Apache-Konfiguration (fastcgi_pass)."
 fi
 
-# MySQL/MariaDB Version
-echo -n "MySQL/MariaDB: "
-if command -v mysql &> /dev/null; then
-    MYSQL_VERSION=$(mysql --version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1)
-    echo -e "${GREEN}${MYSQL_VERSION}${NC}"
-else
-    echo -e "${YELLOW}nicht direkt prüfbar${NC}"
+# --- 2. Plugins --------------------------------------------------------------
+section "2. Plugins"
+
+plugins_json=$("${CONSOLE[@]}" plugin:list --json 2>/dev/null) || plugins_json=""
+active_plugins=$("${PHP[@]}" -r '
+    $all = json_decode(stream_get_contents(STDIN), true);
+    if (!is_array($all)) { exit(1); }
+    $active = array_filter($all, fn ($p) => !empty($p["active"]));
+    echo count($active), " von ", count($all), " installierten Plugins aktiv\n";
+    foreach ($active as $p) { echo "  - ", $p["name"], " ", $p["version"] ?? "", "\n"; }
+' <<< "$plugins_json" 2>/dev/null) || active_plugins="nicht ermittelbar (plugin:list --json)"
+echo "$active_plugins"
+echo "Eine belegte Obergrenze gibt es nicht: teuer ist ein einzelnes Plugin, nicht"
+echo "die Anzahl. Was ein Plugin kostet, misst Kapitel 17 (A-B-A-Messung)."
+
+# --- 3. HTTP-Cache -----------------------------------------------------------
+section "3. HTTP-Cache"
+
+dotenv=$("${CONSOLE[@]}" debug:dotenv 2>/dev/null) || dotenv=""
+cache_enabled=$(dotenv_value SHOPWARE_HTTP_CACHE_ENABLED "$dotenv")
+cache_ttl=$(dotenv_value SHOPWARE_HTTP_DEFAULT_TTL "$dotenv")
+echo "SHOPWARE_HTTP_CACHE_ENABLED: ${cache_enabled:-nicht gesetzt (Vorgabe 1)}"
+echo "SHOPWARE_HTTP_DEFAULT_TTL:   ${cache_ttl:-nicht gesetzt (Vorgabe 7200)}"
+if [[ "${cache_enabled}" == "0" || "${cache_enabled}" == "false" ]]; then
+    echo "WARNUNG: HTTP-Cache ist abgeschaltet."
 fi
+echo "Das ist die Sicht der CLI. Setzt der Webserver die Variable selbst (FPM-Pool,"
+echo "Container-Umgebung), gilt dort ein anderer Wert - der Abruf-Test zeigt die Wirkung."
 
-echo ""
-echo -e "${BLUE}┌──────────────────────────────────────────────────────────────┐${NC}"
-echo -e "${BLUE}│ 2. PLUGINS                                                   │${NC}"
-echo -e "${BLUE}└──────────────────────────────────────────────────────────────┘${NC}"
-
-# Aktive Plugins zählen
-ACTIVE_PLUGINS=$(bin/console plugin:list --active 2>/dev/null | tail -n +4 | wc -l)
-echo -n "Aktive Plugins: "
-if [[ "${ACTIVE_PLUGINS}" -le 20 ]]; then
-    echo -e "${GREEN}${ACTIVE_PLUGINS} ✓${NC}"
-elif [[ "${ACTIVE_PLUGINS}" -le 30 ]]; then
-    echo -e "${YELLOW}${ACTIVE_PLUGINS} (grenzwertig)${NC}"
-else
-    echo -e "${RED}${ACTIVE_PLUGINS} (zu viele!)${NC}"
-fi
-
-# Plugin-Liste ausgeben
-echo ""
-echo "Installierte Plugins:"
-bin/console plugin:list --active 2>/dev/null | tail -n +4 | head -20
-if [[ "${ACTIVE_PLUGINS}" -gt 20 ]]; then
-    echo "... und $((ACTIVE_PLUGINS - 20)) weitere"
-fi
-
-echo ""
-echo -e "${BLUE}┌──────────────────────────────────────────────────────────────┐${NC}"
-echo -e "${BLUE}│ 3. HTTP-CACHE                                                │${NC}"
-echo -e "${BLUE}└──────────────────────────────────────────────────────────────┘${NC}"
-
-# HTTP-Cache Status
-echo "HTTP-Cache Konfiguration:"
-HTTP_CACHE_ENABLED=$(bin/console debug:config shopware http_cache 2>/dev/null | grep -E "enabled:" | head -1 || echo "")
-if echo "${HTTP_CACHE_ENABLED}" | grep -q "true"; then
-    echo -e "${GREEN}✓ HTTP-Cache ist aktiviert${NC}"
-else
-    echo -e "${RED}✗ HTTP-Cache ist DEAKTIVIERT!${NC}"
-    echo -e "${YELLOW}  → Aktivieren Sie den HTTP-Cache für bessere Performance${NC}"
-fi
-
-# Cache TTL
-bin/console debug:config shopware http_cache 2>/dev/null | grep -E "(default_ttl|stale)" || true
-
-echo ""
-echo -e "${BLUE}┌──────────────────────────────────────────────────────────────┐${NC}"
-echo -e "${BLUE}│ 4. PHP OPCACHE                                               │${NC}"
-echo -e "${BLUE}└──────────────────────────────────────────────────────────────┘${NC}"
-
-# OPcache Status
-OPCACHE_ENABLED=$(php -i 2>/dev/null | grep "opcache.enable =>" | head -1 | awk '{print $3}')
-echo -n "OPcache: "
-if [[ "${OPCACHE_ENABLED}" = "On" ]] || [[ "${OPCACHE_ENABLED}" = "1" ]]; then
-    echo -e "${GREEN}aktiviert ✓${NC}"
-
-    # OPcache Memory
-    OPCACHE_MEMORY=$(php -i 2>/dev/null | grep "opcache.memory_consumption" | awk '{print $3}')
-    echo "Memory: ${OPCACHE_MEMORY}MB"
-
-    # JIT Status (PHP 8+)
-    JIT_ENABLED=$(php -i 2>/dev/null | grep "opcache.jit =>" | awk '{print $3}')
-    if [[ -n "${JIT_ENABLED}" ]] && [[ "${JIT_ENABLED}" != "off" ]] && [[ "${JIT_ENABLED}" != "0" ]]; then
-        echo -e "JIT: ${GREEN}aktiviert ✓${NC}"
+if [[ -n "${SHOP_URL}" ]]; then
+    url="${SHOP_URL%/}/"
+    age=""
+    for i in 1 2; do
+        sleep "${AUDIT_WAIT}"
+        headers=$("${CURL[@]}" -s -o /dev/null -D - -w 'ttfb: %{time_starttransfer}\n' "$url" 2>/dev/null) || headers=""
+        ttfb=$(awk 'tolower($1) == "ttfb:" { print $2; exit }' <<< "$headers")
+        age=$(awk 'tolower($1) == "age:" { gsub(/\r/, "", $2); print $2; exit }' <<< "$headers")
+        echo "Abruf ${i} (Gast, ohne Cookies): TTFB ${ttfb:-?} s, Age ${age:--}"
+    done
+    if [[ "${age}" =~ ^[0-9]+$ && "${age}" -gt 0 ]]; then
+        echo "Treffer: der zweite Abruf kam aus dem Cache."
     else
-        echo -e "JIT: ${YELLOW}deaktiviert (empfohlen für PHP 8.2+)${NC}"
+        echo "Kein Treffer erkennbar. Age: 0 allein ist kein Treffer."
+        echo "Details: Kapitel 6, scripts/cache-debug.sh"
     fi
 else
-    echo -e "${RED}DEAKTIVIERT!${NC}"
-    echo -e "${YELLOW}  → OPcache aktivieren für massive Performance-Steigerung${NC}"
+    echo "Abruf-Test übersprungen (SHOP_URL nicht gesetzt)."
 fi
 
-echo ""
-echo -e "${BLUE}┌──────────────────────────────────────────────────────────────┐${NC}"
-echo -e "${BLUE}│ 5. REDIS                                                     │${NC}"
-echo -e "${BLUE}└──────────────────────────────────────────────────────────────┘${NC}"
+# --- 4. OPcache (FPM) --------------------------------------------------------
+section "4. OPcache der PHP-FPM-SAPI"
 
-# Redis Status
-echo -n "Redis: "
-if command -v redis-cli &> /dev/null; then
-    REDIS_PING=$(redis-cli ping 2>/dev/null || echo "FAIL")
-    if [[ "${REDIS_PING}" = "PONG" ]]; then
-        echo -e "${GREEN}läuft ✓${NC}"
+for f in "${fpm_bins[@]}"; do
+    ini=$("$f" -i 2>/dev/null) || ini=""
+    if [[ -z "$ini" ]]; then
+        echo "${f}: -i liefert nichts"
+        continue
+    fi
+    enable=$(ini_value opcache.enable "$ini")
+    memory=$(ini_value opcache.memory_consumption "$ini")
+    timestamps=$(ini_value opcache.validate_timestamps "$ini")
+    jit=$(ini_value opcache.jit "$ini")
+    jit_buffer=$(ini_value opcache.jit_buffer_size "$ini")
+    echo "${f}:"
+    echo "  opcache.enable              ${enable:-nicht geladen}"
+    echo "  opcache.memory_consumption  ${memory:--} MB"
+    echo "  opcache.validate_timestamps ${timestamps:--}"
+    case "${jit}" in
+        ""|"no value"|off|disable|0) jit_state="aus" ;;
+        *) if [[ "${jit_buffer}" == "0" ]]; then jit_state="aus (jit_buffer_size = 0)"; else jit_state="an (${jit})"; fi ;;
+    esac
+    echo "  JIT                         ${jit_state}"
+    if [[ "${enable}" != "On" && "${enable}" != "1" ]]; then
+        echo "  WARNUNG: OPcache ist für FPM nicht aktiv."
+    fi
+done
+echo "Konfiguration und Begründung (auch, warum JIT aus bleibt): Kapitel 9."
 
-        # Redis Memory
-        REDIS_MEMORY=$(redis-cli info memory 2>/dev/null | grep "used_memory_human" | cut -d: -f2 | tr -d '\r')
-        echo "Memory: ${REDIS_MEMORY}"
+# --- 5. Message Queue --------------------------------------------------------
+section "5. Message Queue"
+
+count_procs() {
+    local n
+    n=$("${PGREP[@]}" -fc "(^|/)php[0-9.]* .*bin/console $1") || true
+    echo "${n:-0}"
+}
+consumers=$(count_procs "messenger:consume")
+schedulers=$(count_procs "scheduled-task:run")
+echo "Laufende messenger:consume-Prozesse:   ${consumers}"
+echo "Laufende scheduled-task:run-Prozesse:  ${schedulers}"
+
+admin_json=$("${CONSOLE[@]}" debug:container --parameter=shopware.admin_worker.enable_admin_worker --format=json 2>/dev/null) || admin_json=""
+admin_worker=$("${PHP[@]}" -r '
+    $p = json_decode(stream_get_contents(STDIN), true);
+    if (!is_array($p)) { exit(1); }
+    echo current($p) ? "an" : "aus";
+' <<< "$admin_json" 2>/dev/null) || admin_worker="nicht ermittelbar"
+echo "Admin-Worker (enable_admin_worker):    ${admin_worker}"
+
+if [[ "${consumers}" -eq 0 && "${admin_worker}" == "an" ]]; then
+    echo "WARNUNG: Die Queue wird nur abgearbeitet, solange jemand im Admin angemeldet ist."
+elif [[ "${consumers}" -eq 0 && "${admin_worker}" == "aus" ]]; then
+    echo "FEHLER: Kein CLI-Worker und kein Admin-Worker - die Queue wird nicht abgearbeitet."
+elif [[ "${consumers}" -gt 0 && "${admin_worker}" == "an" ]]; then
+    echo "Hinweis: CLI-Worker läuft, der Admin-Worker ist trotzdem an (Anhang C schaltet ihn ab)."
+fi
+if [[ "${consumers}" -gt 0 && "${schedulers}" -eq 0 && "${admin_worker}" == "aus" ]]; then
+    echo "WARNUNG: Kein scheduled-task:run - geplante Aufgaben werden nicht mehr eingestellt."
+fi
+
+# messenger:stats schreibt die Tabelle auf stderr, deshalb 2>&1
+stats=$("${CONSOLE[@]}" messenger:stats 2>&1) || stats=""
+rows=$(grep -E '^ +[a-z_]+ +[0-9]+ *$' <<< "$stats") || rows=""
+if [[ -n "$rows" ]]; then
+    echo "Wartende Nachrichten je Transport:"
+    echo "$rows"
+fi
+echo "Worker-Einrichtung (Supervisor, async + low_priority): Anhang C."
+
+# --- 6. Redis und Suche ------------------------------------------------------
+section "6. Redis und Suche"
+
+if command -v "${REDIS_CLI[0]}" > /dev/null 2>&1; then
+    pong=$("${REDIS_CLI[@]}" ping 2>/dev/null) || pong=""
+    if [[ "$pong" == "PONG" ]]; then
+        echo "Redis: antwortet (ob Shopware ihn nutzt, zeigt die Konfiguration, nicht der Ping)"
     else
-        echo -e "${YELLOW}installiert aber nicht erreichbar${NC}"
+        echo "Redis: redis-cli vorhanden, Server antwortet nicht"
     fi
 else
-    echo -e "${YELLOW}nicht installiert${NC}"
-    echo -e "${YELLOW}  → Redis für Sessions und Cache empfohlen${NC}"
+    echo "Redis: redis-cli nicht installiert"
 fi
 
-echo ""
-echo -e "${BLUE}┌──────────────────────────────────────────────────────────────┐${NC}"
-echo -e "${BLUE}│ 6. ELASTICSEARCH                                             │${NC}"
-echo -e "${BLUE}└──────────────────────────────────────────────────────────────┘${NC}"
+es_enabled=$(dotenv_value SHOPWARE_ES_ENABLED "$dotenv")
+es_url=$(dotenv_value OPENSEARCH_URL "$dotenv")
+if [[ "${es_enabled}" == "1" || "${es_enabled}" == "true" ]]; then
+    health=$("${CURL[@]}" -s -m 5 "${es_url%/}/_cluster/health" 2>/dev/null) || health=""
+    status=$("${PHP[@]}" -r '
+        $h = json_decode(stream_get_contents(STDIN), true);
+        echo is_array($h) && isset($h["status"]) ? $h["status"] : "";
+    ' <<< "$health" 2>/dev/null) || status=""
+    echo "OpenSearch/Elasticsearch (${es_url}): ${status:-nicht erreichbar}"
+else
+    echo "Suche: MySQL (SHOPWARE_ES_ENABLED=${es_enabled:-0})."
+    echo "Kapitel 18: Evaluierung von Elasticsearch ab rund 30 000 Produkten."
+fi
 
-# Elasticsearch Status
-echo -n "Elasticsearch: "
-ES_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "localhost:9200/_cluster/health" 2>/dev/null || echo "000")
-if [[ "${ES_STATUS}" = "200" ]]; then
-    ES_HEALTH=$(curl -s "localhost:9200/_cluster/health" 2>/dev/null | grep -oP '"status":"[^"]+' | cut -d'"' -f4)
-    if [[ "${ES_HEALTH}" = "green" ]]; then
-        echo -e "${GREEN}läuft (${ES_HEALTH}) ✓${NC}"
-    elif [[ "${ES_HEALTH}" = "yellow" ]]; then
-        echo -e "${YELLOW}läuft (${ES_HEALTH})${NC}"
+# --- 7. Bilder ---------------------------------------------------------------
+section "7. Grosse Originalbilder (> ${IMAGE_MIN_KB} KB)"
+
+if [[ -d public/media ]]; then
+    sizes=$(find public/media -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \) \
+        -size "+${IMAGE_MIN_KB}k" -exec stat -c '%s %n' {} + 2>/dev/null | sort -rn) || true
+    if [[ -z "$sizes" ]]; then
+        echo "Keine."
     else
-        echo -e "${RED}läuft (${ES_HEALTH})${NC}"
+        echo "Anzahl: $(grep -c . <<< "$sizes")"
+        echo "Die fünf grössten (Bytes, Pfad):"
+        n=0
+        while IFS= read -r line; do
+            echo "  ${line}"
+            n=$((n + 1))
+            [[ $n -ge 5 ]] && break
+        done <<< "$sizes"
     fi
+    echo "Ausgeliefert werden meist Thumbnails; mehr dazu: scripts/analyze-images.sh, Kapitel 4."
 else
-    echo -e "${YELLOW}nicht erreichbar${NC}"
-    echo -e "${YELLOW}  → Empfohlen bei > 5.000 Produkten${NC}"
+    echo "public/media nicht gefunden (externer Speicher wie S3?)."
 fi
 
 echo ""
-echo -e "${BLUE}┌──────────────────────────────────────────────────────────────┐${NC}"
-echo -e "${BLUE}│ 7. MESSAGE QUEUE WORKER                                      │${NC}"
-echo -e "${BLUE}└──────────────────────────────────────────────────────────────┘${NC}"
-
-# CLI Worker Status
-echo -n "CLI Worker: "
-WORKER_RUNNING=$(ps aux 2>/dev/null | grep -c "messenger:consume" || echo "0")
-if [[ "${WORKER_RUNNING}" -gt 1 ]]; then
-    echo -e "${GREEN}$((WORKER_RUNNING - 1)) Prozess(e) laufen ✓${NC}"
-else
-    echo -e "${YELLOW}nicht aktiv${NC}"
-    echo -e "${YELLOW}  → CLI Worker statt Admin Worker empfohlen${NC}"
-fi
-
-# Queue Status
-echo ""
-echo "Message Queue Status:"
-bin/console messenger:stats 2>/dev/null | head -10 || echo "  (nicht verfügbar)"
-
-echo ""
-echo -e "${BLUE}┌──────────────────────────────────────────────────────────────┐${NC}"
-echo -e "${BLUE}│ 8. RESSOURCEN                                                │${NC}"
-echo -e "${BLUE}└──────────────────────────────────────────────────────────────┘${NC}"
-
-# Bildgrößen
-echo "Große Bilder (> 1MB) im Media-Ordner:"
-LARGE_IMAGES=$(find public/media -type f \( -name "*.jpg" -o -name "*.jpeg" -o -name "*.png" \) -size +1M 2>/dev/null | wc -l)
-if [[ "${LARGE_IMAGES}" -eq 0 ]]; then
-    echo -e "${GREEN}✓ Keine Bilder > 1MB gefunden${NC}"
-else
-    echo -e "${RED}${LARGE_IMAGES} Bilder > 1MB gefunden!${NC}"
-    echo "Top 5 größte Bilder:"
-    find public/media -type f \( -name "*.jpg" -o -name "*.jpeg" -o -name "*.png" \) -size +1M -exec ls -lh {} \; 2>/dev/null | sort -k5 -h -r | head -5
-fi
-
-echo ""
-echo -e "${BLUE}╔════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║       AUDIT ABGESCHLOSSEN                                  ║${NC}"
-echo -e "${BLUE}╚════════════════════════════════════════════════════════════╝${NC}"
-echo ""
-echo "Nächste Schritte:"
-echo "1. PageSpeed Insights für Ihre wichtigsten URLs testen"
-echo "2. Chrome DevTools → Lighthouse für detaillierte Analyse"
-echo "3. Audit-Template ausfüllen (templates/AUDIT-TEMPLATE.md)"
-echo ""
+echo "Fertig. Nächste Schritte: PageSpeed Insights und Lighthouse für die fünf"
+echo "wichtigsten URLs, dann templates/AUDIT-TEMPLATE.md ausfüllen."
