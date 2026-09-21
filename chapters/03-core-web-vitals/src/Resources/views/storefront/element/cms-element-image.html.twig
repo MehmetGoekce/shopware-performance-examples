@@ -22,6 +22,9 @@
  # - «Erster Block der ersten Sektion» ist eine Naeherung fuer «oben
  #   sichtbar». Welches Element wirklich LCP ist, zeigt das Snippet aus
  #   scripts/cwv-diagnostics.js.
+ # - Hat der erste Block mehrere Bilder (z. B. zwei- oder dreispaltig),
+ #   bekommen alle hohe Prioritaet. Beginnt die Seite mit einem Textblock,
+ #   bleibt das erste Bild lazy.
  #
  # @see https://github.com/MehmetGoekce/shopware-performance-examples
  #}
@@ -39,9 +42,9 @@
         {% set attributes = attributes|merge({'data-object-fit': element.translated.config.displayMode.value}) %}
     {% endif %}
 
-    {# --- Ergaenzung Kapitel 3: erstes CMS-Bild der Seite sofort laden --- #}
-    {# Der CmsPageLoader sortiert Sektionen und Bloecke nach position,     #}
-    {# «first» ist also der oberste Block.                                 #}
+    {# --- Ergaenzung Kapitel 3: Bild im ersten Block sofort laden ------- #}
+    {# Der SalesChannelCmsPageLoader sortiert Sektionen und Bloecke nach   #}
+    {# position, «first» ist also der oberste Block.                       #}
     {% set isFirstCmsBlock = cmsPage is defined and section is defined and block is defined
         and cmsPage.sections.first.id == section.id
         and section.blocks.first.id == block.id %}

@@ -31,3 +31,4 @@ jobs:
             https://ihr-shop.ch/kategorie/
             https://ihr-shop.ch/produkt/beispiel/
           configPath: ./lighthouserc.json
+          uploadArtifacts: true  # Bericht als Actions-Artefakt, sonst weg mit dem Runner

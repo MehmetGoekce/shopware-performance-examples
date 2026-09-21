@@ -59,18 +59,27 @@ findLayoutShifts();
 
 // Ein Tap erzeugt mehrere Events (pointerdown, pointerup, click …).
 // Für INP zählt je Interaktion (interactionId > 0) das längste davon;
-// Hover- und Scroll-Events haben interactionId 0 und zählen nicht.
+// Hover-Events haben interactionId 0 und zählen nicht, Scrollen
+// erfasst Event Timing gar nicht.
+// Das längste Event kann nach einem kürzeren kommen (keyup nach
+// keydown): gemeldet wird erst, wenn 1 s lang kein längeres nachkam.
 function findSlowInteractions() {
     const longest = new Map();
+    const timers = new Map();
     new PerformanceObserver((list) => {
         for (const entry of list.getEntries()) {
-            if (!entry.interactionId) continue;
-            const prev = longest.get(entry.interactionId);
+            const id = entry.interactionId;
+            if (!id) continue;
+            const prev = longest.get(id);
             if (prev && prev.duration >= entry.duration) continue;
-            longest.set(entry.interactionId, entry);
-            if (entry.duration > 200) {
-                console.log('🐌 Slow Interaction:', entry.name, entry.duration + 'ms', entry.target);
-            }
+            longest.set(id, entry);
+            clearTimeout(timers.get(id));
+            timers.set(id, setTimeout(() => {
+                const slowest = longest.get(id);
+                if (slowest.duration > 200) {
+                    console.log('🐌 Slow Interaction:', slowest.name, slowest.duration + 'ms', slowest.target);
+                }
+            }, 1000));
         }
     }).observe({ type: 'event', buffered: true, durationThreshold: 16 });
 }
@@ -93,7 +102,9 @@ function analyzeResources() {
         Typ: r.initiatorType,
     });
 
+    console.log('Nach Grösse (übertragen):');
     console.table([...resources].sort((a, b) => b.transferSize - a.transferSize).slice(0, 10).map(row));
+    console.log('Nach Dauer:');
     console.table([...resources].sort((a, b) => b.duration - a.duration).slice(0, 10).map(row));
 }
 

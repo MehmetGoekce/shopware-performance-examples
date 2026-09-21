@@ -30,7 +30,12 @@ function run(entriesByType, resources = []) {
             }
         }
     }
+    // Zeitgeber von Hand: erst nach run() ausgelöst, wie nach 1 s Ruhe
+    const timers = new Map();
+    let nextId = 1;
     const context = {
+        setTimeout: (fn) => { timers.set(nextId, fn); return nextId++; },
+        clearTimeout: (id) => { timers.delete(id); },
         PerformanceObserver,
         performance: { getEntriesByType: () => resources },
         console: {
@@ -39,6 +44,7 @@ function run(entriesByType, resources = []) {
         },
     };
     vm.runInNewContext(code, context);
+    timers.forEach(fn => fn());
     return { logs, tables };
 }
 
@@ -98,6 +104,22 @@ describe('cwv-diagnostics.js', () => {
 
         it('meldet eine langsame Interaktion genau einmal', () => {
             expect(slow()).toEqual(['🐌 Slow Interaction: pointerdown 304ms BUTTON']);
+        });
+
+        it('meldet das längste Event, auch wenn es nach einem kürzeren kommt', () => {
+            out = run({
+                event: [
+                    // In Chromium gemessen: keyup länger als keydown derselben Taste
+                    { name: 'keydown', duration: 248, interactionId: 11, target: 'INPUT' },
+                    { name: 'keyup', duration: 352, interactionId: 11, target: 'INPUT' },
+                    { name: 'pointerdown', duration: 224, interactionId: 12, target: 'BUTTON' },
+                    { name: 'pointerup', duration: 400, interactionId: 12, target: 'BUTTON' },
+                ],
+            });
+            expect(slow()).toEqual([
+                '🐌 Slow Interaction: keyup 352ms INPUT',
+                '🐌 Slow Interaction: pointerup 400ms BUTTON',
+            ]);
         });
 
         it('zählt Events ohne interactionId nicht', () => {
