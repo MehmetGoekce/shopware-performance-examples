@@ -5,7 +5,7 @@
 # audit.sh runs against a fake Shopware root whose bin/console is a stub.
 # Fixture formats are copied from Shopware 6.6.10.6 (Dockware). Tests that
 # parse JSON need php; the bats/bats image has none, so they skip there
-# (CI installs php, see .github/workflows/test.yml).
+# (the CI job checks that php is present, see .github/workflows/test.yml).
 
 DIR="$PWD/chapters/02-performance-audit/scripts"
 
@@ -63,20 +63,13 @@ opcache.memory_consumption => 128 => 128
 opcache.validate_timestamps => On => On
 EOF
 
-    # pgrep stub: count per pattern from fixture files
-    cat > "$TMP/pgrep" <<'EOF'
-#!/bin/bash
-case "$2" in
-    *messenger:consume*) n=$(cat "$FIX/consumers" 2>/dev/null || echo 0) ;;
-    *) n=0 ;;
-esac
-echo "$n"
-[ "$n" -gt 0 ]
-EOF
-    chmod +x "$TMP/pgrep"
+    # ps stub: process list from $FIX/ps.txt (one command line per row)
+    printf '%s\n' 'COMMAND' '/sbin/init' 'php-fpm: master process (/etc/php/8.3/fpm/php-fpm.conf)' > "$FIX/ps.txt"
+    printf '#!/bin/bash\ncat "$FIX/ps.txt"\n' > "$TMP/ps"
+    chmod +x "$TMP/ps"
 
     export PHP_FPM_CMD="$TMP/fpm"
-    export PGREP_CMD="$TMP/pgrep"
+    export PS_CMD="$TMP/ps"
     export REDIS_CLI_CMD="no-such-redis-cli"
     export AUDIT_WAIT=1
 }
@@ -164,10 +157,30 @@ code_lines() {
     [[ "$output" == *"WARNUNG: HTTP-Cache ist abgeschaltet."* ]]
 }
 
-@test "audit.sh names the default when the variable is not set" {
+@test "audit.sh does not claim a default when the variable is only missing from .env" {
     grep -v 'HTTP_CACHE_ENABLED' "$FIX/dotenv.txt" > "$FIX/d" && mv "$FIX/d" "$FIX/dotenv.txt"
     run "$DIR/audit.sh" "$TMP/shop"
-    [[ "$output" == *"nicht gesetzt (Vorgabe 1)"* ]]
+    [[ "$output" == *"in keiner .env-Datei (Vorgabe 1, sofern die Umgebung nichts setzt)"* ]]
+}
+
+@test "audit.sh says so when debug:dotenv fails" {
+    rm "$FIX/dotenv.txt"
+    sed -i 's|debug:dotenv) cat "$FIX/dotenv.txt" ;;|debug:dotenv) exit 1 ;;|' "$TMP/shop/bin/console"
+    grep -q 'debug:dotenv) exit 1' "$TMP/shop/bin/console"
+    run "$DIR/audit.sh" "$TMP/shop"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"debug:dotenv nicht verfügbar"* ]]
+    [[ "$output" == *"Suche: nicht ermittelbar"* ]]
+    [[ "$output" != *"SHOPWARE_ES_ENABLED=0"* ]]
+}
+
+@test "audit.sh treats only 0 as off and explains other values" {
+    sed -i 's/CACHE_ENABLED   1       n\/a          1/CACHE_ENABLED   false   n\/a          false/' "$FIX/dotenv.txt"
+    grep -q 'CACHE_ENABLED   false' "$FIX/dotenv.txt"
+    run "$DIR/audit.sh" "$TMP/shop"
+    [[ "$output" == *"SHOPWARE_HTTP_CACHE_ENABLED: false (wirkt als: an)"* ]]
+    [[ "$output" == *"«false» gilt als an"* ]]
+    [[ "$output" != *"WARNUNG: HTTP-Cache"* ]]
 }
 
 @test "audit.sh finds the variable in a long debug:dotenv output" {
@@ -208,6 +221,17 @@ EOF
     [[ "$output" != *"Treffer: Age"* ]]
 }
 
+@test "audit.sh does not count Age 0 -> 1 as a hit with a 2 s pause" {
+    age_curl 0 1
+    AUDIT_WAIT=2 CURL_CMD="$TMP/curl" SHOP_URL="http://shop.test" run "$DIR/audit.sh" "$TMP/shop"
+    [[ "$output" == *"Kein Treffer erkennbar"* ]]
+}
+
+@test "audit.sh no longer points to cache-debug.sh" {
+    run bash -c "grep -v -e '^[[:space:]]*#' '$DIR/audit.sh' | grep -c -e 'cache-debug'"
+    [ "$output" = "0" ]
+}
+
 @test "audit.sh does not count the Age of two slow misses as a hit" {
     # Symfony setzt beim Speichern Age = Renderdauer: zwei MISS mit je 3 s
     age_curl 3 3
@@ -220,6 +244,11 @@ EOF
     AUDIT_WAIT=0 run "$DIR/audit.sh" "$TMP/shop"
     [ "$status" -eq 2 ]
     AUDIT_WAIT=x run "$DIR/audit.sh" "$TMP/shop"
+    [ "$status" -eq 2 ]
+}
+
+@test "audit.sh exits 2 on an invalid IMAGE_MIN_KB" {
+    IMAGE_MIN_KB=0,5 run "$DIR/audit.sh" "$TMP/shop"
     [ "$status" -eq 2 ]
 }
 
@@ -248,7 +277,40 @@ EOF
 @test "audit.sh reports JIT on with mode and buffer" {
     sed -i 's/^opcache.jit => no value => no value/opcache.jit => tracing => tracing/; s/^opcache.jit_buffer_size => 0 => 0/opcache.jit_buffer_size => 64M => 64M/' "$FIX/fpm-i.txt"
     run "$DIR/audit.sh" "$TMP/shop"
-    [[ "$output" == *"an (tracing)"* ]]
+    [[ "$output" == *"konfiguriert (tracing)"* ]]
+    [[ "$output" != *"JIT                         an"* ]]
+}
+
+@test "audit.sh reads JIT off and disable as off" {
+    for mode in off disable; do
+        sed -i "s/^opcache.jit => .*/opcache.jit => $mode => $mode/; s/^opcache.jit_buffer_size => .*/opcache.jit_buffer_size => 64M => 64M/" "$FIX/fpm-i.txt"
+        grep -q "^opcache.jit => $mode" "$FIX/fpm-i.txt"
+        run "$DIR/audit.sh" "$TMP/shop"
+        [[ "$output" == *"JIT                         aus"* ]]
+    done
+}
+
+@test "audit.sh warns when OPcache is not loaded at all" {
+    printf 'opcache.jit => no value => no value\n' > "$FIX/fpm-i.txt"
+    run "$DIR/audit.sh" "$TMP/shop"
+    [[ "$output" == *"opcache.enable              nicht geladen"* ]]
+    [[ "$output" == *"WARNUNG: OPcache ist für FPM nicht aktiv."* ]]
+}
+
+@test "audit.sh reports ini files the current user cannot read" {
+    [ "$(id -u)" -ne 0 ] || skip "root reads every file"
+    mkdir -p "$TMP/conf.d" && echo 'opcache.memory_consumption=333' > "$TMP/conf.d/99-x.ini" && chmod 000 "$TMP/conf.d/99-x.ini"
+    echo "Scan this dir for additional .ini files => $TMP/conf.d" >> "$FIX/fpm-i.txt"
+    run "$DIR/audit.sh" "$TMP/shop"
+    [[ "$output" == *"99-x.ini ist für"*"nicht lesbar"* ]]
+}
+
+@test "audit.sh marks which FPM version is running" {
+    run "$DIR/audit.sh" "$TMP/shop"
+    [[ "$output" == *"[installiert, kein Master-Prozess gefunden]"* ]]
+    cp "$TMP/fpm" "$TMP/php-fpm8.3"
+    PHP_FPM_CMD="$TMP/php-fpm8.3" run "$DIR/audit.sh" "$TMP/shop"
+    [[ "$output" == *"php-fpm8.3: PHP 8.3.23 (fpm-fcgi) [läuft]"* ]]
 }
 
 @test "audit.sh does not take opcache.enable_cli for opcache.enable" {
@@ -261,9 +323,11 @@ EOF
 # --- Message Queue -----------------------------------------------------------
 
 @test "audit.sh shows messenger:stats rows written to stderr" {
+    sed -i 's/low_priority   0/low_priority   5/' "$FIX/stats.txt"
     run "$DIR/audit.sh" "$TMP/shop"
-    [[ "$output" == *"Wartende Nachrichten je Transport:"* ]]
+    [[ "$output" == *"Nachrichten je Transport"* ]]
     [[ "$output" == *"async          19"* ]]
+    [[ "$output" == *"low_priority   5"* ]]
 }
 
 @test "audit.sh warns when only the admin worker processes the queue" {
@@ -274,20 +338,46 @@ EOF
     [[ "$output" == *"solange jemand im Admin angemeldet ist"* ]]
 }
 
-@test "audit.sh reports an error when no worker at all runs" {
+@test "audit.sh warns when no worker at all runs on this host" {
     needs_php
     printf '{"shopware.admin_worker.enable_admin_worker": false}\n' > "$FIX/admin.json"
     run "$DIR/audit.sh" "$TMP/shop"
-    [[ "$output" == *"FEHLER: Kein CLI-Worker und kein Admin-Worker"* ]]
+    [[ "$output" == *"WARNUNG: Kein CLI-Worker auf diesem Host und Admin-Worker aus"* ]]
 }
 
-@test "audit.sh counts running CLI workers" {
+@test "audit.sh counts CLI workers in all command line forms, not itself" {
     needs_php
-    echo 2 > "$FIX/consumers"
+    cat >> "$FIX/ps.txt" <<'EOF'
+php /var/www/html/bin/console messenger:consume async low_priority --time-limit=3600
+/usr/bin/php8.3 bin/console -e prod messenger:consume async
+php -d memory_limit=512M /srv/shop/bin/console messenger:consume async
+bash -c pgrep -fc 'bin/console messenger:consume'
+grep bin/console messenger:consume
+bash -c ps aux | grep 'php bin/console messenger:consume async'
+EOF
     run "$DIR/audit.sh" "$TMP/shop"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"messenger:consume-Prozesse:   2"* ]]
+    [[ "$output" == *"messenger:consume-Prozesse:   3"* ]]
+    [[ "$output" == *"davon mit low_priority:                1"* ]]
     [[ "$output" == *"Admin-Worker ist trotzdem an"* ]]
+}
+
+@test "audit.sh hints at low_priority when no worker consumes it" {
+    echo 'php bin/console messenger:consume async' >> "$FIX/ps.txt"
+    run "$DIR/audit.sh" "$TMP/shop"
+    [[ "$output" == *"Kein Worker konsumiert low_priority"* ]]
+}
+
+@test "audit.sh accepts scheduler_shopware as a scheduler" {
+    needs_php
+    printf '{"shopware.admin_worker.enable_admin_worker": false}\n' > "$FIX/admin.json"
+    echo 'php bin/console messenger:consume async low_priority' >> "$FIX/ps.txt"
+    run "$DIR/audit.sh" "$TMP/shop"
+    [[ "$output" == *"Kein laufender Scheduler gefunden"* ]]
+    echo 'php bin/console messenger:consume scheduler_shopware' >> "$FIX/ps.txt"
+    run "$DIR/audit.sh" "$TMP/shop"
+    [[ "$output" != *"Kein laufender Scheduler gefunden"* ]]
+    [[ "$output" == *"scheduler_shopware): 1"* ]]
 }
 
 # --- Suche -------------------------------------------------------------------
@@ -300,8 +390,9 @@ EOF
 
 @test "audit.sh reads the cluster status when Elasticsearch is on" {
     needs_php
-    sed -i 's/SHOPWARE_ES_ENABLED           0       n\/a          0/SHOPWARE_ES_ENABLED           1       n\/a          1/' "$FIX/dotenv.txt"
-    echo '  OPENSEARCH_URL                http://es.test:9200   n/a   x' >> "$FIX/dotenv.txt"
+    sed -i 's/SHOPWARE_ES_ENABLED           0       n\/a          0/SHOPWARE_ES_ENABLED           yes     n\/a          yes/' "$FIX/dotenv.txt"
+    grep -q 'ES_ENABLED           yes' "$FIX/dotenv.txt"
+    echo '  OPENSEARCH_URL                http://es.test:9200,http://es2.test:9200   n/a   x' >> "$FIX/dotenv.txt"
     printf '#!/bin/bash\necho %s\n' "'{\"cluster_name\":\"x\",\"status\":\"yellow\"}'" > "$TMP/curl"
     chmod +x "$TMP/curl"
     CURL_CMD="$TMP/curl" run "$DIR/audit.sh" "$TMP/shop"
@@ -320,6 +411,20 @@ EOF
     second=$(grep -n 'small-big.jpg' <<< "$output" | cut -d: -f1)
     [ "$first" -lt "$second" ]
     [[ "$output" != *"tiny.jpg"* ]]
+}
+
+@test "audit.sh lists only the five largest originals" {
+    for i in 1 2 3 4 5 6; do head -c $(( 600000 + i * 1000 )) /dev/zero > "$TMP/shop/public/media/a/img$i.jpg"; done
+    run "$DIR/audit.sh" "$TMP/shop"
+    [[ "$output" == *"Anzahl: 6"* ]]
+    [ "$(grep -c '^  [0-9]* public/media' <<< "$output")" -eq 5 ]
+    [[ "$output" != *"img1.jpg"* ]]
+}
+
+@test "audit.sh reports a Redis that answers" {
+    printf '#!/bin/bash\necho PONG\n' > "$TMP/redis-cli" && chmod +x "$TMP/redis-cli"
+    REDIS_CLI_CMD="$TMP/redis-cli" run "$DIR/audit.sh" "$TMP/shop"
+    [[ "$output" == *"Redis: antwortet"* ]]
 }
 
 @test "audit.sh says so when public/media is missing" {
@@ -343,7 +448,7 @@ EOF
     for i in $(seq 1 25); do head -c $(( 600000 + i * 1000 )) /dev/zero > "$TMP/img$i.jpg"; done
     run "$DIR/analyze-images.sh" "$TMP" 500
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Über 500 KB: 25 (100 %)"* ]]
+    [[ "$output" == *"JPEG/PNG/GIF über 500 KB: 25 (100 % davon)"* ]]
     [ "$(grep -c '^  [0-9]* ' <<< "$output")" -eq 20 ]
     [[ "$(grep -m1 '^  [0-9]* ' <<< "$output")" == *"img25.jpg"* ]]
 }

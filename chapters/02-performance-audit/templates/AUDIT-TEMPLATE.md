@@ -19,11 +19,11 @@
 | Stabilität (CLS) | [X] | ✅/⚠️/❌ |
 | Ressourcen | [X]MB | ✅/⚠️/❌ |
 | Caching | [X]% Hit Rate | ✅/⚠️/❌ |
-| Infrastruktur | [X]/10 | ✅/⚠️/❌ |
+| Infrastruktur | [X]/6 Punkte der Checkliste (Kapitel 2) | ✅/⚠️/❌ |
 
 **Gesamtbewertung:** [Schlecht/Akzeptabel/Gut/Exzellent]
 
-**Lighthouse Score (Mobile):** [X]/100 (Lighthouse-Version: [z.B. 13.5])
+**Lighthouse Score (Mobile):** [X]/100, Median aus 5 Läufen (Lighthouse-Version: [z.B. 13.5])
 
 ---
 
@@ -33,10 +33,10 @@
 
 | Metrik | Wert | Status |
 |--------|------|--------|
-| PageSpeed Score (Mobile) | [X]/100 | |
+| Lighthouse Score (Mobile, Median aus 5 Läufen) | [X]/100 | |
 | LCP | [X]s | |
 | FCP | [X]s | |
-| INP | [X]ms | |
+| INP (Felddaten, CrUX) | [X]ms | |
 | CLS | [X] | |
 | TTFB | [X]ms | |
 | Total Page Weight | [X]MB | |
@@ -53,10 +53,10 @@
 
 | Metrik | Wert | Status |
 |--------|------|--------|
-| PageSpeed Score (Mobile) | [X]/100 | |
+| Lighthouse Score (Mobile, Median aus 5 Läufen) | [X]/100 | |
 | LCP | [X]s | |
 | FCP | [X]s | |
-| INP | [X]ms | |
+| INP (Felddaten, CrUX) | [X]ms | |
 | CLS | [X] | |
 | TTFB | [X]ms | |
 | Total Page Weight | [X]MB | |
@@ -66,10 +66,10 @@
 
 | Metrik | Wert | Status |
 |--------|------|--------|
-| PageSpeed Score (Mobile) | [X]/100 | |
+| Lighthouse Score (Mobile, Median aus 5 Läufen) | [X]/100 | |
 | LCP | [X]s | |
 | FCP | [X]s | |
-| INP | [X]ms | |
+| INP (Felddaten, CrUX) | [X]ms | |
 | CLS | [X] | |
 | TTFB | [X]ms | |
 | Total Page Weight | [X]MB | |
@@ -79,21 +79,22 @@
 
 | Metrik | Wert | Status |
 |--------|------|--------|
-| PageSpeed Score (Mobile) | [X]/100 | |
+| Lighthouse Score (Mobile, Median aus 5 Läufen) | [X]/100 | |
 | LCP | [X]s | |
-| INP | [X]ms | |
+| INP (Felddaten, CrUX) | [X]ms | |
 | TTFB | [X]ms | |
 
-### Checkout (/checkout/register/)
+### Checkout (/checkout/register/ und /checkout/confirm)
 
-Als Gast leitet `/checkout/confirm` auf `/checkout/register` um - PageSpeed Insights misst also
-diese Seite. `/checkout/confirm` selbst nur in DevTools mit gefülltem Warenkorb messen.
+Nur mit gefülltem Warenkorb messbar, also in DevTools. Ohne Warenkorb leitet
+`/checkout/confirm` auf `/checkout/register` und diese auf `/checkout/cart` um -
+PageSpeed Insights misst dort den Warenkorb.
 
 | Metrik | Wert | Status |
 |--------|------|--------|
-| PageSpeed Score (Mobile) | [X]/100 | |
+| Lighthouse Score (Mobile, Median aus 5 Läufen) | [X]/100 | |
 | LCP | [X]s | |
-| INP | [X]ms | |
+| INP (Felddaten, CrUX) | [X]ms | |
 | TTFB | [X]ms | |
 
 ---
@@ -107,7 +108,7 @@ diese Seite. `/checkout/confirm` selbst nur in DevTools mit gefülltem Warenkorb
 | PHP Version | ✅/⚠️/❌ | [Version] |
 | PHP OPcache (FPM, nicht `php -i`) | ✅/⚠️/❌ | [aktiviert/deaktiviert] |
 | JIT Compiler | - | [an/aus] (Kapitel 9 lässt JIT begründet aus) |
-| Memory Limit | ✅/⚠️/❌ | [MB] |
+| Memory Limit (Pool-Wert, nicht `php -i`) | ✅/⚠️/❌ | [MB] |
 
 ### Datenbank
 
@@ -122,7 +123,7 @@ diese Seite. `/checkout/confirm` selbst nur in DevTools mit gefülltem Warenkorb
 | Check | Status | Wert |
 |-------|--------|------|
 | HTTP-Cache | ✅/⚠️/❌ | [aktiviert/deaktiviert] |
-| Redis | ✅/⚠️/❌ | [installiert/nicht installiert] |
+| Redis genutzt für Cache | ✅/⚠️/❌ | [ja/nein] |
 | Redis für Sessions | ✅/⚠️/❌ | [ja/nein] |
 | Varnish | ✅/⚠️/❌ | [installiert/nicht installiert] |
 

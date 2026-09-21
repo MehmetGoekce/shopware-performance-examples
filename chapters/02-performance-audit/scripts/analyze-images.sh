@@ -3,8 +3,8 @@
 # Bildgrössen-Analyse für Shopware 6
 # Kapitel 2: Performance-Audit
 #
-# Zählt Originalbilder nach Format, listet die grössten über einer Schwelle
-# und zeigt den WebP-Anteil. Liest nur, ändert nichts.
+# Zählt Originalbilder nach Format und listet die grössten JPEG/PNG/GIF über
+# einer Schwelle. Liest nur, ändert nichts.
 #
 # public/media enthält die hochgeladenen Originale; an den Browser gehen meist
 # die Thumbnails aus public/thumbnail. Ein grosses Original ist deshalb erst
@@ -88,7 +88,12 @@ LARGE=0
 [[ -n "$sizes" ]] && LARGE=$(grep -c . <<< "$sizes")
 
 echo ""
-echo "Über ${THRESHOLD_KB} KB: ${LARGE} ($((LARGE * 100 / TOTAL)) %)"
+CLASSIC=$((JPG + PNG + GIF))
+if [[ ${CLASSIC} -gt 0 ]]; then
+    echo "JPEG/PNG/GIF über ${THRESHOLD_KB} KB: ${LARGE} ($((LARGE * 100 / CLASSIC)) % davon)"
+else
+    echo "JPEG/PNG/GIF über ${THRESHOLD_KB} KB: 0"
+fi
 if [[ ${LARGE} -gt 0 ]]; then
     echo "Die 20 grössten (Bytes, Pfad):"
     n=0

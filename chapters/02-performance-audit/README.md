@@ -45,8 +45,14 @@ Was das Skript anders macht als die naheliegenden Einzeiler:
   Das Skript liest `debug:dotenv` und prüft optional die Antwort-Header.
 - `php -i` zeigt die CLI-Konfiguration. Das Skript fragt jede gefundene
   `php-fpmX.Y -i`.
-- `ps aux | grep messenger:consume` findet sich selbst. Das Skript zählt mit
-  `pgrep -fc` auf die PHP-Kommandozeile.
+- `ps aux | grep messenger:consume` findet sich selbst. Das Skript liest
+  `ps -eo args` und zählt nur Zeilen, die mit dem PHP-Aufruf beginnen (auch
+  mit BusyBox, dessen `pgrep` kein `-c` kennt). Es sieht nur diesen Host.
+- `debug:dotenv` kennt nur Variablen aus `.env`-Dateien. Steht ein Schalter
+  nur in der Umgebung, sagt das Skript das, statt eine Vorgabe zu behaupten;
+  nur der Wert `0` schaltet den Cache ab (`false` gilt als an).
+- `php-fpm -i` als `www-data` übergeht ini-Dateien, die nur root lesen darf;
+  das Skript meldet sie (Kapitel 9).
 - `messenger:stats` schreibt seine Tabelle auf stderr.
 
 ### Bilder
@@ -61,8 +67,12 @@ aus `public/thumbnail`. Bildoptimierung: Kapitel 4.
 ## Tests
 
 ```bash
-docker run --rm -v "$PWD:/code" -w /code bats/bats:latest tests/Shell/audit-scripts.bats
+docker run --rm -v "$PWD:/code:Z" -w /code bats/bats:latest tests/Shell/audit-scripts.bats
 ```
+
+Das Image hat kein php: die Tests, die JSON auswerten (Plugins, Admin-Worker,
+Elasticsearch), werden dort übersprungen. Mit lokalem `bats` und php laufen alle:
+`bats tests/Shell/audit-scripts.bats`. Die CI prüft, dass php vorhanden ist.
 
 ## Quellen
 
