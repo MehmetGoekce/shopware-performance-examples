@@ -456,7 +456,7 @@ EOF
 @test "analyze-images.sh explains missing WebP without claiming core support" {
     touch "$TMP/a.jpg"
     run "$DIR/analyze-images.sh" "$TMP"
-    [[ "$output" == *"WebP braucht ein Plugin"* ]]
+    [[ "$output" == *"WebP entsteht aus WebP-Originalen"* ]]
     [[ "$output" != *"automatische WebP"* ]]
 }
 

@@ -107,7 +107,8 @@ fi
 echo ""
 if [[ $((WEBP + AVIF)) -eq 0 ]]; then
     echo "Keine WebP/AVIF-Dateien. Shopware erzeugt ab Werk Thumbnails im Format"
-    echo "des Originals; WebP braucht ein Plugin oder eine Konvertierung vor dem Upload."
+    echo "des Originals. WebP entsteht aus WebP-Originalen (vor dem Upload konvertieren)"
+    echo "oder über einen externen Bilddienst (Kapitel 4)."
     echo "WebP ist laut Google-Studie 25-34 % kleiner als JPEG bei gleicher SSIM"
     echo "(developers.google.com/speed/webp/docs/webp_study). Wege: Kapitel 4."
 fi
