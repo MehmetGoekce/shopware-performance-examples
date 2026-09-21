@@ -56,8 +56,19 @@ setup() {
     [[ "$output" != *"storefront.hammer.50cbec.js"* ]]
     [[ "$output" == *"2 Dateien"* ]]
     # 5000 + 300 Byte Einstieg
-    [[ "$output" == *"Pflichtanteil jeder Seite: JS 5.2 KB"* ]]
+    [[ "$output" == *"Jede Seite mindestens: JS-Einstieg 5.2 KB"* ]]
+    [[ "$output" == *"Untergrenze"* ]]
     [[ "$output" != *"bundles/storefront"* ]]
+}
+
+@test "analyze-bundle: ab 6.7.11 zählt shopware.js zum Einstieg" {
+    mkdir -p "$ROOT/public/bundles/storefront/storefront/shopware"
+    head -c 1000 /dev/zero | tr '\0' 'r' > "$ROOT/public/bundles/storefront/storefront/shopware/shopware.js"
+    run bash "$SCRIPTS/analyze-bundle.sh"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"shopware/shopware.js (ab 6.7.11)"* ]]
+    # 5000 + 300 + 1000 Byte
+    [[ "$output" == *"JS-Einstieg 6.2 KB"* ]]
 }
 
 @test "analyze-bundle: Budget überschritten ergibt Exit 1" {
@@ -92,6 +103,7 @@ setup() {
     chmod +x "$stub"
     CURL="$stub" run bash "$SCRIPTS/analyze-bundle.sh" --url http://shop/
     [ "$status" -eq 2 ]
+    [[ "$output" == *"Domain des Sales Channels"* ]]
 }
 
 # ---------------------------------------------------------------------------
@@ -103,17 +115,25 @@ node_stub() {
     chmod +x "$BATS_TEST_TMPDIR/node"
 }
 
-# npx-Stub: schreibt CSS in die Datei nach -o und protokolliert die Argumente
+# npx-Stub: critical schreibt CSS mit relativer und absoluter Font-URL in
+# die Datei nach -o; lightningcss-cli kopiert die Eingabe (letztes Argument)
+# nach -o. Jeder Aufruf wird in npx-args protokolliert.
 npx_stub() {
-    cat > "$BATS_TEST_TMPDIR/npx" <<EOF
+    local mode="$1"
+    cat > "$BATS_TEST_TMPDIR/npx" <<STUB
 #!/bin/bash
-echo "\$@" > "$BATS_TEST_TMPDIR/npx-args"
-[ "$1" = fail ] && exit 1
+echo "\$@" >> "$BATS_TEST_TMPDIR/npx-args"
+[ "$mode" = fail ] && exit 1
+all="\$*"; last="\${@: -1}"; out=""
 while [ \$# -gt 0 ]; do
-    if [ "\$1" = "-o" ]; then printf '.header{display:flex}' > "\$2"; fi
+    if [ "\$1" = "-o" ]; then out="\$2"; fi
     shift
 done
-EOF
+case "\$all" in
+    *lightningcss-cli*) cp "\$last" "\$out" ;;
+    *) printf '.header{display:flex}@font-face{src:url(../../abc123/assets/font/a.woff2)}@font-face{src:url(http://shop.test:8080/theme/abc123/assets/font/a.woff2)}' > "\$out" ;;
+esac
+STUB
     chmod +x "$BATS_TEST_TMPDIR/npx"
 }
 
@@ -156,6 +176,7 @@ EOF
     grep -q '{% endverbatim %}' "$out"
     args="$(cat "$BATS_TEST_TMPDIR/npx-args")"
     [[ "$args" == *"critical@9"* ]]
+    [[ "$args" == *"lightningcss-cli@"*"--targets safari 12"* ]]
     [[ "$args" == *"playwright@"* ]]
     [[ "$args" == *"-e render"* ]]
     [[ "$args" != *"--inline"* ]]
@@ -182,4 +203,51 @@ EOF
     [ "$status" -eq 1 ]
     [ ! -e "$BATS_TEST_TMPDIR/views/critical/critical.css.twig" ]
     [ ! -e "$BATS_TEST_TMPDIR/views/critical/critical.css.twig.part" ]
+}
+
+@test "extract-critical: schreibt Font-URLs auf /theme/ um, ohne Extraktions-Host" {
+    mkdir -p "$BATS_TEST_TMPDIR/views"
+    node_stub 22.21.1
+    npx_stub ok
+    NODE="$BATS_TEST_TMPDIR/node" NPX="$BATS_TEST_TMPDIR/npx" \
+        run bash "$SCRIPTS/extract-critical-css.sh" http://shop.test:8080/ --views-dir "$BATS_TEST_TMPDIR/views"
+    [ "$status" -eq 0 ]
+    out="$BATS_TEST_TMPDIR/views/critical/critical.css.twig"
+    [ "$(grep -o 'url(/theme/abc123/assets/font/a.woff2)' "$out" | wc -l)" -eq 2 ]
+    ! grep -q 'url(\.\./' "$out"
+    # Der Twig-Kommentar im Kopf nennt die URL; das ausgelieferte CSS nicht
+    ! grep -v '^{#' "$out" | grep -q 'shop.test'
+}
+
+@test "extract-critical: lightningcss-Fehler ergibt Exit 1 ohne Datei" {
+    mkdir -p "$BATS_TEST_TMPDIR/views"
+    node_stub 22.21.1
+    cat > "$BATS_TEST_TMPDIR/npx" <<'STUB'
+#!/bin/bash
+case "$*" in
+    *lightningcss-cli*) exit 1 ;;
+    *) while [ $# -gt 0 ]; do [ "$1" = "-o" ] && printf 'a{}' > "$2"; shift; done ;;
+esac
+STUB
+    chmod +x "$BATS_TEST_TMPDIR/npx"
+    NODE="$BATS_TEST_TMPDIR/node" NPX="$BATS_TEST_TMPDIR/npx" \
+        run bash "$SCRIPTS/extract-critical-css.sh" http://shop/ --views-dir "$BATS_TEST_TMPDIR/views"
+    [ "$status" -eq 1 ]
+    [ ! -e "$BATS_TEST_TMPDIR/views/critical/critical.css.twig" ]
+}
+
+@test "extract-critical: bricht ab, wenn die Seite schon Critical CSS enthält" {
+    mkdir -p "$BATS_TEST_TMPDIR/views"
+    node_stub 22.21.1
+    npx_stub ok
+    # Viel HTML nach der Markierung: Eine Pipeline `curl | grep -q` bekäme
+    # hier SIGPIPE und würde die Markierung unter pipefail übersehen.
+    printf '#!/bin/sh\necho "<style data-critical-css>a{}</style>"\nhead -c 2000000 /dev/zero | tr "\\\\0" x\n' > "$BATS_TEST_TMPDIR/curl"
+    chmod +x "$BATS_TEST_TMPDIR/curl"
+    CURL="$BATS_TEST_TMPDIR/curl" NODE="$BATS_TEST_TMPDIR/node" NPX="$BATS_TEST_TMPDIR/npx" \
+        run bash "$SCRIPTS/extract-critical-css.sh" http://shop/ --views-dir "$BATS_TEST_TMPDIR/views"
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"criticalCss"* ]]
+    [ ! -e "$BATS_TEST_TMPDIR/npx-args" ]
+    [ ! -e "$BATS_TEST_TMPDIR/views/critical" ]
 }

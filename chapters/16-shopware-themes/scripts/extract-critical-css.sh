@@ -12,7 +12,24 @@
 # liefert nur das CSS über dem Fold. Engine «static» kommt ohne Browser
 # aus, liefert aber das CSS aller Elemente der Seite (eine Obermenge).
 #
-# Ergebnis: <views-dir>/critical/critical.css.twig, eingebunden von
+# Nachbearbeitung, beide im Testshop gemessen:
+#  - URLs: critical übernimmt die Font-URLs aus all.css relativ
+#    (../../<theme-id>/assets/...) und zusätzlich absolut mit dem Host,
+#    gegen den extrahiert wurde. Inline im <style> zeigen die relativen
+#    auf HTTP 404, die absoluten auf den Extraktions-Host (Staging!).
+#    Beide werden zu /theme/... umgeschrieben.
+#  - Schalter: Vor dem Lauf muss «criticalCss» aus sein; sonst enthält die
+#    Seite das alte Critical CSS, und critical sammelt es mit ein. Das
+#    Skript bricht dann ab (Erkennung über data-critical-css).
+#  - Media Queries: critical 9 minifiziert mit lightningcss ohne
+#    Browserziele und schreibt (min-width: 576px) als (width>=576px).
+#    Safari/iOS < 16.4 und Chrome < 104 verwerfen das. lightningcss mit
+#    den Zielen der Storefront (.browserslistrc, 6.6) schreibt es zurück.
+#
+# Läuft auf einem Rechner mit Node.js >= 22.13 (Dockware hat Node 20).
+# Ergebnis: <views-dir>/critical/critical.css.twig — Standard ist das
+# Theme im Companion-Checkout; danach auf den Server kopieren und dort
+# bin/console cache:clear. Eingebunden von
 # PerformanceTheme/src/Resources/views/storefront/layout/meta.html.twig.
 #
 # Usage: extract-critical-css.sh URL [--views-dir DIR] [--width PX] [--height PX] [--engine render|static]
@@ -24,9 +41,13 @@
 set -euo pipefail
 
 NPX="${NPX:-npx}"
+CURL="${CURL:-curl}"
 NODE="${NODE:-node}"
 CRITICAL_VERSION="${CRITICAL_VERSION:-9}"
 PLAYWRIGHT_VERSION="${PLAYWRIGHT_VERSION:-latest}"
+LIGHTNINGCSS_VERSION="${LIGHTNINGCSS_VERSION:-1}"
+# Browserziele der Storefront 6.6 (.browserslistrc: Safari/iOS >= 12, Chrome/Firefox >= 60)
+CSS_TARGETS="${CSS_TARGETS:-safari 12, ios_saf 12, chrome 60, firefox 60}"
 
 URL=""
 VIEWS_DIR="./PerformanceTheme/src/Resources/views/storefront"
@@ -46,6 +67,9 @@ Usage: $(basename "$0") URL [--views-dir DIR] [--width PX] [--height PX] [--engi
   --engine NAME     render (Browser, Standard) oder static (ohne Browser, Obermenge)
   -h, --help        Diese Hilfe
 
+Läuft dort, wo Node.js >= 22.13 installiert ist (Dockware hat Node 20):
+im Companion-Checkout erzeugen, dann die Datei ins Theme auf dem Server
+kopieren und dort bin/console cache:clear.
 Für --engine render einmalig: npx playwright install chromium
 EOF
 }
@@ -76,6 +100,15 @@ if (( major < 22 || (major == 22 && minor < 13) )); then
     die "critical ${CRITICAL_VERSION} braucht Node.js >= 22.13, gefunden: ${node_version}"
 fi
 
+# Enthält die Seite schon Critical CSS (Schalter «criticalCss» an), sammelt
+# critical es mit ein: Das Ergebnis wächst mit jedem Lauf (gemessen: doppelt).
+# Erst lesen, dann prüfen: `curl | grep -q` meldet unter pipefail einen Fehler,
+# sobald grep früh beendet und curl SIGPIPE bekommt — die Prüfung schlüge nie an.
+page_html="$("$CURL" -fsSL "$URL" 2>/dev/null || true)"
+if [[ "$page_html" == *data-critical-css* ]]; then
+    die "Die Seite enthält schon Critical CSS. Schalter «criticalCss» in der Theme-Konfiguration erst ausschalten (cache:clear), dann neu erzeugen."
+fi
+
 packages=(-p "critical@${CRITICAL_VERSION}")
 [[ "$ENGINE" == render ]] && packages+=(-p "playwright@${PLAYWRIGHT_VERSION}")
 
@@ -83,7 +116,10 @@ target_dir="${VIEWS_DIR}/critical"
 target="${target_dir}/critical.css.twig"
 mkdir -p "$target_dir"
 tmp_css="$(mktemp)"
-trap 'rm -f "$tmp_css" "${target}.part"' EXIT
+tmp_urls="$(mktemp)"
+tmp_final="$(mktemp)"
+trap 'rm -f "$tmp_css" "$tmp_urls" "$tmp_final" "${target}.part"' EXIT
+
 
 echo "Extrahiere Critical CSS: ${URL} (${WIDTH}x${HEIGHT}, Engine ${ENGINE}) ..."
 if ! "$NPX" --yes "${packages[@]}" critical "$URL" -e "$ENGINE" -w "$WIDTH" -h "$HEIGHT" -o "$tmp_css"; then
@@ -92,18 +128,33 @@ if ! "$NPX" --yes "${packages[@]}" critical "$URL" -e "$ENGINE" -w "$WIDTH" -h "
 fi
 [[ -s "$tmp_css" ]] || { echo "critical hat eine leere Datei geliefert" >&2; exit 1; }
 
+# URLs: ../../<theme-id>/... und <extraktions-host>/... → /theme/... bzw. /...
+origin="$(printf '%s' "$URL" | grep -oE '^https?://[^/]+' || true)"
+# Ein Origin enthält nur Schema, Host und Port; zu maskieren ist nur der Punkt
+# (BusyBox-sed kennt keine Klammerausdrücke wie [][...]).
+origin_re="${origin//./\\.}"
+sed -E -e "s#url\((['\"]?)\.\./\.\./#url(\1/theme/#g" \
+       -e "s#url\((['\"]?)${origin_re}/#url(\1/#g" "$tmp_css" > "$tmp_urls"
+
+# Media Queries für die Browserziele der Storefront zurückschreiben
+if ! "$NPX" --yes "lightningcss-cli@${LIGHTNINGCSS_VERSION}" --minify --targets "$CSS_TARGETS" -o "$tmp_final" "$tmp_urls"; then
+    echo "lightningcss fehlgeschlagen" >&2
+    exit 1
+fi
+
 # verbatim: Twig soll im CSS nie nach {{ oder {% suchen
 {
     echo "{# Erzeugt von extract-critical-css.sh aus ${URL} (${WIDTH}x${HEIGHT}, ${ENGINE}) — nicht von Hand pflegen #}"
     echo "{% verbatim %}"
-    cat "$tmp_css"
+    cat "$tmp_final"
     echo
     echo "{% endverbatim %}"
 } > "${target}.part"
 mv "${target}.part" "$target"
 
-raw="$(wc -c < "$tmp_css" | tr -d ' ')"
-gz="$(gzip -9 -c "$tmp_css" | wc -c | tr -d ' ')"
+raw="$(wc -c < "$tmp_final" | tr -d ' ')"
+gz="$(gzip -9 -c "$tmp_final" | wc -c | tr -d ' ')"
 awk -v r="$raw" -v g="$gz" 'BEGIN { printf "Critical CSS: %.1f KB, gzip %.1f KB\n", r / 1024, g / 1024 }'
 echo "Geschrieben: ${target}"
-echo "Danach: theme:compile nicht nötig, aber cache:clear; Schalter «criticalCss» in der Theme-Konfiguration einschalten."
+echo "Danach: Datei ins Theme auf dem Server kopieren, dort cache:clear (theme:compile nicht nötig);"
+echo "Schalter «criticalCss» in der Theme-Konfiguration einschalten."

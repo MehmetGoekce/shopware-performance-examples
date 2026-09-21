@@ -3,18 +3,22 @@
  *
  * Zwei Stufen: Der Chunk dieses Plugins lädt nur, wenn
  * [data-async-slider] auf der Seite steht (main.js). tiny-slider
- * selbst lädt erst, wenn der Besucher das Element berührt oder
- * mit der Maus darüberfährt.
+ * selbst lädt erst, wenn der Besucher das Element berührt, mit der
+ * Maus darüberfährt oder per Tastatur hineinspringt.
  *
- * Achtung: Webpack baut jedes Theme und Plugin mit einem eigenen
- * Compiler. `import('tiny-slider')` bündelt die Bibliothek deshalb ein
- * zweites Mal (performance-theme.tiny-slider.<hash>.js), obwohl die
- * Storefront sie für ihre eigenen Slider schon mitbringt. Nutzt eine
- * Seite beide, lädt tiny-slider doppelt.
+ * Die Basisklasse kommt aus window.PluginBaseClass (ab 6.5), nicht per
+ * import aus 'src/plugin-system/plugin.class': Webpack baut jedes
+ * Theme und Plugin mit einem eigenen Compiler, ein Import bündelt die
+ * Klasse samt Abhängigkeiten ein zweites Mal.
+ *
+ * Achtung: Aus demselben Grund bündelt `import('tiny-slider')` die
+ * Bibliothek erneut (performance-theme.tiny-slider.<hash>.js), obwohl
+ * die Storefront sie für ihre eigenen Slider schon mitbringt. Nutzt
+ * eine Seite beide, lädt tiny-slider doppelt.
  */
-import Plugin from 'src/plugin-system/plugin.class';
+const { PluginBaseClass } = window;
 
-export default class AsyncSliderPlugin extends Plugin {
+export default class AsyncSliderPlugin extends PluginBaseClass {
     static options = {
         sliderSelector: '.async-slider-container',
     };
@@ -23,6 +27,7 @@ export default class AsyncSliderPlugin extends Plugin {
         const load = () => this.loadSlider();
         this.el.addEventListener('mouseenter', load, { once: true });
         this.el.addEventListener('touchstart', load, { once: true, passive: true });
+        this.el.addEventListener('focusin', load, { once: true });
     }
 
     async loadSlider() {

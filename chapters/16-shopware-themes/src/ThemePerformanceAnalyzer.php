@@ -16,7 +16,9 @@ use Psr\Log\LoggerInterface;
  *   js/<technical-name>/<name>.js          Einstieg je Theme/Plugin, jede Seite
  *   js/<technical-name>/<name>.<hash6>.js  Chunk, lädt nur bei Bedarf
  *
- * Unter public/bundles/storefront/ liegt kein Storefront-JavaScript.
+ * Unter public/bundles/storefront/ liegt bis 6.7.10 kein Storefront-JavaScript;
+ * ab 6.7.11 lädt jede Seite dort zusätzlich storefront/shopware/shopware.js
+ * (Vite-Laufzeitmodul), das dieser Analyzer nicht mitzählt.
  * Gleiche Regeln wie scripts/analyze-bundle.sh.
  *
  * @see \Shopware\Storefront\Theme\ThemeCompiler::collectCompiledFiles()
@@ -24,16 +26,19 @@ use Psr\Log\LoggerInterface;
  */
 class ThemePerformanceAnalyzer
 {
-    // Grenzwerte gzip, abgestimmt auf config/lighthouse-budget.json
-    // (Lighthouse zählt übertragene, also komprimierte Bytes)
+    // Grenzwerte gzip, dieselben Zahlen wie config/lighthouse-budget.json —
+    // aber eine andere Messgrösse: Lighthouse zählt alles, was eine Seite
+    // lädt (auch Chunks, Drittanbieter), dieser Analyzer nur Einstieg und
+    // all.css. Ein grüner Analyzer sagt nichts über das Lighthouse-Budget.
     private const THRESHOLD_JS_SIZE = 200 * 1024;    // Einstiegs-JS
     private const THRESHOLD_CSS_SIZE = 100 * 1024;   // all.css
     private const THRESHOLD_TOTAL_SIZE = 500 * 1024; // beides zusammen
 
     // Bibliotheken, die die Storefront als eigenen Chunk ausliefert
     // (Dateiname storefront.<name>.<hash6>.js, gemessen in 6.6.10.6).
-    // flatpickr hat keinen eigenen Chunk: Es steckt im Chunk des
-    // DatePicker-Plugins (storefront.date-picker.plugin.<hash6>.js).
+    // flatpickr ist hier nicht erkennbar: Es steckt samt Locales in
+    // storefront.index.<hash6>.js (95 KB, gzip 27 KB); der Chunk des
+    // DatePicker-Plugins (2,4 KB) importiert es nur.
     private const LIBRARY_CHUNKS = ['tiny-slider', 'hammer', 'three.module'];
 
     public function __construct(

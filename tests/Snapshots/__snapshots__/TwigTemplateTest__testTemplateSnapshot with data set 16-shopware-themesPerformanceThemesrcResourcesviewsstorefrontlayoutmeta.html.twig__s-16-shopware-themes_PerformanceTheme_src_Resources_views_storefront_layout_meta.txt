@@ -8,15 +8,24 @@
 
     Die Datei critical/critical.css.twig schreibt
     scripts/extract-critical-css.sh. Erst danach den Schalter
-    «criticalCss» in der Theme-Konfiguration einschalten.
+    «criticalCss» in der Theme-Konfiguration einschalten. Sie gilt für
+    alle Seiten; erzeugt aus der Startseite, fehlt auf Kategorie- und
+    Produktseiten deren Above-the-fold-CSS. Das Attribut data-critical-css
+    erkennt extract-critical-css.sh: Aus einer Seite, die schon Critical
+    CSS enthält, würde es das alte mit einsammeln (gemessen: doppelte Grösse).
+
+    Ab 6.7.11 gibt der Original-Block zusätzlich die Styles der
+    Vite-Komponenten aus (importmapData.styles) und lässt im
+    Dev-Server-Modus all.css weg. Beides übernimmt der else-Zweig; in 6.6
+    ist importmapData nicht gesetzt, die Schleife bleibt leer.
 #}
 {% sw_extends '@Storefront/storefront/layout/meta.html.twig' %}
 
 {% block layout_head_stylesheet %}
-    {% if isHMRMode or not theme_config('criticalCss') %}
+    {% if isHMRMode or not theme_config('criticalCss') or (importmapData.isDevServer ?? false) %}
         {{ parent() }}
     {% else %}
-        <style>
+        <style data-critical-css>
             {% sw_include '@PerformanceTheme/storefront/critical/critical.css.twig' ignore missing %}
         </style>
 
@@ -28,6 +37,10 @@
             <noscript>
                 <link rel="stylesheet" href="{{ asset(file, 'theme') }}">
             </noscript>
+        {% endfor %}
+
+        {% for url in importmapData.styles ?? [] %}
+            <link rel="stylesheet" href="{{ url }}">
         {% endfor %}
     {% endif %}
 {% endblock %}

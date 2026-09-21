@@ -6,7 +6,9 @@
     Tablet und Mobil bleiben aus dem Original.
 
     width/height geben dem Browser das Seitenverhältnis, bevor das Bild
-    geladen ist. Die Werte müssen zu Ihrem Logo passen.
+    geladen ist. Die Werte müssen zu Ihrem Logo passen (hier: das
+    Demo-Logo, 237 x 35 Pixel). Haben Tablet- oder Mobil-Logo ein anderes
+    Seitenverhältnis, gehören eigene width/height an die <source>-Tags.
 #}
 {% sw_extends '@Storefront/storefront/layout/header/logo.html.twig' %}
 
@@ -15,7 +17,7 @@
         <img src="{{ theme_config('sw-logo-desktop')|sw_encode_url }}"
              alt="{{ 'header.logoLink'|trans|striptags }}"
              class="img-fluid header-logo-main-img"
-             width="300"
-             height="60">
+             width="237"
+             height="35">
     {% endif %}
 {% endblock %}

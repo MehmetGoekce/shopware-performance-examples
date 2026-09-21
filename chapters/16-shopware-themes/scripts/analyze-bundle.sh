@@ -6,13 +6,21 @@
 #   css/all.css                   das gesamte Theme-CSS
 #   js/<technical-name>/<name>.js Einstieg je Theme/Plugin, lädt auf jeder Seite
 #   js/<technical-name>/*.<hash6>.js  Chunks, laden nur bei Bedarf
-# Unter public/bundles/storefront/ liegt KEIN Storefront-JavaScript.
+# Unter public/bundles/storefront/ liegt bis 6.7.10 KEIN Storefront-JavaScript.
+# Ab 6.7.11 lädt jede Seite dort zusätzlich das Vite-Laufzeitmodul
+# storefront/shopware/shopware.js; ist es vorhanden, zählt es zum Einstieg.
 #
 # Modus 1 (Standard): Dateien unter public/theme/<prefix>/ vermessen.
-# Modus 2 (--stats):  Storefront mit Webpack-Statistik neu bauen und je
-#                     Compiler einen webpack-bundle-analyzer-Report
-#                     schreiben. Der Production-Build selbst schreibt
-#                     weder stats.json noch Source Maps.
+# Modus 2 (--stats):  bin/console bundle:dump, dann die Storefront mit
+#                     Webpack-Statistik neu bauen und je Compiler einen
+#                     webpack-bundle-analyzer-Report schreiben. Der
+#                     Production-Build selbst schreibt weder stats.json
+#                     noch Source Maps. Webpack schreibt dabei die dist/-
+#                     Ordner von Storefront und Plugins neu (wie
+#                     bin/build-storefront.sh), public/theme/ bleibt.
+#
+# Auf dem Shop-Server ausführen (liest SHOPWARE_ROOT); --url muss eine
+# Domain des Sales Channels sein.
 #
 # Usage: analyze-bundle.sh [--url URL | --theme-dir DIR] [--stats]
 #                          [--budget-js KB] [--budget-css KB]
@@ -43,8 +51,8 @@ Usage: $(basename "$0") [--url URL | --theme-dir DIR] [--stats] [--budget-js KB]
   --url URL         Theme-Verzeichnis aus dem HTML dieser Seite ermitteln
   --theme-dir DIR   Theme-Verzeichnis direkt angeben (public/theme/<prefix>)
                     Ohne beides: neuestes public/theme/*/css/all.css
-  --stats           Zusätzlich Webpack-Statistik bauen und Reports schreiben
-                    (braucht Node.js und npx im Shopware-Verzeichnis)
+  --stats           Zusätzlich bundle:dump + Webpack-Statistik bauen und Reports
+                    schreiben (braucht Node.js und npx; schreibt dist/ neu)
   --budget-js KB    Grenze für Einstiegs-JS, gzip, in KB (Exit 1 bei Überschreitung)
   --budget-css KB   Grenze für all.css, gzip, in KB (Exit 1 bei Überschreitung)
   -h, --help        Diese Hilfe
@@ -80,7 +88,7 @@ file_bytes() { wc -c < "$1" | tr -d ' '; }
 if [[ -n "$URL" ]]; then
     html="$("$CURL" -fsSL "$URL")" || die "Seite nicht erreichbar: $URL"
     prefix="$(printf '%s' "$html" | grep -oE '/theme/[0-9a-f]{32}/css/all\.css' | head -n 1 | cut -d/ -f3 || true)"
-    [[ -n "$prefix" ]] || die "Kein /theme/<prefix>/css/all.css im HTML von $URL"
+    [[ -n "$prefix" ]] || die "Kein /theme/<prefix>/css/all.css im HTML von $URL (Domain des Sales Channels? Sonst antwortet Shopware mit «Sales Channel Not Found»)"
     THEME_DIR="${SHOPWARE_ROOT}/public/theme/${prefix}"
 elif [[ -z "$THEME_DIR" ]]; then
     newest="$(ls -t "${SHOPWARE_ROOT}"/public/theme/*/css/all.css 2>/dev/null | head -n 1 || true)"
@@ -113,12 +121,20 @@ while IFS= read -r f; do
         printf '  %-12s %-12s %s\n' "$(kb "$raw")" "gzip $(kb "$gz")" "${f#"${THEME_DIR}/"}"
     fi
 done < <(find "${THEME_DIR}/js" -name '*.js' -type f 2>/dev/null | sort)
+# Ab 6.7.11: Vite-Laufzeitmodul, lädt auf jeder Seite als <script type="module">
+runtime="${SHOPWARE_ROOT}/public/bundles/storefront/storefront/shopware/shopware.js"
+if [[ -f "$runtime" ]]; then
+    raw="$(file_bytes "$runtime")"; gz="$(gz_bytes "$runtime")"
+    entry_raw=$((entry_raw + raw)); entry_gz=$((entry_gz + gz))
+    printf '  %-12s %-12s %s\n' "$(kb "$raw")" "gzip $(kb "$gz")" "public/bundles/storefront/storefront/shopware/shopware.js (ab 6.7.11)"
+fi
 echo
 echo "Chunks (laden nur, wenn die Seite das Plugin braucht)"
 printf '  %s Dateien, %s, gzip %s\n' "$chunks" "$(kb "$chunk_raw")" "$(kb "$chunk_gz")"
 echo "  Welche davon eine Seite lädt, zeigt nur der Browser (DevTools > Netzwerk, Lighthouse)."
 echo
-echo "Pflichtanteil jeder Seite: JS $(kb "$entry_raw") (gzip $(kb "$entry_gz")), CSS $(kb "$css_raw") (gzip $(kb "$css_gz"))"
+echo "Jede Seite mindestens: JS-Einstieg $(kb "$entry_raw") (gzip $(kb "$entry_gz")), CSS $(kb "$css_raw") (gzip $(kb "$css_gz"))"
+echo "  Untergrenze: Chunks, die das Layout auf jeder Seite braucht (Header, Footer, Cookie-Banner), kommen dazu."
 
 # --- Budget ---------------------------------------------------------------
 rc=0
@@ -137,7 +153,10 @@ if [[ "$STATS" == true ]]; then
     mkdir -p "$OUT_DIR"
     out="$(cd "$OUT_DIR" && pwd)"
     echo
-    echo "Baue Storefront mit Webpack-Statistik (Production-Modus) ..."
+    echo "bin/console bundle:dump, dann Storefront mit Webpack-Statistik bauen (Production-Modus) ..."
+    # Wie bin/build-storefront.sh: ohne bundle:dump fehlen seither aktivierte Plugins
+    "${SHOPWARE_ROOT}/bin/console" bundle:dump > "${out}/bundle-dump.log" 2>&1 \
+        || die "bundle:dump fehlgeschlagen, siehe ${out}/bundle-dump.log"
     # --stats=normal überstimmt stats: 'minimal' aus der Config; ohne das
     # enthält stats.json weder Assets noch Module.
     (cd "$app" && PROJECT_ROOT="$SHOPWARE_ROOT" NODE_ENV=production \
