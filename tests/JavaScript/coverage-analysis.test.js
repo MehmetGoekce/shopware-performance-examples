@@ -1,547 +1,174 @@
 /**
- * Tests for coverage-analysis.js utility functions
+ * Tests für chapters/05-css-javascript/scripts/coverage-analysis.js
+ * und chapters/05-css-javascript/scripts/third-party-audit.js
  *
- * Tests the CSS/JS coverage analysis functions with mocked DOM/Performance APIs
+ * Führt die Companion-Dateien selbst aus (node:vm) – mit Resource-Timing-
+ * Einträgen, wie Chromium sie für die Shopware-Storefront meldet
+ * (Dockware 6.6.10.6). Keine nachgebaute Logik.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'fs';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
+import vm from 'node:vm';
 
-describe('Coverage Analysis Functions', () => {
-    let mockDocument;
-    let mockPerformance;
-    let mockConsole;
-    let originalConsole;
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const load = name => readFileSync(
+    resolve(__dirname, '../../chapters/05-css-javascript/scripts/', name),
+    'utf8'
+);
+const coverageCode = load('coverage-analysis.js');
+const thirdPartyCode = load('third-party-audit.js');
 
-    beforeEach(() => {
-        // Mock console
-        originalConsole = global.console;
-        mockConsole = {
-            log: vi.fn(),
-            table: vi.fn(),
-            clear: vi.fn(),
-        };
-        global.console = mockConsole;
+const THEME = 'https://shop.example/theme/cf8b9edb6e403de212cbc40ca597f790';
 
-        // Mock document
-        mockDocument = {
-            querySelectorAll: vi.fn(),
-        };
-        global.document = mockDocument;
+// Ein Eintrag, wie ihn performance.getEntriesByType('resource') liefert.
+// Ohne Timing-Allow-Origin setzt der Browser responseStart und alle
+// Grössen auf 0.
+// initiatorType: 'script' für <script> (auch Webpack-Chunks), 'link' für
+// Stylesheets, 'css' für Schriften aus dem CSS.
+function res(name, { kb = 1, raw = kb * 3, status = 'non-blocking', tao = true, end = 100, type = 'img' } = {}) {
+    return {
+        name,
+        initiatorType: type,
+        renderBlockingStatus: status,
+        responseStart: tao ? 50 : 0,
+        responseEnd: end,
+        duration: end - 10,
+        encodedBodySize: tao ? kb * 1024 : 0,
+        decodedBodySize: tao ? raw * 1024 : 0,
+    };
+}
 
-        // Mock performance
-        mockPerformance = {
-            getEntriesByType: vi.fn(),
-        };
-        global.performance = mockPerformance;
+function script(src, { type = '', async = false, defer = false, head = true } = {}) {
+    return { src, type, async, defer, closest: sel => (sel === 'head' && head ? {} : null) };
+}
 
-        // Mock location
-        global.location = { hostname: 'example.com' };
+// console.table wird je nach Lage 1- bis 3-mal aufgerufen
+const tableWith = (out, key) => out.tables.find(t => t.length > 0 && key in t[0]);
 
-        // Mock PerformanceObserver
-        global.PerformanceObserver = vi.fn().mockImplementation(() => ({
-            observe: vi.fn(),
-            disconnect: vi.fn(),
-        }));
-    });
+function run(code, resources, scripts = []) {
+    const logs = [];
+    const tables = [];
+    const context = {
+        URL,
+        location: { hostname: 'shop.example' },
+        performance: { getEntriesByType: () => resources },
+        document: { querySelectorAll: () => scripts },
+        console: {
+            log: (...a) => logs.push(a.join(' ')),
+            table: rows => tables.push(rows),
+        },
+    };
+    vm.runInNewContext(code, context);
+    return { logs, tables };
+}
 
-    afterEach(() => {
-        global.console = originalConsole;
-        vi.clearAllMocks();
-    });
+// Startseite ab Werk: all.css blockiert, storefront.js mit defer,
+// dazu ein Chunk der Storefront und das JavaScript eines Plugins
+const storefront = [
+    res(`${THEME}/css/all.css?1790010011`, { kb: 55.5, raw: 391.1, status: 'blocking', type: 'link' }),
+    res(`${THEME}/js/storefront/storefront.js?1790010011`, { kb: 74.2, raw: 229.9, type: 'script' }),
+    res(`${THEME}/js/storefront/storefront.cart-widget.plugin.49e687.js`, { kb: 1.3, raw: 4.1, type: 'script' }),
+    res(`${THEME}/js/swag-paypal/swag-paypal.js?1790010011`, { kb: 12, raw: 40, type: 'script' }),
+    res('https://shop.example/media/12/g0/96/1753443509/favicon.png', { kb: 2, type: 'link' }),
+    res(`${THEME}/assets/font/Inter-Regular.woff2`, { kb: 90, type: 'css' }),
+    res('https://shop.example/widgets/checkout/info', { kb: 3, type: 'fetch' }),
+];
 
-    /**
-     * Test findRenderBlockingResources logic
-     */
-    describe('findRenderBlockingResources', () => {
-        function findRenderBlockingResources() {
-            // CSS im <head> ohne media="print" oder async
-            const blockingCSS = Array.from(document.querySelectorAll('link[rel="stylesheet"]'))
-                .filter(link => {
-                    const media = link.getAttribute('media');
-                    const onload = link.getAttribute('onload');
-                    return !media || (media !== 'print' && !onload);
-                })
-                .map(link => ({
-                    type: 'CSS',
-                    url: link.href.split('/').pop().substring(0, 50),
-                    fullUrl: link.href,
-                    blocking: true
-                }));
-
-            // JavaScript ohne defer/async
-            const blockingJS = Array.from(document.querySelectorAll('script[src]'))
-                .filter(script => {
-                    const isInHead = script.parentElement.tagName === 'HEAD';
-                    const hasDefer = script.defer;
-                    const hasAsync = script.async;
-                    const isModule = script.type === 'module';
-                    return isInHead && !hasDefer && !hasAsync && !isModule;
-                })
-                .map(script => ({
-                    type: 'JS',
-                    url: script.src.split('/').pop().substring(0, 50),
-                    fullUrl: script.src,
-                    blocking: true
-                }));
-
-            return [...blockingCSS, ...blockingJS];
-        }
-
-        it('should detect blocking CSS without media attribute', () => {
-            mockDocument.querySelectorAll.mockImplementation((selector) => {
-                if (selector === 'link[rel="stylesheet"]') {
-                    return [{
-                        getAttribute: (attr) => (attr === 'media' ? null : null),
-                        href: 'https://example.com/style.css',
-                    }];
-                }
-                return [];
-            });
-
-            const result = findRenderBlockingResources();
-
-            expect(result).toHaveLength(1);
-            expect(result[0].type).toBe('CSS');
-            expect(result[0].blocking).toBe(true);
+describe('coverage-analysis.js', () => {
+    describe('render-blockierende Dateien', () => {
+        it('meldet, was der Browser als blocking markiert', () => {
+            const out = run(coverageCode, storefront);
+            expect(out.logs).toContain('⚠️ 1 render-blockierende Datei(en):');
+            expect(out.tables[0]).toEqual([{ Datei: 'css/all.css', KB: 56, ms: 90 }]);
         });
 
-        it('should not detect CSS with media="print"', () => {
-            mockDocument.querySelectorAll.mockImplementation((selector) => {
-                if (selector === 'link[rel="stylesheet"]') {
-                    return [{
-                        getAttribute: (attr) => (attr === 'media' ? 'print' : null),
-                        href: 'https://example.com/print.css',
-                    }];
-                }
-                return [];
-            });
-
-            const result = findRenderBlockingResources();
-
-            expect(result).toHaveLength(0);
+        it('meldet nichts, wenn all.css per preload/onload kommt', () => {
+            const out = run(coverageCode, storefront.map(r => ({ ...r, renderBlockingStatus: 'non-blocking' })));
+            expect(out.logs).toContain('✅ Keine render-blockierende Datei.');
         });
 
-        it('should not detect CSS with async pattern (onload)', () => {
-            mockDocument.querySelectorAll.mockImplementation((selector) => {
-                if (selector === 'link[rel="stylesheet"]') {
-                    return [{
-                        getAttribute: (attr) => {
-                            if (attr === 'media') return 'all';
-                            if (attr === 'onload') return "this.media='all'";
-                            return null;
-                        },
-                        href: 'https://example.com/async.css',
-                    }];
-                }
-                return [];
-            });
-
-            const result = findRenderBlockingResources();
-
-            expect(result).toHaveLength(0);
+        it('zeigt «?» statt 0 KB bei fremden Dateien ohne Timing-Allow-Origin', () => {
+            const out = run(coverageCode, [res('https://tag.example/t.js', { status: 'blocking', tao: false })]);
+            expect(out.tables[0]).toEqual([{ Datei: 'tag.example/t.js', KB: '?', ms: 90 }]);
         });
 
-        it('should detect blocking JS in HEAD without defer/async', () => {
-            mockDocument.querySelectorAll.mockImplementation((selector) => {
-                if (selector === 'script[src]') {
-                    return [{
-                        parentElement: { tagName: 'HEAD' },
-                        defer: false,
-                        async: false,
-                        type: '',
-                        src: 'https://example.com/main.js',
-                    }];
-                }
-                return [];
-            });
-
-            const result = findRenderBlockingResources();
-
-            expect(result).toHaveLength(1);
-            expect(result[0].type).toBe('JS');
-            expect(result[0].blocking).toBe(true);
-        });
-
-        it('should not detect JS with defer', () => {
-            mockDocument.querySelectorAll.mockImplementation((selector) => {
-                if (selector === 'script[src]') {
-                    return [{
-                        parentElement: { tagName: 'HEAD' },
-                        defer: true,
-                        async: false,
-                        type: '',
-                        src: 'https://example.com/main.js',
-                    }];
-                }
-                return [];
-            });
-
-            const result = findRenderBlockingResources();
-
-            expect(result).toHaveLength(0);
-        });
-
-        it('should not detect JS modules (always deferred)', () => {
-            mockDocument.querySelectorAll.mockImplementation((selector) => {
-                if (selector === 'script[src]') {
-                    return [{
-                        parentElement: { tagName: 'HEAD' },
-                        defer: false,
-                        async: false,
-                        type: 'module',
-                        src: 'https://example.com/app.mjs',
-                    }];
-                }
-                return [];
-            });
-
-            const result = findRenderBlockingResources();
-
-            expect(result).toHaveLength(0);
-        });
-
-        it('should not detect JS in BODY (not render-blocking)', () => {
-            mockDocument.querySelectorAll.mockImplementation((selector) => {
-                if (selector === 'script[src]') {
-                    return [{
-                        parentElement: { tagName: 'BODY' },
-                        defer: false,
-                        async: false,
-                        type: '',
-                        src: 'https://example.com/bottom.js',
-                    }];
-                }
-                return [];
-            });
-
-            const result = findRenderBlockingResources();
-
-            expect(result).toHaveLength(0);
+        it('sagt, wenn der Browser das Feld nicht kennt (Firefox, Safari)', () => {
+            const firefox = storefront.map(({ renderBlockingStatus: _status, ...r }) => r);
+            const out = run(coverageCode, firefox);
+            expect(out.logs[0]).toContain('meldet renderBlockingStatus nicht');
+            expect(out.logs.join('\n')).not.toContain('Keine render-blockierende');
         });
     });
 
-    /**
-     * Test analyzeJavaScriptBundles logic
-     */
-    describe('analyzeJavaScriptBundles', () => {
-        function analyzeJavaScriptBundles() {
-            const jsResources = performance.getEntriesByType('resource')
-                .filter(r => r.initiatorType === 'script' || r.name.endsWith('.js'))
-                .map(r => ({
-                    name: r.name.split('/').pop().split('?')[0].substring(0, 40),
-                    size: Math.round(r.transferSize / 1024),
-                    duration: Math.round(r.duration),
-                    isThirdParty: !r.name.includes(location.hostname)
-                }))
-                .sort((a, b) => b.size - a.size);
+    describe('Bundles', () => {
+        const bundles = () => tableWith(run(coverageCode, storefront), 'Bundle');
 
-            const totalSize = jsResources.reduce((sum, r) => sum + r.size, 0);
-            const thirdPartySize = jsResources
-                .filter(r => r.isThirdParty)
-                .reduce((sum, r) => sum + r.size, 0);
-
-            return { jsResources, totalSize, thirdPartySize };
-        }
-
-        it('should calculate total JS size', () => {
-            mockPerformance.getEntriesByType.mockReturnValue([
-                { initiatorType: 'script', name: 'https://example.com/main.js', transferSize: 102400, duration: 50 },
-                { initiatorType: 'script', name: 'https://example.com/vendor.js', transferSize: 204800, duration: 80 },
-            ]);
-
-            const result = analyzeJavaScriptBundles();
-
-            expect(result.totalSize).toBe(300); // 100 + 200 KB
+        it('fasst das JavaScript je Theme/Plugin-Verzeichnis zusammen', () => {
+            expect(bundles()).toContainEqual({ Bundle: 'storefront', Dateien: 2, KB: 76, roh: 234 });
+            expect(bundles()).toContainEqual({ Bundle: 'swag-paypal', Dateien: 1, KB: 12, roh: 40 });
         });
 
-        it('should identify third-party scripts', () => {
-            mockPerformance.getEntriesByType.mockReturnValue([
-                { initiatorType: 'script', name: 'https://example.com/main.js', transferSize: 51200, duration: 30 },
-                { initiatorType: 'script', name: 'https://cdn.external.com/analytics.js', transferSize: 102400, duration: 100 },
-            ]);
-
-            const result = analyzeJavaScriptBundles();
-
-            expect(result.thirdPartySize).toBe(100); // Only external script
-            expect(result.jsResources[0].isThirdParty).toBe(true); // Largest is third-party
+        it('führt CSS mit Dateinamen und lässt Bilder, Schriften und fetch weg', () => {
+            expect(bundles()).toContainEqual({ Bundle: 'all.css', Dateien: 1, KB: 56, roh: 391 });
+            expect(bundles()).toHaveLength(3);
         });
 
-        it('should sort by size descending', () => {
-            mockPerformance.getEntriesByType.mockReturnValue([
-                { initiatorType: 'script', name: 'https://example.com/small.js', transferSize: 10240, duration: 10 },
-                { initiatorType: 'script', name: 'https://example.com/large.js', transferSize: 512000, duration: 150 },
-                { initiatorType: 'script', name: 'https://example.com/medium.js', transferSize: 102400, duration: 50 },
-            ]);
-
-            const result = analyzeJavaScriptBundles();
-
-            expect(result.jsResources[0].name).toBe('large.js');
-            expect(result.jsResources[1].name).toBe('medium.js');
-            expect(result.jsResources[2].name).toBe('small.js');
+        it('sortiert nach übertragener Grösse', () => {
+            expect(bundles().map(b => b.Bundle)).toEqual(['storefront', 'all.css', 'swag-paypal']);
         });
 
-        it('should filter only JS resources', () => {
-            mockPerformance.getEntriesByType.mockReturnValue([
-                { initiatorType: 'script', name: 'https://example.com/main.js', transferSize: 51200, duration: 30 },
-                { initiatorType: 'link', name: 'https://example.com/style.css', transferSize: 20480, duration: 20 },
-                { initiatorType: 'img', name: 'https://example.com/image.png', transferSize: 102400, duration: 80 },
+        it('trennt bekannte und unbekannte Grössen je fremdem Host', () => {
+            const out = run(coverageCode, [
+                res('https://www.googletagmanager.com/gtag/js?id=G-1', { tao: false, type: 'script' }),
+                res('https://connect.facebook.net/en_US/fbevents.js', { kb: 30, raw: 100, type: 'script' }),
+                res('https://connect.facebook.net/signals/config/1.js', { tao: false, type: 'script' }),
+                res('https://www.facebook.com/tr/?id=1&ev=PageView', { tao: false }),
             ]);
-
-            const result = analyzeJavaScriptBundles();
-
-            expect(result.jsResources).toHaveLength(1);
-            expect(result.jsResources[0].name).toBe('main.js');
-        });
-
-        it('should truncate long filenames', () => {
-            mockPerformance.getEntriesByType.mockReturnValue([
-                {
-                    initiatorType: 'script',
-                    name: 'https://example.com/this-is-a-very-long-filename-that-exceeds-forty-characters.js',
-                    transferSize: 51200,
-                    duration: 30
-                },
+            expect(tableWith(out, 'Bundle')).toEqual([
+                { Bundle: 'connect.facebook.net', Dateien: 2, KB: '30 +?', roh: '100 +?' },
+                { Bundle: 'www.googletagmanager.com', Dateien: 1, KB: '?', roh: '?' },
             ]);
-
-            const result = analyzeJavaScriptBundles();
-
-            expect(result.jsResources[0].name.length).toBeLessThanOrEqual(40);
         });
     });
 
-    /**
-     * Test analyzeCSSBundles logic
-     */
-    describe('analyzeCSSBundles', () => {
-        function analyzeCSSBundles() {
-            const cssResources = performance.getEntriesByType('resource')
-                .filter(r => r.initiatorType === 'link' || r.name.endsWith('.css'))
-                .map(r => ({
-                    name: r.name.split('/').pop().split('?')[0].substring(0, 40),
-                    size: Math.round(r.transferSize / 1024),
-                    duration: Math.round(r.duration)
-                }))
-                .sort((a, b) => b.size - a.size);
-
-            const totalSize = cssResources.reduce((sum, r) => sum + r.size, 0);
-
-            return { cssResources, totalSize };
-        }
-
-        it('should calculate total CSS size', () => {
-            mockPerformance.getEntriesByType.mockReturnValue([
-                { initiatorType: 'link', name: 'https://example.com/main.css', transferSize: 51200, duration: 30 },
-                { initiatorType: 'link', name: 'https://example.com/theme.css', transferSize: 25600, duration: 20 },
+    describe('Skript-Einbindung', () => {
+        it('zählt defer, async und module und listet Skripte ohne beides', () => {
+            const out = run(coverageCode, [], [
+                script(`${THEME}/js/storefront/storefront.js`, { defer: true }),
+                script('https://www.googletagmanager.com/gtm.js', { async: true }),
+                script('https://tag.example/both.js', { async: true, defer: true }),
+                script('/vite/runtime.js', { type: 'module' }),
+                script('https://widget.example/chat.js', { head: false }),
             ]);
-
-            const result = analyzeCSSBundles();
-
-            expect(result.totalSize).toBe(75); // 50 + 25 KB
-        });
-
-        it('should filter CSS resources by extension', () => {
-            mockPerformance.getEntriesByType.mockReturnValue([
-                { initiatorType: 'link', name: 'https://example.com/style.css', transferSize: 20480, duration: 20 },
-                { initiatorType: 'other', name: 'https://example.com/dynamic.css', transferSize: 10240, duration: 15 },
-                { initiatorType: 'script', name: 'https://example.com/main.js', transferSize: 51200, duration: 30 },
-            ]);
-
-            const result = analyzeCSSBundles();
-
-            expect(result.cssResources).toHaveLength(2);
-        });
-
-        it('should strip query strings from filenames', () => {
-            mockPerformance.getEntriesByType.mockReturnValue([
-                {
-                    initiatorType: 'link',
-                    name: 'https://example.com/style.css?v=1234567890',
-                    transferSize: 20480,
-                    duration: 20
-                },
-            ]);
-
-            const result = analyzeCSSBundles();
-
-            expect(result.cssResources[0].name).toBe('style.css');
-        });
-    });
-
-    /**
-     * Test auditScriptLoading logic
-     */
-    describe('auditScriptLoading', () => {
-        function auditScriptLoading() {
-            const scripts = Array.from(document.querySelectorAll('script[src]'));
-
-            const audit = {
-                blocking: [],
-                defer: [],
-                async: [],
-                module: []
-            };
-
-            scripts.forEach(script => {
-                const info = {
-                    src: script.src.split('/').pop().substring(0, 40),
-                    inHead: script.parentElement.tagName === 'HEAD'
-                };
-
-                if (script.type === 'module') {
-                    audit.module.push(info);
-                } else if (script.defer) {
-                    audit.defer.push(info);
-                } else if (script.async) {
-                    audit.async.push(info);
-                } else {
-                    audit.blocking.push(info);
-                }
-            });
-
-            return audit;
-        }
-
-        it('should categorize blocking scripts', () => {
-            mockDocument.querySelectorAll.mockReturnValue([
-                { src: 'https://example.com/blocking.js', parentElement: { tagName: 'HEAD' }, defer: false, async: false, type: '' },
-            ]);
-
-            const result = auditScriptLoading();
-
-            expect(result.blocking).toHaveLength(1);
-            expect(result.blocking[0].src).toBe('blocking.js');
-        });
-
-        it('should categorize deferred scripts', () => {
-            mockDocument.querySelectorAll.mockReturnValue([
-                { src: 'https://example.com/deferred.js', parentElement: { tagName: 'HEAD' }, defer: true, async: false, type: '' },
-            ]);
-
-            const result = auditScriptLoading();
-
-            expect(result.defer).toHaveLength(1);
-        });
-
-        it('should categorize async scripts', () => {
-            mockDocument.querySelectorAll.mockReturnValue([
-                { src: 'https://example.com/async.js', parentElement: { tagName: 'HEAD' }, defer: false, async: true, type: '' },
-            ]);
-
-            const result = auditScriptLoading();
-
-            expect(result.async).toHaveLength(1);
-        });
-
-        it('should categorize module scripts', () => {
-            mockDocument.querySelectorAll.mockReturnValue([
-                { src: 'https://example.com/app.mjs', parentElement: { tagName: 'HEAD' }, defer: false, async: false, type: 'module' },
-            ]);
-
-            const result = auditScriptLoading();
-
-            expect(result.module).toHaveLength(1);
-        });
-
-        it('should track if script is in HEAD', () => {
-            mockDocument.querySelectorAll.mockReturnValue([
-                { src: 'https://example.com/head.js', parentElement: { tagName: 'HEAD' }, defer: false, async: false, type: '' },
-                { src: 'https://example.com/body.js', parentElement: { tagName: 'BODY' }, defer: false, async: false, type: '' },
-            ]);
-
-            const result = auditScriptLoading();
-
-            expect(result.blocking[0].inHead).toBe(true);
-            expect(result.blocking[1].inHead).toBe(false);
-        });
-
-        it('should handle mixed script types', () => {
-            mockDocument.querySelectorAll.mockReturnValue([
-                { src: 'https://example.com/a.js', parentElement: { tagName: 'HEAD' }, defer: false, async: false, type: '' },
-                { src: 'https://example.com/b.js', parentElement: { tagName: 'HEAD' }, defer: true, async: false, type: '' },
-                { src: 'https://example.com/c.js', parentElement: { tagName: 'HEAD' }, defer: false, async: true, type: '' },
-                { src: 'https://example.com/d.mjs', parentElement: { tagName: 'HEAD' }, defer: false, async: false, type: 'module' },
-            ]);
-
-            const result = auditScriptLoading();
-
-            expect(result.blocking).toHaveLength(1);
-            expect(result.defer).toHaveLength(1);
-            expect(result.async).toHaveLength(1);
-            expect(result.module).toHaveLength(1);
-        });
-    });
-
-    /**
-     * Test inline styles analysis
-     */
-    describe('Inline Styles Analysis', () => {
-        function countInlineStyles() {
-            const styles = document.querySelectorAll('style');
-            const count = styles.length;
-            const totalSize = Array.from(styles)
-                .reduce((sum, s) => sum + s.textContent.length, 0);
-
-            return { count, totalSize: Math.round(totalSize / 1024) };
-        }
-
-        it('should count inline style elements', () => {
-            mockDocument.querySelectorAll.mockReturnValue([
-                { textContent: 'body { margin: 0; }' },
-                { textContent: '.header { color: blue; }' },
-            ]);
-
-            const result = countInlineStyles();
-
-            expect(result.count).toBe(2);
-        });
-
-        it('should calculate inline styles size', () => {
-            // 1KB of CSS
-            const css = 'a'.repeat(1024);
-            mockDocument.querySelectorAll.mockReturnValue([
-                { textContent: css },
-            ]);
-
-            const result = countInlineStyles();
-
-            expect(result.totalSize).toBe(1);
+            expect(out.logs).toContain('Skripte: 1 defer, 2 async, 1 module, 1 ohne');
+            expect(tableWith(out, 'Skript')).toEqual([{ Skript: 'https://widget.example/chat.js', Ort: 'body' }]);
         });
     });
 });
 
-describe('Performance Thresholds', () => {
-    it('should flag JS bundle over 500KB', () => {
-        const totalSize = 600; // KB
-        const isLarge = totalSize > 500;
-
-        expect(isLarge).toBe(true);
+describe('third-party-audit.js', () => {
+    it('ignoriert den eigenen Host', () => {
+        const out = run(thirdPartyCode, storefront);
+        expect(out.logs).toEqual(['Keine Ressourcen von fremden Hosts.']);
     });
 
-    it('should not flag JS bundle under 500KB', () => {
-        const totalSize = 300; // KB
-        const isLarge = totalSize > 500;
-
-        expect(isLarge).toBe(false);
+    it('führt eigene Subdomains als fremd', () => {
+        const out = run(thirdPartyCode, [res('https://cdn.shop.example/a.js')]);
+        expect(out.tables[0][0].Host).toBe('cdn.shop.example');
     });
 
-    it('should calculate TBT from long tasks', () => {
-        const longTasks = [
-            { duration: 80 },  // 30ms over 50ms threshold
-            { duration: 120 }, // 70ms over
-            { duration: 60 },  // 10ms over
-        ];
-
-        const totalBlocking = longTasks.reduce(
-            (sum, t) => sum + Math.max(0, t.duration - 50),
-            0
-        );
-
-        expect(totalBlocking).toBe(110); // 30 + 70 + 10
-    });
-
-    it('should flag TBT over 200ms', () => {
-        const totalBlocking = 250;
-        const needsOptimization = totalBlocking > 200;
-
-        expect(needsOptimization).toBe(true);
+    it('zeigt Grösse nur mit Timing-Allow-Origin, Ende und Blockieren immer', () => {
+        const out = run(thirdPartyCode, [
+            res('https://www.googletagmanager.com/gtag/js?id=G-1', { tao: false, end: 900 }),
+            res('https://www.googletagmanager.com/gtm.js?id=GTM-1', { tao: false, status: 'blocking', end: 400 }),
+            res('https://connect.facebook.net/en_US/fbevents.js', { kb: 30, end: 1200 }),
+            res('https://connect.facebook.net/tr?id=1', { tao: false, end: 1300 }),
+        ]);
+        expect(out.tables[0]).toEqual([
+            { Host: 'www.googletagmanager.com', Dateien: 2, KB: '?', blockierend: 1, 'fertig nach ms': 900 },
+            { Host: 'connect.facebook.net', Dateien: 2, KB: '30 +?', blockierend: 0, 'fertig nach ms': 1300 },
+        ]);
     });
 });
