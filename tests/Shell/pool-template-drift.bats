@@ -123,3 +123,24 @@ fliesstext() {
     run grep -qF 'es ist dieselbe Datei' "$CH9"
     [ "$status" -ne 0 ]
 }
+
+@test "www.conf wird nicht mehr mit einer Verdopplung begruendet" {
+    # MEM-298: Ubuntus www.conf bringt pm.max_children = 5 mit, ab Werk sind
+    # es 50 + 5, nicht 100 - und pm.max_children reserviert ohnehin keinen
+    # Speicher. Der Rat zum Abschalten bleibt, die Begruendung ist eine andere.
+    for f in "$CH9" "$ANHC" "./chapters/09-php-performance/README.md"; do
+        grep -v '^[[:space:]]*$' "$f" | tr '\n' ' ' | tr -s '[:space:]' ' ' > "$BATS_TEST_TMPDIR/k"
+        run grep -qiE 'zaehlt doppelt|doppelten Worker-Zahl|doppelt gerechnet' "$BATS_TEST_TMPDIR/k"
+        [ "$status" -ne 0 ]
+        run grep -qF 'RAM-Rechnung' "$BATS_TEST_TMPDIR/k"
+        [ "$status" -eq 0 ]
+    done
+}
+
+@test "die Anhang-C-Vorlage begruendet den conf.d-Vorrang nicht mit der hoeheren Nummer" {
+    # MEM-298, Rest aus MEM-282: conf.d sortiert Zeichenketten, 100-b.ini
+    # landet vor 99-a.ini.
+    fliesstext "$ANHC" > "$BATS_TEST_TMPDIR/k"
+    run grep -qiF 'hoeherer Nummer' "$BATS_TEST_TMPDIR/k"
+    [ "$status" -ne 0 ]
+}
