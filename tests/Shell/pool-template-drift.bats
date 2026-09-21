@@ -88,12 +88,32 @@ fliesstext() {
         fliesstext "$f" > "$BATS_TEST_TMPDIR/k"
         for satz in \
             'Nehmen Sie eine von beiden' \
-            'test is successful' \
-            'gewinnt die alphabetisch erste Datei'
+            'test is successful'
         do
             run grep -qF "$satz" "$BATS_TEST_TMPDIR/k"
             [ "$status" -eq 0 ]
         done
+    done
+}
+
+@test "beide Vorlagen nennen den Vorrang je Direktivenart" {
+    # MEM-292: Bei gleichem Poolnamen gewinnt nicht einheitlich die alphabetisch
+    # erste Datei. Einzelwerte (pm.*, listen, slowlog ...) ueberschreibt die
+    # spaetere Datei, Listen (php_value, php_admin_value, env[...]) behaelt FPM
+    # aus der ersten. Gemessen mit beiden Vorlagen und vertauschten Dateinamen.
+    for f in "$CH9" "$ANHC"; do
+        fliesstext "$f" > "$BATS_TEST_TMPDIR/k"
+        for satz in \
+            'Einzelwerte - pm.*, listen, request_*, slowlog, user ...: die alphabetisch LETZTE Datei gewinnt' \
+            'Listen - php_value, php_flag, php_admin_value, php_admin_flag, env[...]: die alphabetisch ERSTE Datei gewinnt'
+        do
+            run grep -qF "$satz" "$BATS_TEST_TMPDIR/k"
+            [ "$status" -eq 0 ]
+        done
+
+        # Der alte, einheitliche Satz darf nicht zurueckkommen.
+        run grep -qF 'gewinnt die alphabetisch erste Datei' "$BATS_TEST_TMPDIR/k"
+        [ "$status" -ne 0 ]
     done
 }
 
