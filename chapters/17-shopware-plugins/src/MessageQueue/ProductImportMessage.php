@@ -4,86 +4,40 @@ declare(strict_types=1);
 
 namespace App\MessageQueue;
 
-use Shopware\Core\Framework\MessageQueue\AsyncMessageInterface;
+use Shopware\Core\Framework\MessageQueue\LowPriorityMessageInterface;
 
 /**
- * Product Import Message
+ * Message-Klasse für async Verarbeitung
  *
- * Async message for processing product imports in the background.
+ * LowPriorityMessageInterface (ab Shopware 6.5.7.0) routet die
+ * Nachricht ab Werk in den Transport low_priority - ohne Zeile in
+ * framework.messenger.routing. Eine Klasse, die AsyncMessageInterface
+ * implementiert UND dort nach low_priority geroutet wird, landet in
+ * beiden Transporten und wird zweimal verarbeitet (gemessen in
+ * Shopware 6.6.10.6).
  *
- * Implementing AsyncMessageInterface ensures the message is:
- * - Processed asynchronously via the message queue
- * - Not blocking the original request
- * - Retryable on failure
- *
- * Use cases:
- * - ERP imports
- * - Bulk updates
- * - Heavy calculations
- * - External API sync
+ * @see Kapitel 17, "Message Queue für asynchrone Verarbeitung"
  */
-class ProductImportMessage implements AsyncMessageInterface
+class ProductImportMessage implements LowPriorityMessageInterface
 {
     /**
-     * @param array<string> $productIds Product IDs to process
-     * @param string $importSource Source identifier (erp, csv, api, etc.)
-     * @param array<string, mixed> $options Optional processing options
+     * @param list<string> $productIds
      */
     public function __construct(
         private readonly array $productIds,
-        private readonly string $importSource,
-        private readonly array $options = []
+        private readonly string $importSource
     ) {}
 
     /**
-     * Get product IDs to process
-     *
-     * @return array<string>
+     * @return list<string>
      */
     public function getProductIds(): array
     {
         return $this->productIds;
     }
 
-    /**
-     * Get import source identifier
-     */
     public function getImportSource(): string
     {
         return $this->importSource;
-    }
-
-    /**
-     * Get processing options
-     *
-     * @return array<string, mixed>
-     */
-    public function getOptions(): array
-    {
-        return $this->options;
-    }
-
-    /**
-     * Check if indexing should be skipped
-     */
-    public function shouldSkipIndexing(): bool
-    {
-        return $this->options['skipIndexing'] ?? false;
-    }
-
-    /**
-     * Check if cache invalidation should be delayed
-     */
-    public function shouldDelayCacheInvalidation(): bool
-    {
-        return $this->options['delayCacheInvalidation'] ?? true;
-    }
-
-    /**
-     * Get batch size for processing
-     */
-    public function getBatchSize(): int
-    {
-        return $this->options['batchSize'] ?? 100;
     }
 }

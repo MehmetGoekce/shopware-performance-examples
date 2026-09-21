@@ -5,168 +5,100 @@ declare(strict_types=1);
 namespace App\Subscriber;
 
 use Doctrine\DBAL\Connection;
-use Psr\Log\LoggerInterface;
 use Shopware\Core\Content\Product\ProductEvents;
 use Shopware\Core\Defaults;
 use Shopware\Core\Framework\DataAbstractionLayer\Event\EntityWrittenEvent;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
 /**
- * Performance-Aware Event Subscriber
+ * Subscriber mit Guard-Clauses: bricht ab, bevor er Arbeit macht.
  *
- * Demonstrates best practices for event subscribers:
+ * Beispiel: Merkt sich den Zeitpunkt der letzten Namensänderung im
+ * Zusatzfeld "name_changed_at" der Produktübersetzung.
  *
- * 1. Loop Protection: Prevents infinite loops when subscriber
- *    modifies the same entity type it's listening to.
+ * Zwei Fakten bestimmen die Form (gemessen in Shopware 6.6.10.6):
+ * - "name" ist übersetzbar. Ein Update kommt als
+ *   product_translation.written an, nicht als product.written -
+ *   dessen Payload enthält kein "name".
+ * - custom_fields liegt für Produkte in product_translation.
+ *   Die Tabelle product hat keine solche Spalte.
  *
- * 2. Version Filtering: Only processes live version, not drafts.
+ * Der Schreibweg per DBAL löst kein Event aus. Darum braucht es
+ * keinen Schleifenschutz - ein DAL-Update an dieser Stelle würde den
+ * Subscriber rekursiv erneut aufrufen. Dafür invalidiert DBAL keinen
+ * Cache: für ein Feld, das die Storefront nicht anzeigt, ist das hier
+ * in Ordnung.
  *
- * 3. DBAL Usage: Uses Connection directly to avoid triggering
- *    additional events (which would happen with DAL).
- *
- * 4. Selective Processing: Only reacts to specific field changes.
- *
- * 5. Batch Processing: Groups operations for efficiency.
+ * @see Kapitel 17, "Event-Subscriber optimieren"
+ * @see https://developer.shopware.com/docs/guides/plugins/plugins/plugin-fundamentals/listening-to-events.html
  */
 class PerformanceAwareSubscriber implements EventSubscriberInterface
 {
-    /**
-     * Loop protection flag
-     * Prevents re-entry during our own writes
-     */
-    private bool $isProcessing = false;
-
     public function __construct(
-        private readonly Connection $connection,
-        private readonly LoggerInterface $logger
+        private readonly Connection $connection
     ) {}
 
     public static function getSubscribedEvents(): array
     {
         return [
-            // Priority 100 = runs before most other subscribers
-            ProductEvents::PRODUCT_WRITTEN_EVENT => ['onProductWritten', 100],
+            ProductEvents::PRODUCT_TRANSLATION_WRITTEN_EVENT => 'onTranslationWritten',
         ];
     }
 
-    public function onProductWritten(EntityWrittenEvent $event): void
+    public function onTranslationWritten(EntityWrittenEvent $event): void
     {
-        // ============================================
-        // Guard 1: Loop Protection
-        // ============================================
-        if ($this->isProcessing) {
-            return;
-        }
-
-        // ============================================
-        // Guard 2: Only Live Version
-        // ============================================
-        // Versioned entities (products, orders) dispatch events
-        // for both live and draft versions. We only want live.
+        // 1. Nur Live-Version verarbeiten: Der Admin schreibt erst in
+        //    eine Entwurfsversion und führt sie dann zusammen - dasselbe
+        //    Produkt löst dabei mehrere Events aus.
         if ($event->getContext()->getVersionId() !== Defaults::LIVE_VERSION) {
             return;
         }
 
-        // ============================================
-        // Guard 3: Filter Relevant Changes Only
-        // ============================================
-        $productIdsToProcess = [];
-
+        // 2. Nur relevante Writes filtern
+        $keys = [];
         foreach ($event->getWriteResults() as $result) {
-            // Skip if no payload (delete operations)
-            $payload = $result->getPayload();
-            if ($payload === null) {
+            if (!\array_key_exists('name', $result->getPayload())) {
                 continue;
             }
 
-            // Only react to specific field changes
-            // This prevents unnecessary processing
-            $relevantFields = ['name', 'description', 'price', 'stock'];
-            $hasRelevantChange = false;
-
-            foreach ($relevantFields as $field) {
-                if (array_key_exists($field, $payload)) {
-                    $hasRelevantChange = true;
-                    break;
-                }
-            }
-
-            if ($hasRelevantChange) {
-                $productIdsToProcess[] = $result->getPrimaryKey();
-            }
+            /** @var array{productId: string, languageId: string} $pk */
+            $pk = $result->getPrimaryKey();
+            $keys[] = $pk;
         }
 
-        // Nothing to process
-        if (empty($productIdsToProcess)) {
+        if ($keys === []) {
             return;
         }
 
-        // ============================================
-        // Processing with Loop Protection
-        // ============================================
-        $this->isProcessing = true;
-
-        try {
-            $this->processProducts($productIdsToProcess);
-        } catch (\Throwable $e) {
-            $this->logger->error('Failed to process products: {message}', [
-                'message' => $e->getMessage(),
-                'productIds' => $productIdsToProcess,
-            ]);
-        } finally {
-            // ALWAYS reset the flag, even on error
-            $this->isProcessing = false;
-        }
+        // 3. Ein Statement für alle Treffer, DBAL statt DAL
+        $this->markNameChanged($keys);
     }
 
     /**
-     * Process products using DBAL
-     *
-     * IMPORTANT: We use Connection directly, NOT the DAL!
-     *
-     * Using DAL here would:
-     * - Trigger PRODUCT_WRITTEN_EVENT again
-     * - Create potential for infinite loops
-     * - Add unnecessary overhead
-     *
-     * @param array<string> $productIds
+     * @param list<array{productId: string, languageId: string}> $keys
      */
-    private function processProducts(array $productIds): void
+    private function markNameChanged(array $keys): void
     {
-        if (empty($productIds)) {
-            return;
+        $rows = implode(',', array_fill(0, \count($keys), '(?, ?)'));
+        $params = [
+            (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DATE_ATOM),
+            hex2bin(Defaults::LIVE_VERSION),
+        ];
+        foreach ($keys as $key) {
+            $params[] = hex2bin($key['productId']);
+            $params[] = hex2bin($key['languageId']);
         }
 
-        $this->logger->info('Processing {count} products', [
-            'count' => count($productIds),
-        ]);
-
-        // Convert IDs to binary for SQL
-        $binaryIds = array_map(
-            fn($id) => hex2bin(str_replace('-', '', $id)),
-            $productIds
-        );
-
-        $placeholders = implode(',', array_fill(0, count($binaryIds), '?'));
-
-        // Example: Update a custom field to track processing
-        $sql = <<<SQL
-            UPDATE product
-            SET custom_fields = JSON_SET(
-                COALESCE(custom_fields, '{}'),
-                '$.last_processed_at',
-                :timestamp
-            )
-            WHERE id IN ($placeholders)
-        SQL;
-
         $this->connection->executeStatement(
-            $sql,
-            array_merge([date('c')], $binaryIds)
+            "UPDATE product_translation
+             SET custom_fields = JSON_SET(
+                 COALESCE(custom_fields, '{}'),
+                 '$.name_changed_at',
+                 ?
+             )
+             WHERE product_version_id = ?
+               AND (product_id, language_id) IN ($rows)",
+            $params
         );
-
-        $this->logger->info('Successfully processed {count} products', [
-            'count' => count($productIds),
-        ]);
     }
 }

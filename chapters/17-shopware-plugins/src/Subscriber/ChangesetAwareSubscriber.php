@@ -6,25 +6,28 @@ namespace App\Subscriber;
 
 use Psr\Log\LoggerInterface;
 use Shopware\Core\Content\Product\ProductEvents;
-use Shopware\Core\Defaults;
 use Shopware\Core\Framework\DataAbstractionLayer\Event\EntityWrittenEvent;
+use Shopware\Core\Framework\DataAbstractionLayer\Write\Command\ChangeSet;
 use Shopware\Core\Framework\DataAbstractionLayer\Write\Command\ChangeSetAware;
 use Shopware\Core\Framework\DataAbstractionLayer\Write\Validation\PreWriteValidationEvent;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
 /**
- * Changeset-Aware Subscriber
+ * Changesets nur anfordern, wo sie gebraucht werden.
  *
- * Demonstrates how to use changesets to detect WHAT changed,
- * not just THAT something changed.
+ * Shopware erzeugt Changesets aus Performance-Gründen nicht von
+ * selbst: Sobald einer angefordert ist, liest der Write-Gateway den
+ * alten Zustand per zusätzlichem SELECT * je Entity und Schreibvorgang
+ * (EntityWriteGateway::generateChangeSets()).
  *
- * IMPORTANT: Changesets are NOT added automatically for performance reasons.
- * You must explicitly request them in PreWriteValidationEvent.
+ * Falle (gemessen in Shopware 6.6.10.6): ChangeSet vergleicht die
+ * String-Darstellung von altem und neuem Wert. Bei JSON-Spalten wie
+ * "price" meldet hasChanged() deshalb auch dann true, wenn derselbe
+ * Preis erneut gespeichert wird - MySQL gibt das JSON anders
+ * formatiert zurück. priceChanged() vergleicht darum die Inhalte.
  *
- * Use cases:
- * - Track price changes for analytics
- * - Audit log of specific field changes
- * - Conditional logic based on old vs new values
+ * @see Kapitel 17, "Changesets nur bei Bedarf"
+ * @see https://developer.shopware.com/docs/guides/plugins/plugins/checkout/order/listen-to-order-changes.html
  */
 class ChangesetAwareSubscriber implements EventSubscriberInterface
 {
@@ -35,142 +38,58 @@ class ChangesetAwareSubscriber implements EventSubscriberInterface
     public static function getSubscribedEvents(): array
     {
         return [
-            // MUST be registered to request changesets
+            // Changeset VORHER anfordern
             PreWriteValidationEvent::class => 'requestChangeset',
-
-            // Then we can use the changeset in the written event
             ProductEvents::PRODUCT_WRITTEN_EVENT => 'onProductWritten',
         ];
     }
 
-    /**
-     * Request changeset BEFORE the write happens
-     *
-     * This is required because changesets are not generated
-     * by default (for performance reasons).
-     */
     public function requestChangeset(PreWriteValidationEvent $event): void
     {
         foreach ($event->getCommands() as $command) {
-            // Only for changeset-aware commands
             if (!$command instanceof ChangeSetAware) {
                 continue;
             }
 
-            // Only for products (narrow the scope!)
-            if ($command->getEntityName() !== 'product') {
-                continue;
+            // Nur für Produktänderungen
+            if ($command->getDefinition()->getEntityName() === 'product') {
+                $command->requestChangeSet();
             }
-
-            // Request the changeset
-            $command->requestChangeSet();
         }
     }
 
-    /**
-     * React to product changes with changeset data
-     */
     public function onProductWritten(EntityWrittenEvent $event): void
     {
-        // Only live version
-        if ($event->getContext()->getVersionId() !== Defaults::LIVE_VERSION) {
-            return;
-        }
-
         foreach ($event->getWriteResults() as $result) {
             $changeSet = $result->getChangeSet();
 
-            // No changeset = nothing changed or not requested
             if ($changeSet === null) {
                 continue;
             }
 
-            $productId = $result->getPrimaryKey();
-
-            // ============================================
-            // Example: Track price changes
-            // ============================================
-            if ($changeSet->hasChanged('price')) {
-                $this->handlePriceChange(
-                    $productId,
-                    $changeSet->getBefore('price'),
-                    $changeSet->getAfter('price')
-                );
-            }
-
-            // ============================================
-            // Example: Track stock changes
-            // ============================================
-            if ($changeSet->hasChanged('stock')) {
-                $this->handleStockChange(
-                    $productId,
-                    (int) $changeSet->getBefore('stock'),
-                    (int) $changeSet->getAfter('stock')
-                );
-            }
-
-            // ============================================
-            // Example: Track active status changes
-            // ============================================
-            if ($changeSet->hasChanged('active')) {
-                $this->handleActiveChange(
-                    $productId,
-                    (bool) $changeSet->getBefore('active'),
-                    (bool) $changeSet->getAfter('active')
-                );
+            // Nur wenn sich der Preis geändert hat. info() erscheint in
+            // prod nicht im Log (fingers_crossed ab error); auf der
+            // Konsole mit -vv sichtbar.
+            if ($this->priceChanged($changeSet)) {
+                $this->logger->info('Preis geändert: {id}', [
+                    'id' => $result->getPrimaryKey(),
+                    'before' => $changeSet->getBefore('price'),
+                    'after' => $changeSet->getAfter('price'),
+                ]);
             }
         }
     }
 
-    private function handlePriceChange(string $productId, mixed $before, mixed $after): void
+    private function priceChanged(ChangeSet $changeSet): bool
     {
-        $this->logger->info('Product price changed', [
-            'productId' => $productId,
-            'before' => $before,
-            'after' => $after,
-        ]);
-
-        // Here you could:
-        // - Send notification to price monitoring
-        // - Update price history table
-        // - Trigger competitor price comparison
-    }
-
-    private function handleStockChange(string $productId, int $before, int $after): void
-    {
-        $this->logger->info('Product stock changed', [
-            'productId' => $productId,
-            'before' => $before,
-            'after' => $after,
-            'delta' => $after - $before,
-        ]);
-
-        // Alert on low stock
-        if ($after <= 10 && $before > 10) {
-            $this->logger->warning('Low stock alert for product {productId}', [
-                'productId' => $productId,
-                'stock' => $after,
-            ]);
+        if (!$changeSet->hasChanged('price')) {
+            return false;
         }
 
-        // Alert on out of stock
-        if ($after === 0 && $before > 0) {
-            $this->logger->warning('Product {productId} is now out of stock', [
-                'productId' => $productId,
-            ]);
-        }
-    }
+        $before = $changeSet->getBefore('price');
+        $after = $changeSet->getAfter('price');
 
-    private function handleActiveChange(string $productId, bool $before, bool $after): void
-    {
-        if ($after && !$before) {
-            $this->logger->info('Product {productId} activated', [
-                'productId' => $productId,
-            ]);
-        } elseif (!$after && $before) {
-            $this->logger->info('Product {productId} deactivated', [
-                'productId' => $productId,
-            ]);
-        }
+        // JSON-Spalte: Inhalte vergleichen, nicht Strings
+        return json_decode((string) $before, true) != json_decode((string) $after, true);
     }
 }

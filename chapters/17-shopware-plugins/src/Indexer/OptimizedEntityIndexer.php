@@ -4,260 +4,144 @@ declare(strict_types=1);
 
 namespace App\Indexer;
 
+use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
-use Psr\Log\LoggerInterface;
+use Doctrine\DBAL\ParameterType;
+use Shopware\Core\Defaults;
 use Shopware\Core\Framework\DataAbstractionLayer\Event\EntityWrittenContainerEvent;
 use Shopware\Core\Framework\DataAbstractionLayer\Indexing\EntityIndexer;
 use Shopware\Core\Framework\DataAbstractionLayer\Indexing\EntityIndexingMessage;
 use Shopware\Core\Framework\Plugin\Exception\DecorationPatternException;
 
 /**
- * Optimized Entity Indexer
+ * Eigener Indexer: rechnet beim Schreiben vor, was beim Lesen teuer wäre.
  *
- * Demonstrates best practices for custom entity indexers:
+ * Beispiel: Anzahl der Varianten je Hauptprodukt im Zusatzfeld
+ * "variant_count" der Produktübersetzungen (Live-Version). Die Spalte
+ * custom_fields liegt für Produkte in product_translation, nicht in
+ * product.
  *
- * 1. DBAL over DAL: Use Connection directly to avoid event loops
- *    and get better performance
+ * Getestet mit Shopware 6.6.10.6 (Dockware, Demo-Daten):
+ * - dal:refresh:index --only=custom.optimized.indexer (iterate/handle)
+ * - Update einer Variante -> Hauptprodukt wird neu berechnet (update)
  *
- * 2. Batch Processing: Process in reasonable chunks to manage memory
- *
- * 3. Async Support: Use forceQueue for heavy operations
- *
- * 4. Filter Early: Only index what's necessary
- *
- * Common Indexer Issues:
- * - ProductIndexer with 5k+ variants runs out of memory
- * - cheapest_price field grows to 1MB+ with many variants
- * - DAL usage triggers events = infinite loops
+ * @see Kapitel 17, "Entity-Indexer optimieren"
+ * @see https://developer.shopware.com/docs/guides/plugins/plugins/framework/data-handling/add-data-indexer.html
  */
 class OptimizedEntityIndexer extends EntityIndexer
 {
-    /**
-     * Batch size for iteration
-     * Keep this reasonable to avoid memory issues
-     */
     private const BATCH_SIZE = 50;
 
-    /**
-     * Batch size for processing
-     * Can be smaller if processing is heavy
-     */
-    private const PROCESS_BATCH_SIZE = 10;
-
     public function __construct(
-        private readonly Connection $connection,
-        private readonly LoggerInterface $logger
+        private readonly Connection $connection
     ) {}
 
-    /**
-     * Unique indexer name
-     * Used for selective indexing (dal:refresh:index --skip=...)
-     */
     public function getName(): string
     {
         return 'custom.optimized.indexer';
     }
 
-    /**
-     * Iterate through all entities that need indexing
-     *
-     * Called by dal:refresh:index command
-     * Returns batches of IDs to process
-     */
     public function iterate(?array $offset): ?EntityIndexingMessage
     {
+        // Batch-basiertes Iterieren, Keyset statt OFFSET
         $sql = <<<SQL
             SELECT LOWER(HEX(id)) as id
             FROM product
             WHERE parent_id IS NULL
-              AND (:lastId IS NULL OR id > UNHEX(:lastId))
+              AND version_id = :liveVersion
+              AND (:lastId IS NULL OR id > :lastId)
             ORDER BY id
             LIMIT :limit
         SQL;
 
         $ids = $this->connection->fetchFirstColumn($sql, [
-            'lastId' => $offset['lastId'] ?? null,
+            'liveVersion' => hex2bin(Defaults::LIVE_VERSION),
+            'lastId' => isset($offset['lastId']) ? hex2bin($offset['lastId']) : null,
             'limit' => self::BATCH_SIZE,
+        ], [
+            // Ohne INTEGER: LIMIT '50' -> MySQL-Fehler 1064
+            'limit' => ParameterType::INTEGER,
         ]);
 
-        if (empty($ids)) {
+        if ($ids === []) {
             return null;
         }
 
-        $this->logger->debug('Indexer iteration: {count} products', [
-            'count' => count($ids),
-            'lastId' => $offset['lastId'] ?? 'start',
-        ]);
-
-        // Return message with offset for next iteration
         return new EntityIndexingMessage(
             $ids,
             ['lastId' => end($ids)]
         );
     }
 
-    /**
-     * React to entity write events
-     *
-     * Called automatically when entities are written.
-     * Returns message to process affected entities.
-     */
     public function update(EntityWrittenContainerEvent $event): ?EntityIndexingMessage
     {
-        $productEvent = $event->getEventByEntityName('product');
+        $productIds = $event->getPrimaryKeys('product');
 
-        if ($productEvent === null) {
+        if ($productIds === []) {
             return null;
         }
 
-        $ids = [];
+        // Varianten auf ihr Hauptprodukt abbilden. Ein Update-Payload
+        // enthält parentId nicht - die Datenbank weiss es. Grenze:
+        // Eine gelöschte Variante steht nicht mehr in der Tabelle;
+        // ihr Hauptprodukt holt erst der nächste Voll-Lauf nach.
+        $ids = $this->connection->fetchFirstColumn(
+            'SELECT DISTINCT LOWER(HEX(COALESCE(parent_id, id)))
+             FROM product
+             WHERE id IN (:ids) AND version_id = :liveVersion',
+            [
+                'ids' => array_map('hex2bin', $productIds),
+                'liveVersion' => hex2bin(Defaults::LIVE_VERSION),
+            ],
+            ['ids' => ArrayParameterType::STRING]
+        );
 
-        foreach ($productEvent->getWriteResults() as $result) {
-            $payload = $result->getPayload();
-
-            // Skip variants - we index parent products only
-            if ($payload !== null && isset($payload['parentId'])) {
-                continue;
-            }
-
-            // Skip delete operations
-            if ($result->getOperation() === 'delete') {
-                continue;
-            }
-
-            $ids[] = $result->getPrimaryKey();
-        }
-
-        if (empty($ids)) {
+        if ($ids === []) {
             return null;
         }
 
-        $this->logger->info('Indexer update triggered for {count} products', [
-            'count' => count($ids),
-        ]);
-
-        // Use forceQueue for heavy operations to not block the request
+        // Async verarbeiten: der Request wartet nicht auf den Indexer
         return new EntityIndexingMessage($ids, null, forceQueue: true);
     }
 
-    /**
-     * Process the indexing message
-     *
-     * IMPORTANT: Use Connection directly, NOT DAL!
-     * DAL would trigger EntityWrittenEvent = infinite loop
-     */
     public function handle(EntityIndexingMessage $message): void
     {
+        /** @var list<string> $ids */
         $ids = $message->getData();
 
-        if (empty($ids)) {
+        if ($ids === []) {
             return;
         }
 
-        $this->logger->info('Processing {count} products in indexer', [
-            'count' => count($ids),
-        ]);
-
-        $startTime = microtime(true);
-
-        // Process in smaller batches within the message
-        $batches = array_chunk($ids, self::PROCESS_BATCH_SIZE);
-
-        $this->connection->transactional(function () use ($batches) {
-            foreach ($batches as $batchIndex => $batch) {
-                $this->indexBatch($batch);
-
-                // Free memory after each batch
-                gc_collect_cycles();
-            }
-        });
-
-        $duration = microtime(true) - $startTime;
-
-        $this->logger->info('Indexer completed in {duration}s', [
-            'duration' => round($duration, 3),
-            'count' => count($ids),
-            'perSecond' => round(count($ids) / $duration, 1),
-        ]);
-    }
-
-    /**
-     * Index a batch of products
-     *
-     * Example: Calculate and store aggregated values
-     */
-    private function indexBatch(array $ids): void
-    {
-        if (empty($ids)) {
-            return;
-        }
-
-        // Convert to binary IDs for SQL
-        $binaryIds = array_map(
-            fn($id) => hex2bin(str_replace('-', '', $id)),
-            $ids
-        );
-
-        $placeholders = implode(',', array_fill(0, count($binaryIds), '?'));
-
-        // ============================================
-        // Example 1: Count variants per product
-        // ============================================
+        // Connection statt DAL: Ein DAL-Write würde erneut
+        // update() auslösen - eine Endlosschleife.
         $this->connection->executeStatement(
-            "UPDATE product p
-             SET custom_fields = JSON_SET(
-                 COALESCE(custom_fields, '{}'),
+            "UPDATE product_translation pt
+             SET pt.custom_fields = JSON_SET(
+                 COALESCE(pt.custom_fields, '{}'),
                  '$.variant_count',
-                 (SELECT COUNT(*) FROM product v WHERE v.parent_id = p.id)
+                 (SELECT COUNT(*) FROM product v
+                  WHERE v.parent_id = pt.product_id
+                    AND v.version_id = pt.product_version_id)
              )
-             WHERE p.id IN ($placeholders)",
-            $binaryIds
-        );
-
-        // ============================================
-        // Example 2: Calculate total reviews
-        // ============================================
-        $this->connection->executeStatement(
-            "UPDATE product p
-             SET custom_fields = JSON_SET(
-                 COALESCE(custom_fields, '{}'),
-                 '$.review_count',
-                 (SELECT COUNT(*) FROM product_review r WHERE r.product_id = p.id),
-                 '$.avg_rating',
-                 (SELECT AVG(points) FROM product_review r WHERE r.product_id = p.id)
-             )
-             WHERE p.id IN ($placeholders)",
-            $binaryIds
-        );
-
-        // ============================================
-        // Example 3: Update indexed timestamp
-        // ============================================
-        $this->connection->executeStatement(
-            "UPDATE product
-             SET custom_fields = JSON_SET(
-                 COALESCE(custom_fields, '{}'),
-                 '$.last_indexed_at',
-                 ?
-             )
-             WHERE id IN ($placeholders)",
-            array_merge([date('c')], $binaryIds)
+             WHERE pt.product_id IN (:ids)
+               AND pt.product_version_id = :liveVersion",
+            [
+                'ids' => array_map('hex2bin', $ids),
+                'liveVersion' => hex2bin(Defaults::LIVE_VERSION),
+            ],
+            ['ids' => ArrayParameterType::STRING]
         );
     }
 
-    /**
-     * Get total count for progress bar
-     */
     public function getTotal(): int
     {
         return (int) $this->connection->fetchOne(
-            'SELECT COUNT(*) FROM product WHERE parent_id IS NULL'
+            'SELECT COUNT(*) FROM product WHERE parent_id IS NULL AND version_id = :liveVersion',
+            ['liveVersion' => hex2bin(Defaults::LIVE_VERSION)]
         );
     }
 
-    /**
-     * Required by EntityIndexer but we don't support decoration
-     */
     public function getDecorated(): EntityIndexer
     {
         throw new DecorationPatternException(self::class);

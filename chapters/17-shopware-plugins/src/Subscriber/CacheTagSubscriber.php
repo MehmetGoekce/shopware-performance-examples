@@ -4,165 +4,54 @@ declare(strict_types=1);
 
 namespace App\Subscriber;
 
-use Shopware\Core\Framework\Adapter\Cache\CacheTagCollection;
+use App\Service\CustomTagInvalidator;
+use Shopware\Core\Framework\Adapter\Cache\Event\AddCacheTagEvent;
 use Shopware\Storefront\Event\StorefrontRenderEvent;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
-use Symfony\Component\HttpFoundation\Request;
+use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 /**
- * Cache Tag Subscriber
+ * Eigenes Cache-Tag für Daten, von denen Shopware nichts weiss.
  *
- * Adds custom cache tags to HTTP cache entries for fine-grained
- * cache invalidation.
+ * Beispiel: Die Detailseite zeigt einen Wert aus einer eigenen
+ * Quelle (ERP-Lagerampel, externe Bewertung). Ändert sich der
+ * Wert, invalidiert CustomTagInvalidator genau dieses Tag - und
+ * damit nur die betroffenen Seiten.
  *
- * Shopware's HTTP cache uses a tag-based invalidation system:
- * - Every cached page is tagged with relevant entity IDs
- * - When an entity changes, all pages with that tag are invalidated
- * - Custom tags allow plugins to participate in this system
+ * AddCacheTagEvent gibt es ab Shopware 6.6.6.0. Tags aus der früher
+ * gezeigten CacheTagCollection erreichen den HTTP-Cache in 6.6 noch,
+ * in 6.7.0.0 nicht mehr: Http\CacheStore liest dort nur den
+ * CacheTagCollector (dieses Event) und den Header sw-cache-tags.
  *
- * Default Shopware tags include:
- * - product-{id}
- * - category-{id}
- * - cms-page-{id}
- * - navigation-{salesChannelId}
- *
- * This subscriber adds custom tags for:
- * - Route-specific caching
- * - Feature-flag-based invalidation
- * - Custom business logic
+ * @see Kapitel 17, "Eigene Cache-Tags hinzufügen"
+ * @see Kapitel 6, "Eigenes Cache-Tag"
  */
 class CacheTagSubscriber implements EventSubscriberInterface
 {
     public function __construct(
-        private readonly CacheTagCollection $cacheTagCollection
+        private readonly EventDispatcherInterface $dispatcher
     ) {}
 
     public static function getSubscribedEvents(): array
     {
         return [
-            StorefrontRenderEvent::class => ['addCacheTags', 0],
+            StorefrontRenderEvent::class => 'addCacheTags',
         ];
     }
 
     public function addCacheTags(StorefrontRenderEvent $event): void
     {
         $request = $event->getRequest();
-        $route = $request->attributes->get('_route');
 
-        // ============================================
-        // Route-based tags
-        // ============================================
-        $this->addRouteBasedTags($route, $request);
-
-        // ============================================
-        // Page-specific tags
-        // ============================================
-        $this->addPageSpecificTags($event);
-    }
-
-    private function addRouteBasedTags(string $route, Request $request): void
-    {
-        switch ($route) {
-            case 'frontend.detail.page':
-                // Product detail page - add custom product tag
-                $productId = $request->get('productId');
-                if ($productId) {
-                    $this->cacheTagCollection->add(
-                        sprintf('custom-product-%s', $productId)
-                    );
-
-                    // Tag for price-sensitive invalidation
-                    $this->cacheTagCollection->add(
-                        sprintf('product-price-%s', $productId)
-                    );
-                }
-                break;
-
-            case 'frontend.navigation.page':
-                // Category page - add category-specific tags
-                $navigationId = $request->get('navigationId');
-                if ($navigationId) {
-                    $this->cacheTagCollection->add(
-                        sprintf('custom-category-%s', $navigationId)
-                    );
-                }
-                break;
-
-            case 'frontend.home.page':
-                // Homepage - special tag for homepage-specific content
-                $this->cacheTagCollection->add('homepage');
-                $this->cacheTagCollection->add('featured-products');
-                break;
-
-            case 'frontend.checkout.cart.page':
-                // Cart page should NOT be cached aggressively
-                // But we can add tags for partial caching
-                $this->cacheTagCollection->add('cart-recommendations');
-                break;
-        }
-    }
-
-    private function addPageSpecificTags(StorefrontRenderEvent $event): void
-    {
-        $page = $event->getParameters()['page'] ?? null;
-
-        if ($page === null) {
+        if ($request->attributes->get('_route') !== 'frontend.detail.page') {
             return;
         }
 
-        // ============================================
-        // CMS Page tags
-        // ============================================
-        if (method_exists($page, 'getCmsPage')) {
-            $cmsPage = $page->getCmsPage();
-            if ($cmsPage !== null) {
-                $this->cacheTagCollection->add(
-                    sprintf('custom-cms-%s', $cmsPage->getId())
-                );
-
-                // Tag each CMS block for granular invalidation
-                foreach ($cmsPage->getSections() as $section) {
-                    foreach ($section->getBlocks() as $block) {
-                        $this->cacheTagCollection->add(
-                            sprintf('cms-block-%s', $block->getId())
-                        );
-                    }
-                }
-            }
+        $productId = $request->attributes->get('productId');
+        if (!\is_string($productId)) {
+            return;
         }
 
-        // ============================================
-        // Manufacturer tags (for brand pages)
-        // ============================================
-        if (method_exists($page, 'getProduct')) {
-            $product = $page->getProduct();
-            if ($product !== null && $product->getManufacturerId()) {
-                $this->cacheTagCollection->add(
-                    sprintf('manufacturer-%s', $product->getManufacturerId())
-                );
-            }
-        }
-
-        // ============================================
-        // Time-based tags for scheduled content
-        // ============================================
-        // These allow invalidation based on time windows
-        $this->cacheTagCollection->add(
-            sprintf('day-%s', date('Y-m-d'))
-        );
-
-        // For hourly promotions
-        if ($this->hasTimeBasedContent()) {
-            $this->cacheTagCollection->add(
-                sprintf('hour-%s', date('Y-m-d-H'))
-            );
-        }
-    }
-
-    private function hasTimeBasedContent(): bool
-    {
-        // Check if current page has time-sensitive content
-        // This could be determined by CMS configuration
-        return false;
+        $this->dispatcher->dispatch(new AddCacheTagEvent(CustomTagInvalidator::tag($productId)));
     }
 }
