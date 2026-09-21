@@ -26,7 +26,7 @@ class OptimizedProductService
     ) {}
 
     /**
-     * Lädt nur die wirklich benötigten Felder und Assoziationen
+     * Lädt nur die wirklich benötigten Assoziationen
      */
     public function getProductsForListing(
         string $categoryId,
@@ -45,7 +45,8 @@ class OptimizedProductService
         $criteria->addAssociation('cover.media');
 
         // Staffelpreise: nur die erste Staffel. Ohne Sortierung
-        // wäre "der erste" ein beliebiger Datensatz.
+        // wäre "der erste" ein beliebiger Datensatz. Mit mehreren
+        // Preisregeln zusätzlich nach Regel filtern.
         $criteria->getAssociation('prices')
             ->addSorting(new FieldSorting('quantityStart'))
             ->setLimit(1);

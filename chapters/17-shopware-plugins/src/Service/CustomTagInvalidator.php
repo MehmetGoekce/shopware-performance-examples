@@ -16,6 +16,10 @@ use Shopware\Core\Framework\Adapter\Cache\CacheInvalidator;
  * Webhook, Cronjob). Für Änderungen über den DAL ist das nicht
  * nötig: Dann invalidiert Shopware die Produktseiten selbst.
  *
+ * Mit shopware.cache.invalidation.delay > 0 sammelt der Invalidator
+ * auch dieses Tag nur ein; es wirkt dann erst mit dem Scheduled Task
+ * (alle 20 s). $force = true invalidiert sofort.
+ *
  * @see Kapitel 17, "Kontrollierte Cache-Invalidierung"
  */
 class CustomTagInvalidator
@@ -32,12 +36,12 @@ class CustomTagInvalidator
     /**
      * @param list<string> $productIds
      */
-    public function invalidateProducts(array $productIds): void
+    public function invalidateProducts(array $productIds, bool $force = false): void
     {
         // Ein Aufruf für alle Tags statt einer je Produkt
         $this->cacheInvalidator->invalidate(array_map(
             self::tag(...),
             $productIds
-        ));
+        ), $force);
     }
 }

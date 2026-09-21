@@ -23,13 +23,16 @@ shopware:
     #
     # Fremde Nachrichten umleiten: routing_overwrite (ab 6.6.4.0).
     # NICHT framework.messenger.routing - dort landet eine Klasse
-    # mit AsyncMessageInterface zusätzlich in async und wird
-    # zweimal verarbeitet.
+    # mit AsyncMessageInterface ab 6.6.10.0 zusätzlich in async und
+    # wird zweimal verarbeitet.
     #
-    # Beispiel: Produkt-Indexing hinter async einreihen. Betrifft nur
-    # Indexing über die Queue (etwa dal:refresh:index --use-queue).
-    # Folge: Solange async voll ist, kommen Preis und Bestand
-    # (cheapest-price, stock) im Listing später an.
-    messenger:
-        routing_overwrite:
-            'Shopware\Core\Content\Product\DataAbstractionLayer\ProductIndexingMessage': low_priority
+    # Beispiel, bewusst auskommentiert: Produkt-Indexing hinter async
+    # einreihen. Das trifft jeden Produkt-Write - Shopware schickt die
+    # Nachindizierung von Haupt- und Variantenprodukten und jeden
+    # Block ab 50 IDs über die Queue. Solange async voll ist, kommen
+    # berechnete Listing-Daten wie der günstigste Preis später an.
+    # Nur für Import-Phasen einschalten.
+    #
+    # messenger:
+    #     routing_overwrite:
+    #         'Shopware\Core\Content\Product\DataAbstractionLayer\ProductIndexingMessage': low_priority

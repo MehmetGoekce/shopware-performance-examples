@@ -8,6 +8,7 @@ use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\ParameterType;
 use Shopware\Core\Defaults;
+use Shopware\Core\Framework\DataAbstractionLayer\EntityWriteResult;
 use Shopware\Core\Framework\DataAbstractionLayer\Event\EntityWrittenContainerEvent;
 use Shopware\Core\Framework\DataAbstractionLayer\Indexing\EntityIndexer;
 use Shopware\Core\Framework\DataAbstractionLayer\Indexing\EntityIndexingMessage;
@@ -23,7 +24,8 @@ use Shopware\Core\Framework\Plugin\Exception\DecorationPatternException;
  *
  * Getestet mit Shopware 6.6.10.6 (Dockware, Demo-Daten):
  * - dal:refresh:index --only=custom.optimized.indexer (iterate/handle)
- * - Update einer Variante -> Hauptprodukt wird neu berechnet (update)
+ * - neue Variante -> Hauptprodukt wird neu berechnet (update);
+ *   ein reines Bestands-Update löst nichts aus
  *
  * @see Kapitel 17, "Entity-Indexer optimieren"
  * @see https://developer.shopware.com/docs/guides/plugins/plugins/framework/data-handling/add-data-indexer.html
@@ -75,16 +77,31 @@ class OptimizedEntityIndexer extends EntityIndexer
 
     public function update(EntityWrittenContainerEvent $event): ?EntityIndexingMessage
     {
-        $productIds = $event->getPrimaryKeys('product');
+        // Entwürfe des Admins zählen nicht; die Registry prüft die
+        // Version selbst nicht.
+        if ($event->getContext()->getVersionId() !== Defaults::LIVE_VERSION) {
+            return null;
+        }
+
+        // Filtern, bevor gerechnet wird: variant_count ändert sich nur,
+        // wenn ein Produkt angelegt wird oder sein parentId wechselt -
+        // nicht bei Preis, Bestand oder Name.
+        $productIds = [];
+        foreach ($event->getEventByEntityName('product')?->getWriteResults() ?? [] as $result) {
+            if ($result->getOperation() === EntityWriteResult::OPERATION_INSERT
+                || \array_key_exists('parentId', $result->getPayload())) {
+                $productIds[] = $result->getPrimaryKey();
+            }
+        }
 
         if ($productIds === []) {
             return null;
         }
 
-        // Varianten auf ihr Hauptprodukt abbilden. Ein Update-Payload
-        // enthält parentId nicht - die Datenbank weiss es. Grenze:
-        // Eine gelöschte Variante steht nicht mehr in der Tabelle;
-        // ihr Hauptprodukt holt erst der nächste Voll-Lauf nach.
+        // Varianten auf ihr Hauptprodukt abbilden - die Datenbank
+        // weiss es auch dann, wenn der Payload parentId nicht trägt.
+        // Grenze: Eine gelöschte Variante steht nicht mehr in der
+        // Tabelle; ihr Hauptprodukt holt erst der nächste Voll-Lauf nach.
         $ids = $this->connection->fetchFirstColumn(
             'SELECT DISTINCT LOWER(HEX(COALESCE(parent_id, id)))
              FROM product

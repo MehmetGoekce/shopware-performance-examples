@@ -17,8 +17,10 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  *
  * Shopware erzeugt Changesets aus Performance-Gründen nicht von
  * selbst: Sobald einer angefordert ist, liest der Write-Gateway den
- * alten Zustand per zusätzlichem SELECT * je Entity und Schreibvorgang
- * (EntityWriteGateway::generateChangeSets()).
+ * alten Zustand per zusätzlichem SELECT * je Entity-Typ und
+ * Schreibaufruf, alle Datensätze in einer Abfrage
+ * (EntityWriteGateway::generateChangeSets()). Deshalb nur anfordern,
+ * wenn das Feld im Schreibauftrag steht.
  *
  * Falle (gemessen in Shopware 6.6.10.6): ChangeSet vergleicht die
  * String-Darstellung von altem und neuem Wert. Bei JSON-Spalten wie
@@ -51,8 +53,10 @@ class ChangesetAwareSubscriber implements EventSubscriberInterface
                 continue;
             }
 
-            // Nur für Produktänderungen
-            if ($command->getDefinition()->getEntityName() === 'product') {
+            // Nur für Produktänderungen, die den Preis schreiben
+            // (der Payload trägt Spaltennamen)
+            if ($command->getDefinition()->getEntityName() === 'product'
+                && \array_key_exists('price', $command->getPayload())) {
                 $command->requestChangeSet();
             }
         }
@@ -67,9 +71,9 @@ class ChangesetAwareSubscriber implements EventSubscriberInterface
                 continue;
             }
 
-            // Nur wenn sich der Preis geändert hat. info() erscheint in
-            // prod nicht im Log (fingers_crossed ab error); auf der
-            // Konsole mit -vv sichtbar.
+            // Nur wenn sich der Preis geändert hat. info() puffert in
+            // prod (fingers_crossed) und landet nur im Log, wenn derselbe
+            // Request einen Fehler loggt; auf der Konsole mit -vv.
             if ($this->priceChanged($changeSet)) {
                 $this->logger->info('Preis geändert: {id}', [
                     'id' => $result->getPrimaryKey(),

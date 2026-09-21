@@ -13,8 +13,9 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 /**
  * Subscriber mit Guard-Clauses: bricht ab, bevor er Arbeit macht.
  *
- * Beispiel: Merkt sich den Zeitpunkt der letzten Namensänderung im
- * Zusatzfeld "name_changed_at" der Produktübersetzung.
+ * Beispiel: Merkt sich, wann der Name zuletzt geschrieben wurde, im
+ * Zusatzfeld "name_changed_at" der Produktübersetzung. Geprüft wird,
+ * ob "name" im Schreibauftrag steht - nicht, ob er sich geändert hat.
  *
  * Zwei Fakten bestimmen die Form (gemessen in Shopware 6.6.10.6):
  * - "name" ist übersetzbar. Ein Update kommt als

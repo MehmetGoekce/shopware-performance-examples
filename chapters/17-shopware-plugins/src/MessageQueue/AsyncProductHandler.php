@@ -14,8 +14,10 @@ use Symfony\Component\Messenger\Attribute\AsMessageHandler;
  * Verarbeitet ProductImportMessage im Worker, nicht im Request.
  *
  * processBatch() ist der Platz für die eigentliche Import-Logik;
- * das Beispiel setzt nur updated_at. Den Speicher begrenzt der
- * Worker selbst (messenger:consume --memory-limit, Anhang C).
+ * das Beispiel setzt nur updated_at. DBAL-Writes lösen weder Indexer
+ * noch Cache-Invalidierung aus - den Weg dafür zeigt Kapitel 7
+ * (ProductUpdateService). Den Speicher begrenzt der Worker selbst
+ * (messenger:consume --memory-limit, Anhang C).
  *
  * @see Kapitel 17, "Async Message Handler"
  */
@@ -49,8 +51,8 @@ class AsyncProductHandler
     private function processBatch(array $productIds): void
     {
         // Direkte DBAL-Verarbeitung für Performance.
-        // UTC_TIMESTAMP statt NOW(): Shopware speichert UTC,
-        // NOW() liefert die Zeitzone der DB-Session.
+        // UTC_TIMESTAMP statt NOW(): Shopware speichert UTC, NOW()
+        // liefert in 6.6 die Zeitzone der DB-Session (6.7: UTC).
         $this->connection->executeStatement(
             'UPDATE product SET updated_at = UTC_TIMESTAMP(3)
              WHERE id IN (:ids) AND version_id = :liveVersion',

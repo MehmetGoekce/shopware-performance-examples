@@ -41,7 +41,7 @@ Die Klassen stehen im Namespace `App\`. Als Plugin: Dateien unter `src/`
 übernehmen, `App\` durch den Plugin-Namespace ersetzen und
 `config/services.xml` nach `src/Resources/config/services.xml` legen.
 
-`config/message-queue.yaml` gehört nach `config/packages/`. Die Worker selbst
+`config/message-queue.yaml` gehört nach `config/packages/`; das Routing-Beispiel darin ist bewusst auskommentiert. Die Worker selbst
 (`messenger:consume async low_priority` und `scheduled-task:run`) stehen in
 Anhang C: `chapters/anhang-c-konfigurationen/config/supervisor-shopware.conf`.
 
@@ -52,10 +52,10 @@ Anhang C: `chapters/anhang-c-konfigurationen/config/supervisor-shopware.conf`.
 | `OptimizedProductService` | Staffelpreise mit Sortierung begrenzen, sonst ist "der erste" beliebig; `searchIds()` hydriert nichts |
 | `FastIdLookupService` | `LIMIT :limit` braucht `ParameterType::INTEGER`, sonst `LIMIT '1000'` → MySQL-Fehler 1064 |
 | `PerformanceAwareSubscriber` | `name` kommt als `product_translation.written`, nicht als `product.written`; `custom_fields` liegt in `product_translation` |
-| `ChangesetAwareSubscriber` | `hasChanged('price')` ist bei JSON-Spalten auch ohne Änderung `true` - Inhalte vergleichen |
-| `ProductImportMessage` | `LowPriorityMessageInterface` statt `framework.messenger.routing` (sonst doppelt verarbeitet) |
+| `ChangesetAwareSubscriber` | Changeset nur anfordern, wenn `price` geschrieben wird; `hasChanged('price')` ist bei JSON-Spalten auch ohne Änderung `true` - Inhalte vergleichen |
+| `ProductImportMessage` | `LowPriorityMessageInterface` statt `framework.messenger.routing` (dort ab 6.6.10.0 doppelt verarbeitet) |
 | `CacheTagSubscriber` + `CustomTagInvalidator` | `AddCacheTagEvent` (ab 6.6.6.0); Setzer und Invalidierer bauen das Tag mit derselben Methode |
-| `OptimizedEntityIndexer` | Varianten über die Datenbank auf das Hauptprodukt abbilden, nicht über den Payload |
+| `OptimizedEntityIndexer` | Nur rechnen, wenn sich die Variantenzahl ändern kann (Insert, `parentId`), Entwürfe überspringen; Varianten über die Datenbank aufs Hauptprodukt abbilden |
 
 Den Schreibweg per DBAL samt Cache-Invalidierung zeigt Kapitel 7
 (`chapters/07-shopware-cache/src/Service/ProductUpdateService.php`).
@@ -68,8 +68,9 @@ sudo -u www-data SHOPWARE_ROOT=/var/www/html \
     ./scripts/profile-plugin.sh MyPlugin /Mein-Produkt/SW10001
 ```
 
-Misst A-B-A (mit, ohne, wieder mit), je Phase nach Cache-Leeren und
-Aufwärmen, jeden Aufruf am HTTP-Cache vorbei. Ist der Unterschied nicht
+Misst A-B-A (mit, ohne, wieder mit), je Phase nach Cache-Leeren
+(`cache:clear`, ab 6.6.8.0 auch `cache:clear:all`) und Aufwärmen, jeden
+Aufruf am HTTP-Cache vorbei. Ist der Unterschied nicht
 grösser als die Abweichung der beiden Mit-Phasen, meldet das Skript ihn als
 nicht belastbar.
 
