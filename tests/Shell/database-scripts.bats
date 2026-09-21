@@ -296,3 +296,10 @@ LOG
     [ "$status" -eq 0 ]
     [[ "$output" == *"900000 gelesen, 2 geliefert"* ]]
 }
+
+@test "shopware.cnf rechnet max_connections nicht mit zwei Verbindungen je Worker" {
+    # MEM-299: Shopware oeffnet eine Verbindung je PHP-Prozess (MySQLFactory,
+    # gemessen unter Last), nicht zwei.
+    run grep -qE 'Workers? \* 2' "./chapters/08-database/config/shopware.cnf"
+    [ "$status" -ne 0 ]
+}

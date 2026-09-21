@@ -530,3 +530,14 @@ fliesstext() {
     run grep -c '^<?php$' "$DIR/opcache-status.php"
     [ "$output" -eq 1 ]
 }
+
+@test "OPcache-Vorlage und README nennen den Reparaturweg nach cp auf 10-opcache.ini" {
+    # MEM-299: --reinstall repariert nichts (ucf behaelt die Datei, dazu
+    # 20-opcache.ini). Die CI fuehrt die Befehle aus; hier steht, dass sie da sind.
+    for f in "$CONFIG/99-shopware-opcache.ini" "$CONFIG/../README.md"; do
+        run grep -qF 'cp /usr/share/php8.3-opcache/opcache/opcache.ini /etc/php/8.3/mods-available/opcache.ini' "$f"
+        [ "$status" -eq 0 ]
+        run grep -qF 'rm -f /etc/php/8.3/*/conf.d/20-opcache.ini' "$f"
+        [ "$status" -eq 0 ]
+    done
+}

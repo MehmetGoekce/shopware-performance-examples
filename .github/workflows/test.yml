@@ -296,10 +296,27 @@ jobs:
               || { echo "www.conf hat nicht mehr dynamic/5/2 - Kapitel 9 und Anhang C nachziehen"; exit 1; }
             echo "ok: www.conf ab Werk dynamic, max 5, start 2"
 
+            # MEM-299: Kapitel 9, Anhang C und beide Vorlagen schalten www.conf
+            # per mv auf www.conf.disabled ab. Das traegt nur, solange
+            # php-fpm.conf allein pool.d/*.conf einliest - und solange ein
+            # Reinstall die Datei nicht zurueckbringt.
+            grep -qx "include=/etc/php/8.3/fpm/pool.d/\*.conf" /etc/php/8.3/fpm/php-fpm.conf \
+              || { echo "php-fpm.conf liest pool.d nicht mehr als *.conf - der mv-Rat traegt nicht"; exit 1; }
+            mv "$WWW" "$WWW.disabled"
+            apt-get install -y -qq --reinstall php8.3-fpm > /dev/null 2>&1
+            pkill -x php-fpm8.3 || true
+            sleep 1
+            [ ! -e "$WWW" ] || { echo "Reinstall hat www.conf wieder angelegt - Kapitel 9 und Anhang C nachziehen"; exit 1; }
+            echo "ok: www.conf.disabled bleibt aus, auch nach --reinstall"
+
             php-fpm8.3 -t
             php-fpm8.3 -D
             sleep 2
             pgrep -x php-fpm8.3 > /dev/null || { echo "FPM laeuft nicht"; exit 1; }
+            if ps -eo args | grep -q "^php-fpm: pool www"; then
+              echo "Der Pool www laeuft trotz www.conf.disabled."; exit 1
+            fi
+            echo "ok: nur der Shopware-Pool laeuft"
 
             OUT="$(SCRIPT_FILENAME=/var/www/probe.php REQUEST_METHOD=GET SCRIPT_NAME=/probe.php \
                    cgi-fcgi -bind -connect /run/php/php8.3-fpm-shopware.sock 2>/dev/null | tail -1)"
@@ -375,6 +392,35 @@ jobs:
               exit 1
             fi
             echo "ok: OPcache-Erweiterung weg in FPM und CLI, -t meldet trotzdem Erfolg"
+
+            # Gegenprobe 3 (MEM-299): Der Reparaturweg aus Kapitel 9 und der
+            # Vorlage. Erst die Behauptung, dass --reinstall NICHT hilft und
+            # 20-opcache.ini anlegt, dann genau die Befehle aus dem Buch.
+            MA=/etc/php/8.3/mods-available/opcache.ini
+            apt-get install -y -qq --reinstall php8.3-opcache > /dev/null 2>&1
+            if grep -q "^zend_extension" "$MA"; then
+              echo "Gegenprobe 3: --reinstall hat die Datei repariert - Kapitel 9 sagt das Gegenteil."; exit 1
+            fi
+            [ -L /etc/php/8.3/fpm/conf.d/20-opcache.ini ] && [ -L /etc/php/8.3/cli/conf.d/20-opcache.ini ] \
+              || { echo "Gegenprobe 3: --reinstall legt keine 20-opcache.ini mehr an - Kapitel 9 nachziehen."; exit 1; }
+            cp /usr/share/php8.3-opcache/opcache/opcache.ini "$MA"
+            # Ohne den rm-Schritt muss die Warnung kommen, sonst ist er ueberfluessig.
+            # Ausgabe erst einfangen: Die Warnung steht in Zeile 1, grep -q
+            # beendet sich dort, php stirbt an SIGPIPE, und pipefail meldet den
+            # Treffer als Fehlschlag.
+            PM="$(php -m 2>&1)"
+            case "$PM" in
+              *"already loaded"*) ;;
+              *) echo "Gegenprobe 3: keine Doppel-Lade-Warnung - der rm-Schritt waere ueberfluessig."; exit 1 ;;
+            esac
+            rm -f /etc/php/8.3/*/conf.d/20-opcache.ini
+            php-fpm8.3 -m | grep -qi "zend opcache" && php -m | grep -qi "zend opcache" \
+              || { echo "Gegenprobe 3: Nach der Reparatur fehlt OPcache."; exit 1; }
+            PM="$(php -m 2>&1)"
+            case "$PM" in
+              *"already loaded"*) echo "Gegenprobe 3: Nach der Reparatur noch die Doppel-Lade-Warnung."; exit 1 ;;
+            esac
+            echo "ok: --reinstall hilft nicht, der Reparaturweg aus dem Buch schon"
           '
 
   shellcheck:

@@ -145,3 +145,13 @@ fliesstext() {
     run grep -qiE 'h(oe|ö)here[rn]? Nummer' "$BATS_TEST_TMPDIR/k"
     [ "$status" -ne 0 ]
 }
+
+@test "beide Vorlagen und das README nennen den Abschaltbefehl fuer www.conf" {
+    # MEM-299: Buch und Vorlagen sagten "abschalten", aber nicht wie. Die CI
+    # (Job php-fpm-pool) misst, dass der Befehl wirkt; hier steht, dass er da ist.
+    local cmd='mv /etc/php/8.3/fpm/pool.d/www.conf /etc/php/8.3/fpm/pool.d/www.conf.disabled'
+    for f in "$CH9" "$ANHC" "./chapters/09-php-performance/README.md"; do
+        run grep -qF "$cmd" "$f"
+        [ "$status" -eq 0 ]
+    done
+}
