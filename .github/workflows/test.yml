@@ -347,7 +347,14 @@ jobs:
               echo "Gegenprobe 2: -t schlaegt an - dann waere der Ausfall nicht lautlos."
               exit 1
             fi
-            echo "ok: OPcache weg, -t meldet trotzdem Erfolg"
+            # MEM-298: cp folgt dem Symlink und trifft mods-available/opcache.ini,
+            # auf die auch die CLI zeigt. Vorlage und Kapitel sagen deshalb, dass
+            # auch die CLI OPcache verliert.
+            if php -m | grep -qi "zend opcache"; then
+              echo "Gegenprobe 2: Die CLI laedt OPcache noch - 'auch die CLI' waere falsch."
+              exit 1
+            fi
+            echo "ok: OPcache weg in FPM und CLI, -t meldet trotzdem Erfolg"
           '
 
   shellcheck:
