@@ -20,12 +20,17 @@ echo "$*" >> "$STUB/console.log"
 case "$1" in
     plugin:list)
         [ "${CONSOLE_FAIL:-}" = list ] && exit 1
+        [ "${CONSOLE_FAIL:-}" = json ] && { echo "PHP Deprecated: irgendwas"; exit 0; }
         if [ "$(cat "$STUB/state")" = active ]; then a=true; else a=false; fi
         printf '[{"name":"OtherPlugin","active":true,"extensions":{"x":{}}},{"name":"MyPlugin","active":%s}]\n' "$a"
         ;;
     plugin:deactivate) echo inactive > "$STUB/state" ;;
     plugin:activate) echo active > "$STUB/state" ;;
-    cache:clear) ;;
+    cache:clear|cache:clear:all) ;;
+    list)
+        echo "cache:clear                  Clear the cache"
+        [ "${CONSOLE_CLEAR_ALL:-}" = 1 ] && echo "cache:clear:all              Clear all caches/pools"
+        ;;
     debug:event-dispatcher)
         [ "${CONSOLE_FAIL:-}" = dispatcher ] && exit 1
         cat <<'JSON'
@@ -37,13 +42,20 @@ JSON
 esac
 EOF
 
-    # curl-Stub: 150 ms mit Plugin, 80 ms ohne; HTTP-Code per Env
+    # curl-Stub: 150 ms mit Plugin, 80 ms ohne; HTTP-Code per Env.
+    # Liegt eine Datei times_active/times_inactive vor, kommt je Aufruf
+    # der nächste Wert daraus (Median und Streuung prüfen).
     cat > "$STUB/curl" <<'EOF'
 #!/usr/bin/env bash
 url="${!#}"
 echo "$url" >> "$STUB/urls.log"
 code="${CURL_CODE:-200}"
-if [ "$(cat "$STUB/state")" = active ]; then t=0.150; else t=0.080; code="${CURL_CODE_OFF:-$code}"; fi
+state="$(cat "$STUB/state")"
+if [ "$state" = active ]; then t=0.150; else t=0.080; code="${CURL_CODE_OFF:-$code}"; fi
+if [ -s "$STUB/times_$state" ]; then
+    t="$(head -n 1 "$STUB/times_$state")"
+    sed -i '1d' "$STUB/times_$state"
+fi
 printf '%s %s' "$code" "$t"
 EOF
     chmod +x "$STUB/console" "$STUB/curl"
@@ -79,7 +91,14 @@ need_php() {
     run "$SCRIPTS/profile-plugin.sh" MyPlugin
     [ "$status" -eq 1 ]
     [[ "$output" == *"nicht aktiv (Status: inactive)"* ]]
-    ! grep -q 'plugin:deactivate\|plugin:activate' "$STUB/console.log"
+    [ "$(grep -c 'plugin:deactivate\|plugin:activate' "$STUB/console.log")" -eq 0 ]
+}
+
+@test "profile-plugin: ungültiges JSON aus plugin:list -> eigene Meldung" {
+    need_php
+    CONSOLE_FAIL=json run "$SCRIPTS/profile-plugin.sh" MyPlugin
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"kein gültiges JSON"* ]]
 }
 
 @test "profile-plugin: unbekanntes Plugin -> Exit 1" {
@@ -108,6 +127,43 @@ need_php() {
     # Reihenfolge: deaktivieren vor aktivieren, je Phase ein cache:clear
     [ "$(grep -c '^cache:clear' "$STUB/console.log")" -eq 3 ]
     grep -n 'plugin:' "$STUB/console.log" | tr '\n' ' ' | grep -q 'deactivate MyPlugin.*activate MyPlugin'
+}
+
+@test "profile-plugin: Median bei gerader Anzahl, Mittel der A-Phasen" {
+    need_php
+    printf '%s\n' 0.100 0.400 0.200 0.300 0.260 0.240 0.250 0.250 > "$STUB/times_active"
+    printf '%s\n' 0.100 0.100 0.100 0.100 > "$STUB/times_inactive"
+    RUNS=4 WARMUP=0 run "$SCRIPTS/profile-plugin.sh" MyPlugin /seite
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"A1-mit: Median 250.0 ms"* ]]
+    [[ "$output" == *"A2-mit: Median 250.0 ms"* ]]
+    [[ "$output" == *"Ohne Plugin:               100.0 ms"* ]]
+    [[ "$output" == *"Unterschied:               +150.0 ms (+150.0 %)"* ]]
+    [[ "$output" == *"Streuung A1 gegen A2:      0.0 ms"* ]]
+}
+
+@test "profile-plugin: Unterschied innerhalb der Streuung -> nicht belastbar" {
+    need_php
+    # A1 Median 150, A2 Median 90 (Streuung 60), B 60: Unterschied +60,
+    # genau auf der Grenze - "gleich der Streuung" zählt als nicht belastbar
+    printf '%s\n' 0.150 0.150 0.150 0.090 0.090 0.090 > "$STUB/times_active"
+    printf '%s\n' 0.060 0.060 0.060 > "$STUB/times_inactive"
+    RUNS=3 WARMUP=0 run "$SCRIPTS/profile-plugin.sh" MyPlugin /seite
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Unterschied:               +60.0 ms"* ]]
+    [[ "$output" == *"Streuung A1 gegen A2:      60.0 ms"* ]]
+    [[ "$output" == *"innerhalb der Streuung - nicht belastbar"* ]]
+}
+
+@test "profile-plugin: cache:clear:all nur, wenn der Shop es kennt" {
+    need_php
+    run "$SCRIPTS/profile-plugin.sh" MyPlugin /seite
+    [ "$status" -eq 0 ]
+    [ "$(grep -c '^cache:clear:all' "$STUB/console.log")" -eq 0 ]
+    : > "$STUB/console.log"
+    CONSOLE_CLEAR_ALL=1 run "$SCRIPTS/profile-plugin.sh" MyPlugin /seite
+    [ "$status" -eq 0 ]
+    [ "$(grep -c '^cache:clear:all' "$STUB/console.log")" -eq 3 ]
 }
 
 @test "profile-plugin: jeder Aufruf hat eine eigene URL (am HTTP-Cache vorbei)" {
@@ -179,6 +235,7 @@ need_php() {
     need_php
     run "$SCRIPTS/analyze-subscribers.sh" 'Acme\Nothing'
     [ "$status" -eq 1 ]
+    [[ "$output" == *"Keine Listener für Acme\Nothing"* ]]
 }
 
 @test "analyze-subscribers: debug:event-dispatcher scheitert -> Exit 1" {

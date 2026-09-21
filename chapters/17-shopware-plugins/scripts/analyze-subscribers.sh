@@ -4,7 +4,10 @@
 #
 # Quelle ist "bin/console debug:event-dispatcher --format=json": dieselben
 # Listener, die Shopware zur Laufzeit aufruft, mit Priorität. Gezählt
-# wird je Namespace (erste zwei Segmente, z. B. "Swag\PayPal").
+# wird je Namespace (erste zwei Segmente, z. B. "Swag\PayPal"). Grenze:
+# Ohne Vendor-Segment ist das zweite Segment ein Unterordner, ein
+# Plugin kann dann in mehreren Zeilen stehen (Plugin\Subscriber,
+# Plugin\Storefront); Proxys des Containers bekommen eine eigene Zeile.
 #
 # Die Zahl ist eine Orientierung, keine Messung: Ein Listener, der
 # sofort zurückkehrt, kostet fast nichts, ein einziger mit einer
@@ -26,7 +29,7 @@ usage() {
 Usage: $(basename "$0") [namespace]
 
 Ohne Argument: Listener je Namespace, absteigend.
-Mit Namespace (z. B. Swag\\\\PayPal): dessen Listener mit Event und Priorität.
+Mit Namespace (z. B. 'Swag\\PayPal'): dessen Listener mit Event und Priorität.
 
 Umgebungsvariablen:
   SHOPWARE_ROOT  Shopware-Verzeichnis (Vorgabe: /var/www/html)

@@ -7,7 +7,10 @@
 # Aufrufe. Jeder Aufruf trägt einen eigenen Query-Parameter, damit
 # der HTTP-Cache nicht antwortet - sonst misst man einen Cache-Treffer,
 # bei dem die meisten Plugins gar nicht laufen. Der Object-Cache ist
-# nach dem Aufwärmen in allen Phasen warm.
+# nach dem Aufwärmen in allen Phasen warm. Geleert wird mit cache:clear
+# und, wo vorhanden (ab 6.6.8.0), cache:clear:all - cache:clear allein
+# lässt einen Object-Cache in Redis stehen (Kapitel 7), und die B-Phase
+# läse dann Einträge, die mit Plugin entstanden sind.
 #
 # Verglichen werden Mediane. Weichen die beiden A-Phasen stärker
 # voneinander ab als A von B, ist der Unterschied Rauschen (Last,
@@ -18,7 +21,7 @@
 # des Webservers aufrufen (sudo -u www-data ...), sonst gehören die
 # neu erzeugten Cache-Dateien root.
 #
-# Getestet gegen Shopware 6.6.10.6 (Dockware).
+# Getestet gegen Shopware 6.6.10.6 (Dockware), bash 5.1.
 #
 # @see Kapitel 17, "Plugin-Performance analysieren"
 
@@ -66,7 +69,12 @@ fi
 plugin_state() {
     "$CONSOLE" plugin:list --json 2>/dev/null | "$PHP" -r '
         $name = $argv[1];
-        foreach (json_decode(stream_get_contents(STDIN), true) ?? [] as $p) {
+        $list = json_decode(stream_get_contents(STDIN), true);
+        if (!is_array($list)) {
+            echo "invalid";
+            exit(0);
+        }
+        foreach ($list as $p) {
             if (($p["name"] ?? null) === $name) {
                 echo $p["active"] ? "active" : "inactive";
                 exit(0);
@@ -78,6 +86,10 @@ plugin_state() {
 
 if ! STATE="$(plugin_state)"; then
     echo "Fehler: bin/console plugin:list ist fehlgeschlagen." >&2
+    exit 1
+fi
+if [[ "$STATE" == invalid ]]; then
+    echo "Fehler: plugin:list --json lieferte kein gültiges JSON." >&2
     exit 1
 fi
 if [[ "$STATE" != active ]]; then
@@ -102,9 +114,10 @@ SEP='?'
 # fetch läuft in $(...), also in einer Subshell: Ein Zähler würde dort
 # nicht hochzählen. Der Parameter kommt deshalb aus der Uhrzeit.
 fetch() {
-    local out code
+    local out code stamp
+    stamp="${EPOCHREALTIME:-$(date +%s%N)}"
     if ! out="$("$CURL" -s -o /dev/null -w '%{http_code} %{time_total}' \
-        "${BASE_URL}${URL_PATH}${SEP}plugin_profile=${EPOCHREALTIME/[.,]/}${RANDOM}")"; then
+        "${BASE_URL}${URL_PATH}${SEP}plugin_profile=${stamp/[.,]/}${RANDOM}")"; then
         echo "Fehler: ${BASE_URL}${URL_PATH} nicht erreichbar." >&2
         return 1
     fi
@@ -126,9 +139,19 @@ median_ms() {
         }'
 }
 
+# Befehlsliste erst lesen, dann prüfen: grep -q in einer Pipe unter
+# pipefail kann den Schreiber per SIGPIPE scheitern lassen.
+COMMANDS="$("$CONSOLE" list cache --raw 2>/dev/null || true)"
+clear_caches() {
+    "$CONSOLE" cache:clear >/dev/null
+    if grep -q '^cache:clear:all ' <<< "$COMMANDS"; then
+        "$CONSOLE" cache:clear:all >/dev/null
+    fi
+}
+
 measure() {
     local label="$1" i times=""
-    "$CONSOLE" cache:clear >/dev/null
+    clear_caches
     for ((i = 0; i < WARMUP; i++)); do fetch >/dev/null; done
     for ((i = 0; i < RUNS; i++)); do times+="$(fetch)"$'\n'; done
     printf '%s' "$times" | median_ms > "$TMP/$label"
@@ -144,8 +167,11 @@ echo ""
 
 measure "A1-mit"
 
-"$CONSOLE" plugin:deactivate "$PLUGIN" >/dev/null
+# Erst merken, dann deaktivieren: Scheitert der Befehl, nachdem das
+# Plugin schon inaktiv ist, aktiviert restore es trotzdem wieder
+# (plugin:activate auf ein aktives Plugin endet mit Exit 0).
 DEACTIVATED=1
+"$CONSOLE" plugin:deactivate "$PLUGIN" >/dev/null
 measure "B-ohne"
 
 "$CONSOLE" plugin:activate "$PLUGIN" >/dev/null
