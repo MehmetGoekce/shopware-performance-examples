@@ -3,18 +3,23 @@
 --
 -- Das Buch zeigt diese Abfragen als Kurzformen. Die ausfuehrlichen Fassungen mit
 -- Bewertung und Voraussetzungs-Pruefung stehen in buffer-pool-check.sql,
--- index-analysis.sql und db-health-check.sh; diese Datei ist die Quelle der
--- Buch-Snippets und wird vom Snippet-Gate gegen das Kapitel gehalten.
+-- index-analysis.sql und db-health-check.sh. Diese Datei ist die Quelle der
+-- sechs SQL-Bloecke aus 8.2, 8.4 und 8.8 - nicht aller SQL-Bloecke des Kapitels
+-- (Gegenbeispiele und Einzelbefehle stehen nur im Buch).
 --
--- Verwendung (Datenbankname ist PFLICHT: alle Abfragen lesen ihn aus DATABASE(),
--- ohne gewaehlte Datenbank ist DATABASE() NULL und die Abfragen liefern NULL oder
--- keine Zeile - ohne Fehlermeldung):
---   mysql shopware < chapter-queries.sql
+-- Verwendung - mit einem administrativen Zugang und der Shop-Datenbank; den
+-- Namen nennt DATABASE_URL in der .env:
+--   mysql -u root -p shopware < chapter-queries.sql
+-- Ein Benutzer, der nur Rechte auf die Shop-Datenbank hat, bricht bei
+-- mysql.innodb_index_stats mit ERROR 1142 ab (performance_schema und sys ebenso).
+-- Ohne gewaehlte Datenbank liefern die ersten Abfragen still NULL, dann bricht
+-- SHOW INDEX mit ERROR 1046 ab, und der Rest laeuft nicht.
 --
 -- Ziel ist MySQL 8.0: Die ganze Datei ist gegen 8.0.42 mit einer Shopware-
 -- 6.6.10.6-Datenbank gelaufen. Auf MariaDB 10.11.19 mit performance_schema = ON
 -- laufen die beiden Hit-Rate-Abschnitte ebenfalls; der Rest ist dort nicht
--- gegen eine Shopware-Datenbank geprueft.
+-- gegen eine Shopware-Datenbank geprueft (gegen eine leere Datenbank bricht
+-- SHOW INDEX FROM product mit ERROR 1146 ab).
 --
 -- Die OPTIMIZE-TABLE-Zeilen am Ende sind mit # auskommentiert: Das Buch zeigt
 -- sie als Befehl, aber wer diese Datei als Ganzes einspielt, soll keine Tabelle

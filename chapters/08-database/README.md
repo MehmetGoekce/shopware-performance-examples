@@ -24,11 +24,13 @@ es gibt an mehreren Stellen keine Abfrage, die auf beiden läuft.
     └── DalExamples.php        # DAL-Paare SCHLECHT/BESSER aus Abschnitt 8.5
 ```
 
-`chapter-queries.sql` und `DalExamples.php` sind die Quelle der Buch-Snippets:
-Jede Codezeile, die das Kapitel zeigt, steht dort, und das Snippet-Gate des
-Buchs hält beides gegeneinander. Die ausführlichen Werkzeuge sind die anderen
-Dateien. `chapter-queries.sql` liest den Datenbanknamen aus `DATABASE()` -
-Aufruf also `mysql shopware < scripts/chapter-queries.sql`; die
+`chapter-queries.sql` ist die Quelle der sechs SQL-Kurzformen aus 8.2, 8.4 und
+8.8, `DalExamples.php` die der vier DAL-Paare aus 8.5; das Snippet-Gate des
+Buchs hält beides gegeneinander. Gegenbeispiele und Einzelbefehle stehen nur im
+Buch, die ausführlichen Werkzeuge sind die anderen Dateien.
+`chapter-queries.sql` liest den Datenbanknamen aus `DATABASE()` und braucht
+einen administrativen Zugang (`mysql.innodb_index_stats`, `sys`):
+`mysql -u root -p shopware < scripts/chapter-queries.sql`. Die
 `OPTIMIZE TABLE`-Zeilen darin sind auskommentiert.
 
 ## Schnellstart

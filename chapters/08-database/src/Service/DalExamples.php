@@ -5,28 +5,38 @@ declare(strict_types=1);
 /**
  * DAL-Beispiele aus Kapitel 8, Abschnitt 8.5 - jeweils SCHLECHT und BESSER
  *
- * Das Kapitel zeigt die Paare als Ausschnitte. Diese Klasse ist ihre Quelle:
- * jede Zeile der Buch-Snippets steht hier, und das Snippet-Gate haelt das
- * Kapitel dagegen. Gemessen gegen Shopware 6.6.10.6 (Dockware, Demo-Daten).
+ * Das Kapitel zeigt die vier Paare als Ausschnitte. Diese Klasse ist ihre
+ * Quelle: jede Codezeile dieser vier Buch-Snippets steht hier, und das
+ * Snippet-Gate haelt das Kapitel dagegen. Gemessen gegen Shopware 6.6.10.6
+ * (Dockware, Demo-Daten).
+ *
+ * Einbau: Namespace an Ihr Plugin anpassen (App\ laedt in einem Plugin nicht)
+ * und die Klasse als Service mit dem Argument product.repository registrieren.
  *
  * Die SCHLECHT-Methoden sind absichtlich schlecht: Sie laden den ganzen
  * Katalog ohne Limit. Nicht in Produktion aufrufen - sie stehen hier, damit
  * das Paar im selben Shop gegeneinander laufen kann.
  *
  * Was gemessen ist (Kapitel 8):
- * - addFields() liefert PartialEntity: get('feld') geht, jeder Getter wirft
+ * - addFields() liefert PartialEntity: get('feld') geht, jeder Getter, den erst
+ *   ProductEntity mitbringt (getProductNumber, getName, getCover), wirft
  *   "Error: Call to undefined method" - zur Laufzeit, nicht beim Deployment.
- * - Fuenf addAssociation() erzeugen 6 Queries (ID-Query, Hauptquery mit
- *   4 JOINs, je eine eigene fuer prices, media, properties, categories).
+ *   getId() und getTranslation() stammen aus Entity und funktionieren. Bei
+ *   Varianten ist get('name') null: ohne Vererbungs-Kontext erbt nichts.
+ * - Fuenf addAssociation() ohne Limit erzeugen 5 Queries: die Hauptquery und
+ *   je eine fuer prices, media, properties, categories (MySQL-General-Log).
+ *   Mit setLimit() kommt eine ID-Query davor; hat keins der geladenen
+ *   Produkte Eintraege in einer Tabelle, entfaellt deren Query.
  * - aggregate() hydriert keine Entity; search() mit setLimit(1) eine.
- * - searchIds() liefert ein IdSearchResult, getIds() daraus dieselben IDs
- *   wie search()->getIds().
+ * - searchIds()->getIds() liefert dieselben IDs wie search()->getIds(), aber
+ *   als Liste; search()->getIds() ist nach ID geschluesselt.
  *
  * @see https://github.com/MehmetGoekce/shopware-performance-examples
  */
 
 namespace App\Service;
 
+use Shopware\Core\Content\Product\ProductCollection;
 use Shopware\Core\Framework\Context;
 use Shopware\Core\Framework\DataAbstractionLayer\EntityRepository;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\Aggregation\Metric\CountAggregation;
@@ -35,6 +45,9 @@ use Shopware\Core\Framework\DataAbstractionLayer\Search\EntitySearchResult;
 
 class DalExamples
 {
+    /**
+     * @param EntityRepository<ProductCollection> $productRepository
+     */
     public function __construct(
         private readonly EntityRepository $productRepository
     ) {
@@ -92,7 +105,7 @@ class DalExamples
         $criteria->addAssociation('media');
         $criteria->addAssociation('prices');
         $criteria->addAssociation('properties');
-        // -> gemessen: 6 Queries, nicht 6 JOINs
+        // -> gemessen: 5 Queries, nicht 5 JOINs
 
         return $this->productRepository->search($criteria, $context);
     }
@@ -152,7 +165,7 @@ class DalExamples
     // ------------------------------------------------------------------
 
     /**
-     * @return array<string>
+     * @return array<string, string> nach ID geschluesselt
      */
     public function idsUeberEntities(Context $context): array
     {
@@ -165,7 +178,7 @@ class DalExamples
     }
 
     /**
-     * @return array<string>
+     * @return list<string>
      */
     public function idsDirekt(Context $context): array
     {

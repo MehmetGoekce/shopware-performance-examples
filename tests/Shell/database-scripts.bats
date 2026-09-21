@@ -315,12 +315,18 @@ LOG
     # jeder anders benannten Datenbank still ein leeres Ergebnis.
     local f="./chapters/08-database/scripts/chapter-queries.sql"
     [ -f "$f" ]
-    run grep -qiE '^[[:space:]]*OPTIMIZE' "$f"
+    # Nur wirksame Zeilen: Kommentare (# und --) duerfen OPTIMIZE nennen.
+    grep -vE '^[[:space:]]*(#|--)' "$f" > "$BATS_TEST_TMPDIR/aktiv"
+    run grep -qiE '(^|[^[:alnum:]_])(OPTIMIZE|ALTER[[:space:]]+TABLE)([^[:alnum:]_]|$)' "$BATS_TEST_TMPDIR/aktiv"
     [ "$status" -eq 1 ]
-    run grep -qE "^# OPTIMIZE TABLE product;$" "$f"
+    # Die Buchzeile bleibt belegt - als Kommentar, den das Gate liest.
+    run grep -qxF "# OPTIMIZE TABLE product;" "$f"
     [ "$status" -eq 0 ]
-    run grep -qE "= 'shopware'" "$f"
+    # Kein fest verdrahteter Schemaname, gleich in welcher Schreibweise.
+    run grep -qiE "[\"'\`]shopware[\"'\`]" "$BATS_TEST_TMPDIR/aktiv"
     [ "$status" -eq 1 ]
-    run grep -c "DATABASE()" "$f"
-    [ "$output" -ge 5 ]
+    # Alle sieben Stellen lesen DATABASE(). Kommt eine Abfrage dazu oder
+    # faellt eine weg, muss diese Zahl mit - Drift soll wehtun.
+    run grep -c "DATABASE()" "$BATS_TEST_TMPDIR/aktiv"
+    [ "$output" -eq 7 ]
 }
