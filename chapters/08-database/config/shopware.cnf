@@ -75,13 +75,14 @@ sql_mode = "STRICT_TRANS_TABLES,NO_ENGINE_SUBSTITUTION"
 # ==============================================================================
 
 # Max gleichzeitige Verbindungen. Shopware oeffnet EINE Verbindung je
-# PHP-Prozess, und nur solange der Request laeuft (gemessen, Kapitel 8).
+# PHP-Prozess und Datenbank-Server (mit Read Replica je eine zu Primary und
+# Replica), und nur solange der Request laeuft (gemessen, Kapitel 8).
 # Richtwert: Summe aller PHP-Prozesse, die gleichzeitig an dieser Datenbank
 # haengen - pm.max_children JEDES App-Servers, Message-Consumer, Cronjobs -
 # plus Reserve fuer Admin-Zugaenge, Backups und Monitoring.
 # Beispiel: 2 App-Server x 50 Worker + 4 Consumer + 10 Reserve = 114
-# Mit DATABASE_PERSISTENT_CONNECTION=1 haelt jeder gestartete Worker seine
-# Verbindung auch im Leerlauf.
+# Mit DATABASE_PERSISTENT_CONNECTION=1 haelt jeder Worker, der schon einen
+# Request bedient hat, seine Verbindung auch im Leerlauf, bis wait_timeout.
 max_connections = 200
 
 # Timeout fuer inaktive Verbindungen (Sekunden)

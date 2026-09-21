@@ -48,17 +48,20 @@ php-fpm8.3 -i | grep -E '^opcache\.(enable|memory_consumption|max_accelerated_fi
 > "test is successful", der Ausfall ist also lautlos.
 
 Ist es schon passiert, hilft `apt-get install --reinstall php8.3-opcache`
-nicht: Die lokal geaenderte Datei bleibt, und die Neuinstallation legt
+nicht: Die lokal geaenderte Datei bleibt (beim Reinstall derselben Version
+ohne Rueckfrage), und die Neuinstallation legt
 zusaetzlich `20-opcache.ini`-Symlinks auf sie an. Die Werksfassung liegt im
 Paket:
 
 ```bash
 sudo cp /usr/share/php8.3-opcache/opcache/opcache.ini /etc/php/8.3/mods-available/opcache.ini
-# Symlinks eines fehlgeschlagenen --reinstall - sonst meldet jeder Aufruf
-# "Cannot load Zend OPcache - it was already loaded"
+# nur nach einem --reinstall: dessen Symlinks entfernen, sonst meldet
+# jeder Aufruf "Cannot load Zend OPcache - it was already loaded"
 sudo rm -f /etc/php/8.3/*/conf.d/20-opcache.ini
 sudo systemctl restart php8.3-fpm
-php-fpm8.3 -m | grep 'Zend OPcache' && php -m | grep 'Zend OPcache'
+# richtig: nur Zeilen "Zend OPcache", keine Zeile "already loaded"
+php-fpm8.3 -m 2>&1 | grep -E 'Zend OPcache|already loaded'
+php -m 2>&1 | grep -E 'Zend OPcache|already loaded'
 ```
 
 > **`php -i | grep opcache` beantwortet die Frage nicht.** CLI und FPM lesen
@@ -83,8 +86,6 @@ sudo cp config/99-shopware.ini /etc/php/8.3/fpm/conf.d/
 # Pool einspielen
 sudo cp config/shopware-fpm.conf /etc/php/8.3/fpm/pool.d/shopware.conf
 sudo mkdir -p /var/log/php-fpm && sudo chown www-data:www-data /var/log/php-fpm
-# Mitgelieferten Pool abschalten - erst jetzt, ohne jeden Pool startet FPM nicht
-sudo mv /etc/php/8.3/fpm/pool.d/www.conf /etc/php/8.3/fpm/pool.d/www.conf.disabled
 sudo php-fpm8.3 -t && sudo systemctl restart php8.3-fpm
 
 # Webserver: Upstream global, vHost je Shop
@@ -92,6 +93,12 @@ sudo cp config/nginx-php-fpm.conf /etc/nginx/conf.d/php-fpm.conf
 sudo cp config/nginx-shopware-vhost.conf /etc/nginx/sites-available/shopware
 sudo ln -s /etc/nginx/sites-available/shopware /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
+
+# Erst jetzt den mitgelieferten Pool www.conf abschalten. Diese Suche muss
+# leer bleiben - sonst fragt nginx noch dessen Socket an (502):
+sudo nginx -T 2>/dev/null | grep -E '^[^#]*/run/php/php(8\.3)?-fpm\.sock'
+sudo mv /etc/php/8.3/fpm/pool.d/www.conf /etc/php/8.3/fpm/pool.d/www.conf.disabled
+sudo php-fpm8.3 -t && sudo systemctl restart php8.3-fpm
 
 # Gegenprobe: die Statusseite muss von FPM kommen, nicht aus dem Shop
 curl -s http://127.0.0.1:8080/fpm-status | head -3
@@ -104,7 +111,9 @@ Zwei Dinge, die sonst schiefgehen:
 - **Den mitgelieferten Pool `www.conf` abschalten.** Sonst laeuft ein zweiter
   Pool mit, den niemand anspricht: ab Werk zwei Worker im Leerlauf, hoechstens
   fuenf, ausserhalb jeder RAM-Rechnung - und was Sie in `www.conf` eintragen,
-  wirkt nicht auf den Shopware-Pool. Umbenennen genuegt (`mv` oben):
+  wirkt nicht auf den Shopware-Pool. Umbenennen genuegt (`mv` oben), aber erst
+  nach dem nginx-Umbau: Mit `www.conf` verschwinden `/run/php/php8.3-fpm.sock`
+  und der Sammel-Socket `/run/php/php-fpm.sock`.
   `php-fpm.conf` liest nur `pool.d/*.conf`, und auch ein
   `apt-get install --reinstall php8.3-fpm` legt `www.conf` nicht wieder an.
 
