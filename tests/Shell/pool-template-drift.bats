@@ -149,9 +149,14 @@ fliesstext() {
 @test "beide Vorlagen und das README nennen den Abschaltbefehl fuer www.conf" {
     # MEM-299: Buch und Vorlagen sagten "abschalten", aber nicht wie. Die CI
     # (Job php-fpm-pool) misst, dass der Befehl wirkt; hier steht, dass er da ist.
-    local cmd='mv /etc/php/8.3/fpm/pool.d/www.conf /etc/php/8.3/fpm/pool.d/www.conf.disabled'
-    for f in "$CH9" "$ANHC" "./chapters/09-php-performance/README.md"; do
-        run grep -qF "$cmd" "$f"
+    # Auf die ganze Befehlszeile geankert: ein Befehl in Prosa oder mit
+    # Zusatz ("(optional)") zaehlt nicht. Vorlagen: als ;-Kommentar.
+    local cmd='sudo mv /etc/php/8.3/fpm/pool.d/www.conf /etc/php/8.3/fpm/pool.d/www.conf.disabled'
+    for f in "$CH9" "$ANHC"; do
+        sed -E 's/^;[[:space:]]+//' "$f" > "$BATS_TEST_TMPDIR/k"
+        run grep -qxF "$cmd" "$BATS_TEST_TMPDIR/k"
         [ "$status" -eq 0 ]
     done
+    run grep -qxF "$cmd" "./chapters/09-php-performance/README.md"
+    [ "$status" -eq 0 ]
 }

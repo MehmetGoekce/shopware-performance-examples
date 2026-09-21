@@ -302,10 +302,16 @@ jobs:
             # Reinstall die Datei nicht zurueckbringt.
             grep -qx "include=/etc/php/8.3/fpm/pool.d/\*.conf" /etc/php/8.3/fpm/php-fpm.conf \
               || { echo "php-fpm.conf liest pool.d nicht mehr als *.conf - der mv-Rat traegt nicht"; exit 1; }
+            # Kapitel 9 sagt ausserdem: Den Sammel-Socket /run/php/php-fpm.sock
+            # legt das Paket nur fuer www.conf an - mit ihr verschwindet er.
+            grep -qF "php-fpm-socket-helper install /run/php/php-fpm.sock /etc/php/8.3/fpm/pool.d/www.conf" \
+              /lib/systemd/system/php8.3-fpm.service \
+              || { echo "Die Unit bindet den Sammel-Socket nicht mehr an www.conf - Kapitel 9 nachziehen"; exit 1; }
             mv "$WWW" "$WWW.disabled"
+            [ ! -e "$WWW" ] && [ -e "$WWW.disabled" ] \
+              || { echo "mv hat www.conf nicht umbenannt"; exit 1; }
+            # policy-rc.d im Image verhindert, dass der Reinstall FPM startet.
             apt-get install -y -qq --reinstall php8.3-fpm > /dev/null 2>&1
-            pkill -x php-fpm8.3 || true
-            sleep 1
             [ ! -e "$WWW" ] || { echo "Reinstall hat www.conf wieder angelegt - Kapitel 9 und Anhang C nachziehen"; exit 1; }
             echo "ok: www.conf.disabled bleibt aus, auch nach --reinstall"
 
@@ -313,7 +319,12 @@ jobs:
             php-fpm8.3 -D
             sleep 2
             pgrep -x php-fpm8.3 > /dev/null || { echo "FPM laeuft nicht"; exit 1; }
-            if ps -eo args | grep -q "^php-fpm: pool www"; then
+            # Ausgabe erst einfangen: grep -q hinter pipefail kann bei einem
+            # Treffer falsch negativ werden (SIGPIPE, siehe Gegenprobe 3). Auf
+            # den Zeilenanfang geankert: Die Kommandozeile dieses bash -c
+            # enthaelt den Suchtext selbst und steht ebenfalls in ps.
+            PS="$(ps -eo args)"
+            if grep -q "^php-fpm: pool www" <<< "$PS"; then
               echo "Der Pool www laeuft trotz www.conf.disabled."; exit 1
             fi
             echo "ok: nur der Shopware-Pool laeuft"
@@ -407,20 +418,26 @@ jobs:
             # Ohne den rm-Schritt muss die Warnung kommen, sonst ist er ueberfluessig.
             # Ausgabe erst einfangen: Die Warnung steht in Zeile 1, grep -q
             # beendet sich dort, php stirbt an SIGPIPE, und pipefail meldet den
-            # Treffer als Fehlschlag.
-            PM="$(php -m 2>&1)"
-            case "$PM" in
-              *"already loaded"*) ;;
-              *) echo "Gegenprobe 3: keine Doppel-Lade-Warnung - der rm-Schritt waere ueberfluessig."; exit 1 ;;
-            esac
+            # Treffer als Fehlschlag. FPM und CLI getrennt - das Buch sagt
+            # "jeder Aufruf", und im Betrieb zaehlt FPM. Die Warnung geht auf
+            # stderr, daher 2>&1.
+            for BIN in php-fpm8.3 php; do
+              PM="$($BIN -m 2>&1)"
+              case "$PM" in
+                *"already loaded"*) ;;
+                *) echo "Gegenprobe 3: keine Doppel-Lade-Warnung in $BIN - der rm-Schritt waere ueberfluessig."; exit 1 ;;
+              esac
+            done
             rm -f /etc/php/8.3/*/conf.d/20-opcache.ini
-            php-fpm8.3 -m | grep -qi "zend opcache" && php -m | grep -qi "zend opcache" \
-              || { echo "Gegenprobe 3: Nach der Reparatur fehlt OPcache."; exit 1; }
-            PM="$(php -m 2>&1)"
-            case "$PM" in
-              *"already loaded"*) echo "Gegenprobe 3: Nach der Reparatur noch die Doppel-Lade-Warnung."; exit 1 ;;
-            esac
-            echo "ok: --reinstall hilft nicht, der Reparaturweg aus dem Buch schon"
+            for BIN in php-fpm8.3 php; do
+              PM="$($BIN -m 2>&1)"
+              case "$PM" in
+                *"already loaded"*) echo "Gegenprobe 3: Nach der Reparatur noch die Doppel-Lade-Warnung in $BIN."; exit 1 ;;
+                *"Zend OPcache"*) ;;
+                *) echo "Gegenprobe 3: Nach der Reparatur fehlt OPcache in $BIN."; exit 1 ;;
+              esac
+            done
+            echo "ok: --reinstall hilft nicht, cp + rm aus dem Buch laden OPcache wieder (FPM und CLI, ohne Warnung)"
           '
 
   shellcheck:

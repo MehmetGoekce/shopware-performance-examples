@@ -300,6 +300,10 @@ LOG
 @test "shopware.cnf rechnet max_connections nicht mit zwei Verbindungen je Worker" {
     # MEM-299: Shopware oeffnet eine Verbindung je PHP-Prozess (MySQLFactory,
     # gemessen unter Last), nicht zwei.
-    run grep -qE 'Workers? \* 2' "./chapters/08-database/config/shopware.cnf"
-    [ "$status" -ne 0 ]
+    local f="./chapters/08-database/config/shopware.cnf"
+    [ -f "$f" ]
+    run grep -qiE 'Workers? *[*x×] *2' "$f"
+    [ "$status" -eq 1 ]
+    run grep -qF 'EINE Verbindung je' "$f"
+    [ "$status" -eq 0 ]
 }
