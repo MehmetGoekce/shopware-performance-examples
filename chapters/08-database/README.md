@@ -16,11 +16,20 @@ es gibt an mehreren Stellen keine Abfrage, die auf beiden läuft.
 │   ├── db-health-check.sh     # Datenbank-Gesundheitscheck (MySQL 8.0)
 │   ├── slow-query-analyze.sh  # Slow-Query-Analyse (MySQL + MariaDB)
 │   ├── buffer-pool-check.sql  # Buffer Pool und Hit-Rate (MySQL 8.0)
-│   └── index-analysis.sql     # Index-Nutzung und -Größen
+│   ├── index-analysis.sql     # Index-Nutzung und -Größen
+│   └── chapter-queries.sql    # Die SQL-Kurzformen aus dem Kapitel, wie gedruckt
 └── src/Service/
     ├── BatchProcessor.php     # Batch-Verarbeitung für grosse Datenmengen
-    └── CachedProductService.php # Eigenes Caching für teure Abfragen
+    ├── CachedProductService.php # Eigenes Caching für teure Abfragen
+    └── DalExamples.php        # DAL-Paare SCHLECHT/BESSER aus Abschnitt 8.5
 ```
+
+`chapter-queries.sql` und `DalExamples.php` sind die Quelle der Buch-Snippets:
+Jede Codezeile, die das Kapitel zeigt, steht dort, und das Snippet-Gate des
+Buchs hält beides gegeneinander. Die ausführlichen Werkzeuge sind die anderen
+Dateien. `chapter-queries.sql` liest den Datenbanknamen aus `DATABASE()` -
+Aufruf also `mysql shopware < scripts/chapter-queries.sql`; die
+`OPTIMIZE TABLE`-Zeilen darin sind auskommentiert.
 
 ## Schnellstart
 

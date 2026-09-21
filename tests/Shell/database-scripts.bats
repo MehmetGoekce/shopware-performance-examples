@@ -307,3 +307,20 @@ LOG
     run grep -qF 'EINE Verbindung je' "$f"
     [ "$status" -eq 0 ]
 }
+
+@test "chapter-queries.sql fuehrt kein OPTIMIZE aus und liest den Datenbanknamen aus DATABASE()" {
+    # MEM-299: Die Datei ist die Quelle der Buch-Snippets und wird als Ganzes
+    # eingespielt (mysql shopware < ...). OPTIMIZE schreibt Tabellen neu und
+    # steht deshalb nur auskommentiert darin; ein fester Schemaname liefert bei
+    # jeder anders benannten Datenbank still ein leeres Ergebnis.
+    local f="./chapters/08-database/scripts/chapter-queries.sql"
+    [ -f "$f" ]
+    run grep -qiE '^[[:space:]]*OPTIMIZE' "$f"
+    [ "$status" -eq 1 ]
+    run grep -qE "^# OPTIMIZE TABLE product;$" "$f"
+    [ "$status" -eq 0 ]
+    run grep -qE "= 'shopware'" "$f"
+    [ "$status" -eq 1 ]
+    run grep -c "DATABASE()" "$f"
+    [ "$output" -ge 5 ]
+}
