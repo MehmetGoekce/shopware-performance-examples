@@ -10,18 +10,22 @@
 #
 # Was passiert:
 #   - auf hoechstens 2000 x 2000 px verkleinern (nie vergroessern)
-#   - EXIF-Ausrichtung anwenden, dann EXIF/IPTC/XMP entfernen –
-#     das ICC-Farbprofil bleibt erhalten (sonst verschieben sich die
-#     Farben von Adobe-RGB-Bildern)
+#   - EXIF-Ausrichtung anwenden
+#   - nach sRGB umrechnen, dann alle Metadaten entfernen (EXIF, IPTC,
+#     XMP, ICC). Ein Profil zu behalten hilft nicht: Shopware erzeugt
+#     die Thumbnails mit GD, und GD verwirft es – ein Adobe-RGB-Bild
+#     kaeme im srcset mit verschobenen Farben an.
 #   - JPEG mit Qualitaet 80, progressiv
 #   - PNG mit pngquant (verlustbehaftet, 65-80), falls installiert
-#   - mit --webp zusaetzlich eine WebP-Fassung (cwebp -q 80)
+#   - mit --webp zusaetzlich eine WebP-Fassung (cwebp -q 80), aus dem
+#     Original erzeugt, nicht aus dem schon komprimierten JPEG
 #
 # Shopware erzeugt Thumbnails im Format des hochgeladenen Originals:
 # ein WebP-Original ergibt WebP-Thumbnails (Kapitel 4).
 #
 # Voraussetzungen (Ubuntu/Debian, bash 4 oder neuer):
-#   sudo apt install imagemagick pngquant webp
+#   sudo apt install imagemagick pngquant webp colord-data
+#   (colord-data liefert das sRGB-Profil; anderes Profil per SRGB_ICC=…)
 #
 # Verwendung:
 #   ./optimize-images.sh [--dry-run] [--webp] QUELLE ZIEL
@@ -41,6 +45,7 @@ PNG_QUALITY="65-80"
 MAGICK="${MAGICK:-}"
 PNGQUANT="${PNGQUANT:-pngquant}"
 CWEBP="${CWEBP:-cwebp}"
+SRGB_ICC="${SRGB_ICC:-/usr/share/color/icc/colord/sRGB.icc}"
 
 usage() {
     cat <<'EOF'
@@ -81,16 +86,20 @@ if [[ ! -d "$SRC" ]]; then
     exit 1
 fi
 
-SRC_ABS="$(cd "$SRC" && pwd -P)"
-DST_CREATED=false
-if [[ ! -d "$DST" ]]; then
-    mkdir -p "$DST"
-    DST_CREATED=true
-fi
-DST_ABS="$(cd "$DST" && pwd -P)"
+# Absoluter Pfad, auch fuer ein noch nicht vorhandenes ZIEL (ohne es
+# anzulegen; realpath -m fehlt unter BusyBox und macOS)
+abs_path() {
+    local dir="$1" rest=""
+    while [[ ! -d "$dir" ]]; do
+        rest="/$(basename "$dir")$rest"
+        dir="$(dirname "$dir")"
+    done
+    echo "$(cd "$dir" && pwd -P)$rest"
+}
+SRC_ABS="$(abs_path "$SRC")"
+DST_ABS="$(abs_path "$DST")"
 case "$DST_ABS/" in
     "$SRC_ABS/"*)
-        [[ "$DST_CREATED" == true ]] && rmdir "$DST"
         echo "ZIEL darf nicht in QUELLE liegen (sonst werden Originale ueberschrieben)." >&2
         exit 1 ;;
 esac
@@ -105,6 +114,11 @@ if [[ -z "$MAGICK" ]]; then
         echo "ImageMagick fehlt: sudo apt install imagemagick" >&2
         exit 1
     fi
+fi
+
+if [[ ! -r "$SRGB_ICC" ]]; then
+    echo "sRGB-Profil fehlt ($SRGB_ICC): sudo apt install colord-data" >&2
+    exit 1
 fi
 
 HAVE_PNGQUANT=true
@@ -126,9 +140,13 @@ bytes_after=0
 
 optimize_one() {
     local in="$1" out="$2" ext="$3"
+    # drehen, nach sRGB umrechnen, Metadaten weg, verkleinern
+    local prep=(-auto-orient -profile "$SRGB_ICC" -strip -resize "${MAX_SIZE}x${MAX_SIZE}>")
+    # progressiv nur fuer JPEG: -interlace Plane macht aus PNG Adam7, 30-45 % groesser
+    local enc=(-interlace none)
+    [[ "$ext" == "jpg" ]] && enc=(-quality "$JPEG_QUALITY" -interlace Plane)
 
-    "$MAGICK" "$in" -auto-orient -resize "${MAX_SIZE}x${MAX_SIZE}>" \
-        +profile '!icc,*' -quality "$JPEG_QUALITY" -interlace Plane "$out" || return 1
+    "$MAGICK" "$in" "${prep[@]}" "${enc[@]}" "$out" || return 1
 
     if [[ "$ext" == "png" && "$HAVE_PNGQUANT" == true ]]; then
         # Exit 99: Qualitaet unter 65 noetig – Datei bleibt ohne Quantisierung
@@ -147,7 +165,12 @@ optimize_one() {
         if [[ -e "${out%.*}.webp" ]]; then
             echo "WebP uebersprungen (${out%.*}.webp gibt es schon): $in" >&2
         else
-            "$CWEBP" -quiet -q "$WEBP_QUALITY" "$out" -o "${out%.*}.webp" || return 1
+            # verlustfrei zwischenspeichern, damit nicht JPEG q80 -> WebP q80
+            local rc=0
+            "$MAGICK" "$in" "${prep[@]}" "$out.src.png" || rc=$?
+            [[ $rc -eq 0 ]] && { "$CWEBP" -quiet -q "$WEBP_QUALITY" "$out.src.png" -o "${out%.*}.webp" || rc=$?; }
+            rm -f "$out.src.png"
+            [[ $rc -eq 0 ]] || return 1
         fi
     fi
 }
@@ -179,8 +202,10 @@ while IFS= read -r -d '' in; do
         bytes_before=$((bytes_before + before))
         bytes_after=$((bytes_after + after))
         processed=$((processed + 1))
-        if [[ $before -gt 0 ]]; then
+        if [[ $before -gt 0 && $after -le $before ]]; then
             echo "$rel: $((before / 1024)) KB -> $((after / 1024)) KB ($(( (before - after) * 100 / before ))% kleiner)"
+        elif [[ $before -gt 0 ]]; then
+            echo "$rel: $((before / 1024)) KB -> $((after / 1024)) KB ($(( (after - before) * 100 / before ))% groesser)"
         else
             echo "$rel: leere Datei"
         fi
@@ -193,8 +218,10 @@ done < <(find "$SRC" -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.p
 
 echo
 echo "Verarbeitet: $processed, uebersprungen: $skipped, fehlgeschlagen: $failed"
-if [[ "$DRY_RUN" == false && $bytes_before -gt 0 ]]; then
+if [[ "$DRY_RUN" == false && $bytes_before -gt 0 && $bytes_after -le $bytes_before ]]; then
     echo "Gesamt: $((bytes_before / 1024)) KB -> $((bytes_after / 1024)) KB ($(( (bytes_before - bytes_after) * 100 / bytes_before ))% kleiner)"
+elif [[ "$DRY_RUN" == false && $bytes_before -gt 0 ]]; then
+    echo "Gesamt: $((bytes_before / 1024)) KB -> $((bytes_after / 1024)) KB ($(( (bytes_after - bytes_before) * 100 / bytes_before ))% groesser)"
 fi
 if [[ "$HAVE_PNGQUANT" == false ]]; then
     echo "Hinweis: pngquant nicht gefunden – PNG nur neu komprimiert, nicht quantisiert."

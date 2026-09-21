@@ -7,13 +7,15 @@
  #
  # Shopware 6.6 gibt der Produktbox feste sizes mit (box.html.twig:
  # xs 500px, sm 315px, md 390px, lg 350px, xl 280px). Auf Handys ist
- # das Bild aber schmaler: im Test-Shop 276 px (iPhone 13) bzw. 298 px
- # (Pixel 7). Der Browser rechnet mit 500 px x Pixeldichte und waehlt
- # die 1920er-Stufe – bei 2000-px-Originalen 850 KB fuer zwei Bilder
- # statt 215 KB mit diesen Werten (800er-Stufe).
+ # das Bild aber schmaler: Das Standard-Listing zeigt unter 576 px ein
+ # Produkt je Zeile, das Bild ist 100vw minus 114 px breit (276 px auf
+ # einem iPhone 13, 298 px auf einem Pixel 7). Mit 500 px x Pixeldichte
+ # waehlt der Browser dort immer die 1920er-Stufe.
  #
- # Die Werte unten passen zu einem Grid mit 2 Produkten nebeneinander
- # auf dem Handy. Die echte Anzeigebreite zeigt scripts/image-analysis.js.
+ # Die Werte unten sind am Standard-Theme 6.6 gemessen (Bildbreite je
+ # Viewport von 320 bis 1920 px). Ein eigenes Theme misst sie mit
+ # scripts/image-analysis.js nach. Lieber etwas zu gross als zu klein:
+ # zu klein laedt eine unscharfe Stufe.
  #
  # Die Schluessel xs … xl werden zu (min-width: …)-Bedingungen mit den
  # Breakpoints des Themes; «default» ersetzt die ganze Liste.
@@ -26,10 +28,10 @@
     {% sw_thumbnails 'product-image-thumbnails' with {
         media: cover,
         sizes: {
-            xs: '50vw',
-            sm: '50vw',
-            md: '50vw',
-            lg: '33vw',
+            xs: 'calc(100vw - 114px)',
+            sm: 'calc(50vw - 89px)',
+            md: 'calc(50vw - 89px)',
+            lg: 'calc(34vw - 81px)',
             xl: '280px'
         },
         attributes: attributes

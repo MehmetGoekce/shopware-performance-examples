@@ -3,9 +3,12 @@
 # Tests für chapters/04-image-optimization/scripts/optimize-images.sh
 #
 # ImageMagick, pngquant und cwebp sind durch Stubs ersetzt (MAGICK,
-# PNGQUANT, CWEBP). Der Stub für ImageMagick kopiert die Eingabe und
+# PNGQUANT, CWEBP). Der Stub für ImageMagick schreibt seine Argumente
+# nach magick.log, kopiert 600 Byte der Eingabe (MAGICK_BYTES) und
 # scheitert bei leeren Dateien – wie convert bei einem leeren JPEG.
-# Das echte Verhalten der Werkzeuge ist in reviews/ch04-… belegt.
+# Mit echten Werkzeugen (Ubuntu 24.04: ImageMagick 6.9, pngquant, cwebp)
+# von Hand geprüft: Drehung, sRGB, keine Metadaten, JPEG progressiv,
+# PNG nicht interlaced.
 
 setup() {
     SCRIPT="$BATS_TEST_DIRNAME/../../chapters/04-image-optimization/scripts/optimize-images.sh"
@@ -17,8 +20,9 @@ setup() {
     cat > "$TMP/bin/magick" <<'EOF'
 #!/usr/bin/env bash
 in="$1"; out="${!#}"
+echo "$*" >> "$(dirname "$0")/magick.log"
 [[ -s "$in" ]] || { echo "insufficient image data" >&2; exit 1; }
-head -c 600 "$in" > "$out"
+if [[ -n "${MAGICK_BYTES:-}" ]]; then head -c "$MAGICK_BYTES" /dev/zero > "$out"; else head -c 600 "$in" > "$out"; fi
 EOF
     cat > "$TMP/bin/pngquant" <<'EOF'
 #!/usr/bin/env bash
@@ -33,10 +37,14 @@ EOF
 #!/usr/bin/env bash
 out=""; prev=""
 for a in "$@"; do [[ "$prev" == "-o" ]] && out="$a"; prev="$a"; done
+echo "$*" >> "$(dirname "$0")/cwebp.log"
 echo webp > "$out"
 EOF
     chmod +x "$TMP/bin/"*
     export MAGICK="$TMP/bin/magick" PNGQUANT="$TMP/bin/pngquant" CWEBP="$TMP/bin/cwebp"
+    echo icc > "$TMP/sRGB.icc"
+    export SRGB_ICC="$TMP/sRGB.icc"
+    LOG="$TMP/bin/magick.log"
 
     head -c 2000 /dev/urandom > "$SRC/a.jpg"
     head -c 2000 /dev/urandom > "$SRC/sub/b.png"
@@ -101,11 +109,41 @@ zeichen.JPEG" ]
     [ "$(cksum < "$DST/a.jpg")" = "$before" ]
 }
 
-@test "--dry-run schreibt nichts" {
+@test "--dry-run schreibt nichts und legt ZIEL nicht an" {
     run bash "$SCRIPT" --dry-run "$SRC" "$DST"
     [ "$status" -eq 0 ]
     [[ "$output" == *"Verarbeitet: 3"* ]]
-    [ -z "$(find "$DST" -type f)" ]
+    [ ! -e "$DST" ]
+    [ ! -e "$LOG" ]
+}
+
+@test "JPEG: drehen, nach sRGB, Metadaten weg, verkleinern, q80 progressiv" {
+    run bash "$SCRIPT" "$SRC" "$DST"
+    line="$(grep -F "$SRC/a.jpg" "$LOG")"
+    [[ "$line" == *"-auto-orient -profile $SRGB_ICC -strip -resize 2000x2000> -quality 80 -interlace Plane $DST/a.jpg" ]]
+}
+
+@test "PNG: nicht interlaced, ohne JPEG-Qualität" {
+    run bash "$SCRIPT" "$SRC" "$DST"
+    line="$(grep -F "$SRC/sub/b.png" "$LOG")"
+    [[ "$line" == *"-strip -resize 2000x2000> -interlace none $DST/sub/b.png" ]]
+    [[ "$line" != *"Plane"* ]]
+    [[ "$line" != *"-quality"* ]]
+}
+
+@test "ohne sRGB-Profil: Exit 1, nichts verarbeitet" {
+    SRGB_ICC="$TMP/fehlt.icc" run bash "$SCRIPT" "$SRC" "$DST"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"sRGB-Profil fehlt"* ]]
+    [ ! -e "$LOG" ]
+}
+
+@test "grössere Ausgabe wird als grösser gemeldet" {
+    rm "$SRC/sub/b.png" "$SRC/mit leer
+zeichen.JPEG"
+    MAGICK_BYTES=3000 run bash "$SCRIPT" "$SRC" "$DST"
+    [[ "$output" == *"a.jpg: 1 KB -> 2 KB (50% groesser)"* ]]
+    [[ "$output" == *"Gesamt: 1 KB -> 2 KB (50% groesser)"* ]]
 }
 
 @test "summiert die Ersparnis (600 statt 2000 Byte je JPEG)" {
@@ -133,4 +171,12 @@ zeichen.JPEG" ]
     [[ "$output" == *"WebP uebersprungen"* ]]
     [ -f "$DST/sub/b.webp" ]
     [ -f "$DST/a.webp" ]
+}
+
+@test "--webp: WebP aus dem Original, nicht aus dem JPEG q80" {
+    run bash "$SCRIPT" --webp "$SRC" "$DST"
+    [ "$status" -eq 0 ]
+    grep -qF -- "$SRC/a.jpg -auto-orient -profile $SRGB_ICC -strip -resize 2000x2000> $DST/a.jpg.src.png" "$LOG"
+    grep -qF -- "-q 80 $DST/a.jpg.src.png -o $DST/a.webp" "$TMP/bin/cwebp.log"
+    [ ! -e "$DST/a.jpg.src.png" ]
 }

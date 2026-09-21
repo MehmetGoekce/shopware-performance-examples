@@ -21,12 +21,12 @@ Seite im Browser laden, bis zum Ende scrollen (lazy Bilder laden erst dann), Inh
 ### Bilder vor dem Upload optimieren
 
 ```bash
-sudo apt install imagemagick pngquant webp
+sudo apt install imagemagick pngquant webp colord-data
 ./scripts/optimize-images.sh --dry-run ./fotos ./fotos-optimiert
 ./scripts/optimize-images.sh --webp ./fotos ./fotos-optimiert
 ```
 
-Verkleinert auf höchstens 2000 × 2000 px, wendet die EXIF-Drehung an und entfernt EXIF/IPTC/XMP, behält das ICC-Farbprofil, JPEG mit Qualität 80 (progressiv), PNG über pngquant. Mit `--webp` entsteht je Bild zusätzlich eine WebP-Datei. Shopware erzeugt Thumbnails im Format des hochgeladenen Originals: ein WebP-Original ergibt WebP-Thumbnails, ohne Plugin.
+Verkleinert auf höchstens 2000 × 2000 px, wendet die EXIF-Drehung an, rechnet nach sRGB um und entfernt alle Metadaten samt ICC-Profil (Shopwares Thumbnails verlieren das Profil ohnehin, GD verwirft es), JPEG mit Qualität 80 (progressiv), PNG über pngquant, nicht interlaced. Mit `--webp` entsteht je Bild zusätzlich eine WebP-Datei, direkt aus dem Original. Shopware erzeugt Thumbnails im Format des hochgeladenen Originals: ein WebP-Original ergibt WebP-Thumbnails, ohne Plugin.
 
 ## Was dieses Kapitel bewusst nicht mitliefert
 
