@@ -721,5 +721,10 @@ jobs:
       - name: Setup BATS
         uses: bats-core/bats-action@2.0.0
 
+      # plugin-scripts.bats (Kapitel 17) überspringt ohne php - hier
+      # soll ein fehlendes php den Job rot machen, nicht still grün.
+      - name: PHP vorhanden
+        run: php --version
+
       - name: Run BATS Tests
         run: bats tests/Shell/
