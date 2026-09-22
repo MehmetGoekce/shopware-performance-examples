@@ -43,6 +43,10 @@ parameters:
         # Plugin-Klasse (Shopware Plugin)
         - chapters/19-mobile-performance/MobilePerformance/src/MobilePerformance.php
 
+        # Plugin-Klasse (Shopware Plugin) und Monolog-Processor (Monolog nicht installiert)
+        - chapters/20-ab-testing/AbTesting/src/AbTesting.php
+        - chapters/20-ab-testing/AbTesting/src/Log/ExperimentLogProcessor.php
+
     reportUnmatchedIgnoredErrors: false
 
     ignoreErrors:

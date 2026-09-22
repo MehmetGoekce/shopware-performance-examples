@@ -1,0 +1,14 @@
+# Eigener Log-Kanal fuer die Zuweisungen: eine JSON-Zeile je neuem Besucher.
+# ab:analyze zaehlt daraus die Zuweisungen je Variante (SRM-Test).
+# rotating_file haengt das Datum an: var/log/ab_testing-2026-09-22.log.
+monolog:
+    channels: ['ab_testing']
+
+    handlers:
+        ab_testing:
+            type: rotating_file
+            path: '%kernel.logs_dir%/ab_testing.log'
+            level: info
+            channels: ['ab_testing']
+            max_files: 60
+            formatter: monolog.formatter.json

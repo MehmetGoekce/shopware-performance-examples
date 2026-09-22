@@ -1,0 +1,24 @@
+{
+  "name": "memotech/ab-testing",
+  "description": "Kapitel 20: A/B-Test-Zuweisung per Cookie, cache-sicher im eingebauten HTTP-Cache, Auswertung der RUM-Logs aus Kapitel 12",
+  "type": "shopware-platform-plugin",
+  "license": "MIT",
+  "version": "1.0.0",
+  "require": {
+    "shopware/core": "~6.6.0 || ~6.7.0",
+    "shopware/storefront": "~6.6.0 || ~6.7.0",
+    "memotech/rum-monitoring": "*"
+  },
+  "autoload": {
+    "psr-4": {
+      "AbTesting\\": "src/"
+    }
+  },
+  "extra": {
+    "shopware-plugin-class": "AbTesting\\AbTesting",
+    "label": {
+      "de-DE": "A/B-Testing (Kapitel 20)",
+      "en-GB": "A/B testing (chapter 20)"
+    }
+  }
+}

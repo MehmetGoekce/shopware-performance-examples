@@ -1,0 +1,64 @@
+<?xml version="1.0" ?>
+<container xmlns="http://symfony.com/schema/dic/services"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xsi:schemaLocation="http://symfony.com/schema/dic/services http://symfony.com/schema/dic/services/services-1.0.xsd">
+    <parameters>
+        <!-- Experimente: Key => Routen + Varianten mit Gewicht. Die erste Variante ist die Kontrollgruppe. -->
+        <parameter key="ab_testing.experiments" type="collection">
+            <parameter key="listing_images" type="collection">
+                <parameter key="routes" type="collection">
+                    <parameter>frontend.navigation.page</parameter>
+                </parameter>
+                <parameter key="variants" type="collection">
+                    <parameter key="control">50</parameter>
+                    <parameter key="eager">50</parameter>
+                </parameter>
+            </parameter>
+        </parameter>
+    </parameters>
+
+    <services>
+        <service id="AbTesting\Experiment\ExperimentConfig">
+            <argument>%ab_testing.experiments%</argument>
+        </service>
+
+        <service id="AbTesting\Stats\StatisticalAnalyzer"/>
+
+        <!-- Logger des Kanals "ab_testing" aus packages/monolog.yaml -->
+        <service id="AbTesting\Subscriber\ExperimentSubscriber">
+            <argument type="service" id="AbTesting\Experiment\ExperimentConfig"/>
+            <argument type="service" id="monolog.logger.ab_testing"/>
+            <tag name="kernel.event_subscriber"/>
+        </service>
+
+        <service id="AbTesting\Subscriber\CacheKeySubscriber">
+            <argument type="service" id="AbTesting\Experiment\ExperimentConfig"/>
+            <tag name="kernel.event_subscriber"/>
+        </service>
+
+        <!-- Nur fuer den Kanal "rum" aus Kapitel 12 (Plugin RumMonitoring) -->
+        <service id="AbTesting\Log\ExperimentLogProcessor">
+            <argument type="service" id="request_stack"/>
+            <argument type="service" id="AbTesting\Experiment\ExperimentConfig"/>
+            <tag name="monolog.processor" channel="rum"/>
+        </service>
+
+        <service id="AbTesting\Log\AssignmentLogReader">
+            <argument>%kernel.logs_dir%</argument>
+        </service>
+
+        <service id="AbTesting\Command\AbAnalyzeCommand">
+            <argument type="service" id="AbTesting\Experiment\ExperimentConfig"/>
+            <argument type="service" id="RumMonitoring\Rum\RumLogReader"/>
+            <argument type="service" id="AbTesting\Log\AssignmentLogReader"/>
+            <argument type="service" id="AbTesting\Stats\StatisticalAnalyzer"/>
+            <tag name="console.command"/>
+        </service>
+
+        <service id="AbTesting\Command\AbSampleSizeCommand">
+            <argument type="service" id="RumMonitoring\Rum\RumLogReader"/>
+            <argument type="service" id="AbTesting\Stats\StatisticalAnalyzer"/>
+            <tag name="console.command"/>
+        </service>
+    </services>
+</container>

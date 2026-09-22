@@ -1,0 +1,15 @@
+{% sw_extends '@Storefront/storefront/component/product/card/box-standard.html.twig' %}
+
+{# Experiment listing_images: Shopware laedt alle Listing-Bilder lazy, auch die ersten.
+   Variante "eager": die ersten vier Bilder sofort, das erste mit hoher Prioritaet.
+   srcset und sizes aus sw_thumbnails bleiben, geaendert wird nur das Ladeverhalten. #}
+{% block component_product_box_image_thumbnail %}
+    {% if (experimentVariants.listing_images ?? 'control') == 'eager' and loop is defined and loop.index <= 4 %}
+        {% set attributes = attributes|merge({loading: 'eager'}) %}
+        {% if loop.first %}
+            {% set attributes = attributes|merge({fetchpriority: 'high'}) %}
+        {% endif %}
+    {% endif %}
+
+    {{ parent() }}
+{% endblock %}
