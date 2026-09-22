@@ -2,113 +2,108 @@
 
 Companion-Code zum Buch "Shop-Performance in 30 Tagen".
 
-## Inhalt
+Lighthouse CI misst einen **laufenden Shop** (Staging oder Preview), nicht den
+Code im CI-Runner. Ein `php -S` im Runner hat keine Datenbank und keine Domain
+und liefert CSS/JS unkomprimiert aus. Die Grössen-Budgets würden dann den
+Server messen: `storefront.js` kam mit 235 statt 76 KB an.
 
-Dieses Kapitel zeigt, wie Sie Performance-Tests in Ihre CI/CD-Pipeline integrieren:
-
-- **Lighthouse CI** - Automatisierte Performance-Audits
-- **Performance Budgets** - Grenzwerte definieren und durchsetzen
-- **GitHub Actions / GitLab CI** - Pipeline-Integration
-- **LHCI Server** - Trend-Analyse und Dashboards
+Getestet mit `@lhci/cli` 0.15.1 (Lighthouse 12.6.1), Shopware 6.6.10.6
+(Dockware, Demo-Daten), `patrickhulce/lhci-server:0.15.1`, k6 v2.3.0,
+Locust 2.46.6.
 
 ## Dateien
 
 ```
 13-continuous-testing/
 ├── config/
-│   ├── lighthouserc.js          # Lighthouse CI Konfiguration
-│   └── budget.json              # Performance-Budget (standalone)
-├── .github/
-│   └── workflows/
-│       └── lighthouse-ci.yml    # GitHub Actions Workflow
-├── docker/
-│   ├── docker-compose.yml       # LHCI Server Setup
-│   └── .env.example             # Umgebungsvariablen
-└── scripts/
-    ├── lhci-shopware-auth.js    # Shopware Login-Handler
-    ├── run-lighthouse.sh        # Lokaler Test-Runner
-    └── budget-check.sh          # Budget-Validierung
+│   ├── lighthouserc.cjs          # Basis: 3 Seiten, Budgets, Median-Lauf
+│   ├── lighthouserc.matrix.cjs   # 5 Seiten, Grenzen je Seitentyp (assertMatrix)
+│   ├── lighthouserc.auth.cjs     # Konto-Seiten hinter dem Login
+│   └── budget.json               # Alternative zu den Assertions (alles "error")
+├── scripts/
+│   ├── lhci-shopware-auth.cjs    # Login vor jeder URL (puppeteerScript)
+│   ├── loadtest-k6.js            # Lasttest k6
+│   └── locustfile.py             # Lasttest Locust
+├── .github/workflows/
+│   ├── lighthouse-ci.yml         # Pull Request gegen LHCI_BASE_URL, PR-Kommentar
+│   └── lighthouse-staging.yml    # nach jedem Deployment, Slack, LHCI-Server
+├── gitlab/.gitlab-ci.yml         # GitLab-Job
+└── docker/docker-compose.yml     # LHCI-Server mit Basic Auth
 ```
 
-## Quick Start
+Die Konfigurationen sind `.cjs`: In einem Projekt mit `"type": "module"` in der
+`package.json` lädt eine `lighthouserc.js` mit `module.exports` nicht.
 
-### 1. Lighthouse CI installieren
+## Schnellstart
 
 ```bash
-npm install -g @lhci/cli
+npm install -g @lhci/cli@0.15.1
+cp config/lighthouserc.cjs /pfad/zum/projekt/
+
+cd /pfad/zum/projekt
+LHCI_BASE_URL=https://staging.ihr-shop.ch lhci autorun
 ```
 
-### 2. Konfiguration kopieren
+Nie `npx lhci …` ohne installiertes `@lhci/cli`: npx lädt dann das fremde
+npm-Paket `lhci`, das nichts prüft und mit Exit 0 endet. Ein Gate damit ist
+immer grün.
+
+Die Pfade in `lighthouserc.cjs` an den eigenen Shop anpassen: Kategorie und
+Produkt über die SEO-URL, `/navigation/<name>` und `/detail/<name>` antworten
+mit 400.
+
+## Was die Konfiguration entscheidet
+
+- `aggregationMethod: 'median-run'`: Ohne diese Zeile wertet LHCI bei
+  Obergrenzen den **besten** von drei Läufen.
+- `resource-summary:script:count` steht auf 30: Shopware 6.6 lädt ab Werk 16
+  (Startseite) bis 25 (Kategorie, Produkt) Skripte.
+- `upload.target: 'filesystem'` schreibt `.lighthouseci/manifest.json`; daraus
+  baut der Workflow den PR-Kommentar.
+- `budget.json` geht nur **statt** der Assertions (`--budgetsFile`), nicht
+  zusätzlich, und macht jede Grenze zu `error`.
+
+## Seiten hinter dem Login
 
 ```bash
-cp config/lighthouserc.js /pfad/zum/shopware-projekt/
+npm install --save-dev puppeteer
+SHOPWARE_TEST_EMAIL=… SHOPWARE_TEST_PASSWORD=… \
+LHCI_BASE_URL=https://staging.ihr-shop.ch lhci autorun --config=config/lighthouserc.auth.cjs
 ```
 
-### 3. Ersten Test ausführen
+Ein eigenes Testkonto auf Staging verwenden. Das Skript läuft vor jeder URL; ab
+der zweiten ist der Browser schon eingeloggt und es tippt nichts mehr.
 
-```bash
-cd /pfad/zum/shopware-projekt
-lhci autorun
-```
+## CI
 
-## Performance-Budget (Empfohlen)
+**GitHub:** Workflow nach `.github/workflows/` kopieren, `lighthouserc.cjs` ins
+Repository-Root, Variable `LHCI_BASE_URL` setzen und den Job `lighthouse` als
+Required Check eintragen. Der Stand des Pull Requests muss unter der URL
+deployt sein.
 
-| Metrik | Budget | Begründung |
-|--------|--------|------------|
-| LCP | ≤ 2.500ms | Google Core Web Vitals |
-| CLS | ≤ 0.1 | Google Core Web Vitals |
-| INP | ≤ 200ms | Google Core Web Vitals |
-| JavaScript | ≤ 300KB | Mobile Performance |
-| CSS | ≤ 100KB | Render-Blocking |
-| Performance Score | ≥ 75 | Lighthouse Mindeststandard |
+**GitLab:** `gitlab/.gitlab-ci.yml` übernehmen, CI/CD-Variable `LHCI_BASE_URL`.
 
-## CI/CD-Integration
-
-### GitHub Actions
-
-1. Kopiere `.github/workflows/lighthouse-ci.yml` in dein Repository
-2. Füge `LHCI_GITHUB_APP_TOKEN` als Repository Secret hinzu
-3. Push auslösen
-
-### GitLab CI
-
-Füge den Inhalt aus dem Buch in deine `.gitlab-ci.yml` ein.
-
-## LHCI Server (Optional)
-
-Für Trend-Analyse und Team-Dashboards:
+## LHCI-Server
 
 ```bash
 cd docker
-cp .env.example .env
-# .env anpassen (LHCI_TOKEN generieren)
-docker-compose up -d
+LHCI_PASSWORD=… docker compose up -d
+docker compose exec lhci-server npx lhci wizard   # Server-URL: http://localhost:9001
 ```
 
-Dashboard: http://localhost:9001
+Der Wizard gibt den Build-Token aus; ihn als Secret `LHCI_TOKEN` hinterlegen.
+Für den Zugriff aus der CI gehört ein Reverse-Proxy mit TLS vor den Port.
 
-## Shopware-spezifische Tests
+## Lasttests
 
-Der `lhci-shopware-auth.js` ermöglicht authentifizierte Tests:
+```bash
+k6 run -e BASE_URL=https://staging.ihr-shop.ch scripts/loadtest-k6.js
+locust -f scripts/locustfile.py --host=https://staging.ihr-shop.ch
+```
 
-- Checkout-Prozess
-- Mein Konto-Bereich
-- Wunschliste
-
-## Schwellenwerte anpassen
-
-Die Budgets in `lighthouserc.js` und `budget.json` sind für einen typischen Shopware-Shop optimiert. Für Ihren spezifischen Shop:
-
-1. Baseline messen: `lhci autorun` ohne Budgets
-2. Realistische Ziele setzen (10-20% besser als aktuell)
-3. Budgets schrittweise verschärfen
-
-## Weiterführende Links
-
-- [Lighthouse CI Dokumentation](https://github.com/GoogleChrome/lighthouse-ci)
-- [Performance Budgets](https://web.dev/performance-budgets-101/)
-- [Core Web Vitals](https://web.dev/vitals/)
+k6 endet mit Exit 99, wenn eine Schwelle reisst; Locust hat keine Schwellen.
+Nie gegen Production.
 
 ## Lizenz
 
-MIT - Frei verwendbar für kommerzielle Projekte.
+MIT
