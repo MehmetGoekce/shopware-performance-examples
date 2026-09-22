@@ -48,7 +48,6 @@ shopware-performance-examples/
 │   └── shopware.yaml             # Allgemeine Einstellungen
 ├── scripts/                      # Utility-Scripts
 │   ├── benchmark.sh              # Performance-Tests
-│   ├── cache-warmup.sh           # Cache vorwärmen
 │   └── analyze-queries.sh        # DB-Query-Analyse
 ├── chapters/                     # Code nach Kapiteln organisiert
 │   ├── 03-core-web-vitals/
@@ -131,7 +130,7 @@ docker-compose -f docker-compose.redis.yml logs -f sentinel1
 | `make start` | Container starten |
 | `make stop` | Container stoppen |
 | `make benchmark` | Performance-Tests |
-| `make cache-warmup` | Caches vorwärmen |
+| `make cache-warmup URL=https://ihr-shop.ch` | HTTP-Cache aus der Sitemap vorwärmen (Kapitel 6, `chapters/06-http-cache/scripts/cache-warmup.sh`) |
 | `make redis-failover` | Redis Failover simulieren |
 | `make analyze-queries` | Langsame Queries finden |
 

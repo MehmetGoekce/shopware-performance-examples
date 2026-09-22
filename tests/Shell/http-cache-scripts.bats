@@ -175,3 +175,37 @@ XML
     [[ "$output" == *"OK"*"http://shop.test/p1"* ]]
     [[ "$output" != *"other.test"*"OK"* ]]
 }
+
+# MEM-307: Das alte Root-Skript scripts/cache-warmup.sh leerte den Cache,
+# und ./scripts/cache-warmup.sh aus Kapitel 6 traf es vom Repo-Root aus.
+@test "no root script shares its name with a chapter script" {
+    for root in scripts/*.sh; do
+        name="$(basename "$root")"
+        for other in chapters/*/scripts/"$name"; do
+            [ ! -e "$other" ] || { echo "$root kollidiert mit $other"; return 1; }
+        done
+    done
+}
+
+@test "make cache-warmup without URL prints usage and fails" {
+    command -v make >/dev/null || skip "make fehlt im Image"
+    run make -s cache-warmup
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"Usage: make cache-warmup URL="* ]]
+}
+
+@test "make cache-warmup runs the chapter 6 sitemap warmer, not a cache clear" {
+    command -v make >/dev/null || skip "make fehlt im Image"
+    make_curl_stub
+    cat > "$FIXTURES/shop.test_sitemap.xml" <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<sitemapindex><sitemap><loc>http://shop.test/sitemap/a.xml.gz</loc></sitemap></sitemapindex>
+XML
+    printf '<urlset><url><loc>http://shop.test/p1</loc></url><url><loc>http://shop.test/p2</loc></url><url><loc>http://shop.test/p3</loc></url></urlset>' \
+        | gzip -c > "$FIXTURES/shop.test_sitemap_a.xml.gz"
+    CURL_CMD="$TMP/curl" run make -s cache-warmup URL=http://shop.test PARALLEL=1 LIMIT=2
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"URLs: 2"* ]]
+    [[ "$output" == *"http://shop.test/p1"* ]]
+    [[ "$output" != *"cache:clear"* ]]
+}

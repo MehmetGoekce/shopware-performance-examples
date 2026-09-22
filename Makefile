@@ -24,8 +24,13 @@ restart: stop start ## Container neu starten
 benchmark: ## Performance-Tests ausführen
 	./scripts/benchmark.sh
 
-cache-warmup: ## Alle Caches vorwärmen
-	./scripts/cache-warmup.sh
+# Kapitel 6: wärmt den HTTP-Cache aus der Sitemap (vorher bin/console sitemap:generate).
+# Leert keinen Cache und baut keinen Index neu.
+PARALLEL ?= 2
+LIMIT    ?= 100
+cache-warmup: ## HTTP-Cache aus der Sitemap vorwärmen (URL=https://ihr-shop.ch [PARALLEL=4] [LIMIT=500])
+	@if [ -z "$(URL)" ]; then echo "Usage: make cache-warmup URL=https://ihr-shop.ch [PARALLEL=4] [LIMIT=500]"; exit 1; fi
+	./chapters/06-http-cache/scripts/cache-warmup.sh "$(URL)" --sitemap --parallel $(PARALLEL) --limit $(LIMIT)
 
 redis-failover: ## Redis Failover simulieren (benötigt docker-compose.redis.yml)
 	@echo "$(YELLOW)Stoppe Redis Master...$(RESET)"
