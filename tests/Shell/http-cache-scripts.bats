@@ -227,11 +227,33 @@ XML
 }
 
 @test "cache-warmup.sh rejects --parallel values below 1 or not a number" {
-    for v in 0 x -1; do
+    for v in 0 x -1 1x ""; do
         run "$DIR/cache-warmup.sh" http://127.0.0.1:9 --parallel "$v"
         [ "$status" -eq 1 ]
         [[ "$output" == *"--parallel braucht eine Zahl"* ]]
     done
+    run "$DIR/cache-warmup.sh" http://127.0.0.1:9 --parallel
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"--parallel braucht eine Zahl"* ]]
+}
+
+@test "cache-warmup.sh rejects --limit values below 1, not a number or too large" {
+    for v in 0 x -1 1x 1000000 ""; do
+        run "$DIR/cache-warmup.sh" http://127.0.0.1:9 --limit "$v"
+        [ "$status" -eq 1 ]
+        [[ "$output" == *"--limit braucht eine Zahl"* ]]
+    done
+    run "$DIR/cache-warmup.sh" http://127.0.0.1:9 --limit
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"--limit braucht eine Zahl"* ]]
+}
+
+@test "cache-warmup.sh ignores QUIET from the caller's environment" {
+    make_curl_stub
+    make_sitemap3
+    QUIET=1 CURL_CMD="$TMP/curl" run "$DIR/cache-warmup.sh" http://shop.test --sitemap --parallel 1
+    [ "$status" -eq 0 ]
+    [ "$(grep -c "OK.*http://shop.test/p" <<< "$output")" -eq 3 ]
 }
 
 # MEM-307: Das alte Root-Skript scripts/cache-warmup.sh leerte den Cache,

@@ -107,8 +107,8 @@ HIT/MISS, xkey-PURGE nach Preis- und Bestandsänderung, BAN bei `cache:clear:htt
 Währungs-Cookie, Pass bei Login und Warenkorb, ESI-Fragment mit eigener TTL (mit Varnish und im
 eingebauten Cache), Tracking-Parameter (auch Werte mit `+` und mehrere hintereinander),
 Sitemap-Warmup, `cache-debug.sh` gegen beide Betriebsarten. Mit dem Filesystem-Cache liessen parallele
-Warmup-Aufrufe direkt nach `cache:clear` 3-9 von 21 Seiten kalt, mit dem zweiten Durchgang des Skripts
-(ab `--parallel 2`) keine; mit Varnish, Redis und in 6.7.2.2 trat es nicht auf. Die CI kompiliert die VCL und führt
+Warmup-Aufrufe direkt nach `cache:clear` 1-6 (`--parallel 2`) bzw. 6-10 (`--parallel 4`) von 21 Seiten kalt,
+mit dem zweiten Durchgang des Skripts keine; mit Varnish, Redis und in 6.7.2.2 trat es nicht auf. Die CI kompiliert die VCL und führt
 die BATS-Tests (`tests/Shell/http-cache-scripts.bats`) bei jedem Push aus.
 
 ## Weiterführende Links

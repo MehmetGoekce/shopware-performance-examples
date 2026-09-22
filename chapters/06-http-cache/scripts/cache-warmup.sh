@@ -17,8 +17,9 @@
 #     "cache:clear" sind die Tag-Versionen des Filesystem-Caches leer, und
 #     parallele erste Requests legen für dieselben Tags verschiedene Versionen
 #     an. Die Seiten mit der überschriebenen Version gelten beim nächsten
-#     Aufruf als ungültig (Test 6.6.10.6: 6-9 von 21 Seiten kalt, mit dem
-#     zweiten Durchgang 0). Der zweite Durchgang ist fast nur Cache-Treffer.
+#     Aufruf als ungültig (Test 6.6.10.6, 21 Seiten: mit --parallel 2 1-6,
+#     mit --parallel 4 6-10 kalt, mit dem zweiten Durchgang 0). Der zweite
+#     Durchgang rendert nur die kalt gebliebenen Seiten neu.
 #
 # Verwendung:
 #   ./cache-warmup.sh https://ihr-shop.ch
@@ -33,6 +34,8 @@
 set -euo pipefail
 
 CURL_CMD="${CURL_CMD:-curl}"
+# Steuert nur den zweiten Durchgang, nie aus der Umgebung übernehmen
+unset QUIET
 
 PARALLEL=2
 USE_SITEMAP=false
@@ -121,12 +124,12 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --parallel)
-            PARALLEL="$2"
-            shift 2
+            PARALLEL="${2:-}"
+            shift $(( $# > 1 ? 2 : 1 ))
             ;;
         --limit)
-            LIMIT="$2"
-            shift 2
+            LIMIT="${2:-}"
+            shift $(( $# > 1 ? 2 : 1 ))
             ;;
         *)
             echo "Unbekannte Option: $1"
@@ -138,6 +141,10 @@ done
 
 if ! [[ "${PARALLEL}" =~ ^[1-9][0-9]*$ ]]; then
     echo "Fehler: --parallel braucht eine Zahl >= 1."
+    exit 1
+fi
+if ! [[ "${LIMIT}" =~ ^[1-9][0-9]{0,5}$ ]]; then
+    echo "Fehler: --limit braucht eine Zahl von 1 bis 999999."
     exit 1
 fi
 
