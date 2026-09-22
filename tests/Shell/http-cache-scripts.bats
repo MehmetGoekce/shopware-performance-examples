@@ -117,6 +117,7 @@ if [[ -f "$FIXTURES/first.headers" ]]; then
     n=$(cat "$FIXTURES/count" 2>/dev/null || echo 0)
     n=$((n + 1))
     echo "$n" > "$FIXTURES/count"
+    date +%s >> "$FIXTURES/times"
     if [[ "$n" -eq 1 ]]; then cat "$FIXTURES/first.headers"; else cat "$FIXTURES/second.headers"; fi
     exit 0
 fi
@@ -129,62 +130,108 @@ STUB
     mkdir -p "$FIXTURES"
 }
 
+# Header-Fixtures fuer cache-debug.sh: headers <datei> <status> <age|-> <ttfb>
+headers() {
+    local age=""
+    [[ "$3" != "-" ]] && age="Age: $3\r\n"
+    printf "HTTP/1.1 $2 X\r\nCache-Control: no-cache, private\r\n${age}TTFB=$4\n" > "$FIXTURES/$1.headers"
+}
+
+debug() {
+    CURL_CMD="$TMP/curl" CACHE_DEBUG_WAIT="$1" run "$DIR/cache-debug.sh" http://shop.test /
+}
+
 @test "cache-debug.sh does not report a hit for Age: 0 (MISS stored, e.g. APP_ENV=dev)" {
     make_curl_stub
-    printf 'HTTP/1.1 200 OK\r\nCache-Control: no-cache, private\r\nAge: 0\r\nTTFB=0.120\n' > "$FIXTURES/first.headers"
-    printf 'HTTP/1.1 200 OK\r\nCache-Control: no-cache, private\r\nAge: 0\r\nTTFB=0.110\n' > "$FIXTURES/second.headers"
-    CURL_CMD="$TMP/curl" CACHE_DEBUG_WAIT=1 run "$DIR/cache-debug.sh" http://shop.test /
+    headers first 200 0 0.120; headers second 200 0 0.110
+    debug 2
     [ "$status" -eq 0 ]
-    [[ "$output" != *"aus dem Cache"* ]]
+    [[ "$output" != *"2. Aufruf aus dem Cache"* ]]
     [[ "$output" == *"Kein Treffer erkennbar"* ]]
 }
 
-@test "cache-debug.sh reports the built-in cache when Age grows by the pause" {
+@test "cache-debug.sh reports the built-in cache when Age grows by the pause and TTFB drops" {
     make_curl_stub
-    printf 'HTTP/1.1 200 OK\r\nCache-Control: no-cache, private\r\nAge: 0\r\nTTFB=0.130\n' > "$FIXTURES/first.headers"
-    printf 'HTTP/1.1 200 OK\r\nCache-Control: no-cache, private\r\nAge: 2\r\nTTFB=0.010\n' > "$FIXTURES/second.headers"
-    CURL_CMD="$TMP/curl" CACHE_DEBUG_WAIT=1 run "$DIR/cache-debug.sh" http://shop.test /
+    headers first 200 0 0.130; headers second 200 2 0.010
+    debug 2
     [ "$status" -eq 0 ]
     [[ "$output" == *"Eingebauter Shopware-Cache: 2. Aufruf aus dem Cache"* ]]
+}
+
+@test "cache-debug.sh waits the pause between the two requests" {
+    make_curl_stub
+    headers first 200 0 0.130; headers second 200 2 0.010
+    debug 2
+    t1=$(sed -n 1p "$FIXTURES/times"); t2=$(sed -n 2p "$FIXTURES/times")
+    [ $((t2 - t1)) -ge 2 ]
 }
 
 # MEM-302: Symfony setzt beim Speichern Age = Sekunden seit Date, Shopware
 # erzeugt die Response vor dem Twig-Rendern. Zwei langsame MISS tragen je Age 3.
 @test "cache-debug.sh does not count the Age of two slow misses as a hit" {
     make_curl_stub
-    printf 'HTTP/1.1 200 OK\r\nCache-Control: no-cache, private\r\nAge: 3\r\nTTFB=3.100\n' > "$FIXTURES/first.headers"
-    printf 'HTTP/1.1 200 OK\r\nCache-Control: no-cache, private\r\nAge: 3\r\nTTFB=3.050\n' > "$FIXTURES/second.headers"
-    CURL_CMD="$TMP/curl" CACHE_DEBUG_WAIT=1 run "$DIR/cache-debug.sh" http://shop.test /
-    [ "$status" -eq 0 ]
-    [[ "$output" != *"aus dem Cache"* ]]
+    headers first 200 3 3.100; headers second 200 3 3.050
+    debug 2
+    [[ "$output" != *"2. Aufruf aus dem Cache"* ]]
     [[ "$output" == *"Kein Treffer erkennbar"* ]]
 }
 
-# Grenze: Age waechst genau um die Pause -> Treffer, um eins weniger -> keiner
-# (zweiter Abruf ein MISS ueber eine Sekundengrenze, Age 0 -> 1).
+# Grenze mit Pause 3: Age waechst genau um die Pause -> Treffer, um eins weniger -> keiner
 @test "cache-debug.sh counts Age growth equal to the pause, not one less" {
     make_curl_stub
-    printf 'HTTP/1.1 200 OK\r\nCache-Control: no-cache, private\r\nAge: 0\r\nTTFB=0.100\n' > "$FIXTURES/first.headers"
-    printf 'HTTP/1.1 200 OK\r\nCache-Control: no-cache, private\r\nAge: 2\r\nTTFB=0.010\n' > "$FIXTURES/second.headers"
-    CURL_CMD="$TMP/curl" CACHE_DEBUG_WAIT=2 run "$DIR/cache-debug.sh" http://shop.test /
-    [[ "$output" == *"aus dem Cache"* ]]
-    rm -f "$FIXTURES/count"
-    printf 'HTTP/1.1 200 OK\r\nCache-Control: no-cache, private\r\nAge: 1\r\nTTFB=0.390\n' > "$FIXTURES/second.headers"
-    CURL_CMD="$TMP/curl" CACHE_DEBUG_WAIT=2 run "$DIR/cache-debug.sh" http://shop.test /
-    [[ "$output" != *"aus dem Cache"* ]]
+    headers first 200 0 0.100; headers second 200 3 0.010
+    debug 3
+    [[ "$output" == *"2. Aufruf aus dem Cache"* ]]
+    rm -f "$FIXTURES/count" "$FIXTURES/times"
+    headers second 200 2 0.010
+    debug 3
+    [[ "$output" != *"2. Aufruf aus dem Cache"* ]]
     [[ "$output" == *"Kein Treffer erkennbar"* ]]
+}
+
+# Ein MISS traegt immer Age < TTFB + 1 s
+@test "cache-debug.sh does not count a second response whose Age is below TTFB + 1 s" {
+    make_curl_stub
+    headers first 200 0 4.000; headers second 200 2 1.500
+    debug 2
+    [[ "$output" != *"2. Aufruf aus dem Cache"* ]]
+}
+
+# Mit ESI setzt Symfony das Age der Seite auf das des aeltesten Fragments.
+@test "cache-debug.sh does not report a hit when Age grows but TTFB stays (ESI fragment)" {
+    make_curl_stub
+    headers first 200 4 0.113; headers second 200 6 0.115
+    debug 2
+    [[ "$output" != *"2. Aufruf aus dem Cache"* ]]
+    [[ "$output" == *"TTFB sinkt aber nicht"* ]]
+    [[ "$output" == *"ESI"* ]]
+}
+
+@test "cache-debug.sh reports an entry that expired between the requests" {
+    make_curl_stub
+    headers first 200 2 0.010; headers second 200 0 0.120
+    debug 2
+    [[ "$output" == *"Age gesunken"* ]]
 }
 
 @test "cache-debug.sh needs both Age values for a hit" {
     make_curl_stub
-    printf 'HTTP/1.1 200 OK\r\nCache-Control: no-cache, private\r\nTTFB=0.300\n' > "$FIXTURES/first.headers"
-    printf 'HTTP/1.1 200 OK\r\nCache-Control: no-cache, private\r\nAge: 5\r\nTTFB=0.010\n' > "$FIXTURES/second.headers"
-    CURL_CMD="$TMP/curl" CACHE_DEBUG_WAIT=1 run "$DIR/cache-debug.sh" http://shop.test /
-    [[ "$output" != *"aus dem Cache"* ]]
+    headers first 200 - 0.300; headers second 200 5 0.010
+    debug 2
+    [[ "$output" != *"2. Aufruf aus dem Cache"* ]]
+    [[ "$output" == *"Age nur beim 2. Aufruf"* ]]
 }
 
-@test "cache-debug.sh rejects a pause below one second" {
-    for w in 0 x 1.5 -1; do
+@test "cache-debug.sh treats a redirect as a redirect, even with growing Age" {
+    make_curl_stub
+    headers first 301 0 0.100; headers second 301 2 0.010
+    debug 2
+    [[ "$output" == *"Weiterleitung"* ]]
+    [[ "$output" != *"2. Aufruf aus dem Cache"* ]]
+}
+
+@test "cache-debug.sh rejects a pause below two seconds" {
+    for w in 0 1 x 1.5 -1 02; do
         CACHE_DEBUG_WAIT="$w" run "$DIR/cache-debug.sh" http://shop.test /
         [ "$status" -eq 1 ]
         [[ "$output" == *"CACHE_DEBUG_WAIT"* ]]
@@ -193,18 +240,17 @@ STUB
 
 @test "cache-debug.sh does not trust a faster second call without Age" {
     make_curl_stub
-    printf 'HTTP/1.1 200 OK\r\nCache-Control: no-cache, private\r\nTTFB=0.300\n' > "$FIXTURES/first.headers"
-    printf 'HTTP/1.1 200 OK\r\nCache-Control: no-cache, private\r\nTTFB=0.050\n' > "$FIXTURES/second.headers"
-    CURL_CMD="$TMP/curl" CACHE_DEBUG_WAIT=1 run "$DIR/cache-debug.sh" http://shop.test /
+    headers first 200 - 0.300; headers second 200 - 0.050
+    debug 2
     [[ "$output" == *"aber ohne Age"* ]]
-    [[ "$output" != *"aus dem Cache"* ]]
+    [[ "$output" != *"2. Aufruf aus dem Cache"* ]]
 }
 
 @test "cache-debug.sh reports a Varnish HIT" {
     make_curl_stub
     printf 'HTTP/1.1 200 OK\r\nCache-Control: no-store\r\nX-Cache: MISS\r\nTTFB=0.080\n' > "$FIXTURES/first.headers"
     printf 'HTTP/1.1 200 OK\r\nCache-Control: no-store\r\nX-Cache: HIT\r\nAge: 2\r\nTTFB=0.001\n' > "$FIXTURES/second.headers"
-    CURL_CMD="$TMP/curl" CACHE_DEBUG_WAIT=1 run "$DIR/cache-debug.sh" http://shop.test /
+    CURL_CMD="$TMP/curl" CACHE_DEBUG_WAIT=2 run "$DIR/cache-debug.sh" http://shop.test /
     [[ "$output" == *"Varnish: 2. Aufruf aus dem Cache"* ]]
 }
 
@@ -313,11 +359,16 @@ XML
 
 # MEM-310: Das Buch ruft Skripte als ./scripts/<name>.sh im Kapitelordner auf.
 # Heissen zwei Kapitelskripte gleich, landet der Leser im falschen Ordner beim
-# falschen Skript (cache-hit-rate.sh in Kapitel 6 und 7). generate-report.sh
-# (Kapitel 14 und 22) ruft das Buch nie über einen relativen Pfad auf.
-@test "no two chapters ship a script with the same name" {
+# falschen Skript (cache-hit-rate.sh in Kapitel 6 und 7). Bekannte Ausnahme:
+# generate-report.sh in Kapitel 14 und 22 (zwei verschiedene Skripte, offen:
+# Umbenennung durch die Kapitel-Owner). Jede weitere Kopie schlägt an.
+@test "no two chapters ship a *.sh directly under scripts/ with the same name" {
+    [ "$(ls chapters/*/scripts/*.sh | wc -l)" -gt 10 ]
     dups="$(for f in chapters/*/scripts/*.sh; do basename "$f"; done | sort | uniq -d | grep -vx 'generate-report.sh' || true)"
     [ -z "$dups" ] || { echo "doppelt: $dups"; return 1; }
+    known="$(ls chapters/*/scripts/generate-report.sh | tr '\n' ' ')"
+    [ "$known" = "chapters/14-performance-kultur/scripts/generate-report.sh chapters/22-haeufigste-probleme/scripts/generate-report.sh " ] \
+        || { echo "generate-report.sh: $known"; return 1; }
 }
 
 @test "make cache-warmup without URL prints usage and fails" {

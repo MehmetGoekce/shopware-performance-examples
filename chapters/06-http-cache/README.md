@@ -45,7 +45,8 @@ Beides beim Übernehmen in ein eigenes Plugin anpassen; die Twig-Templates selbs
   Varnish kennt `stale-if-error` nicht, und `config/varnish.vcl` setzt Grace selbst.
 - **Ohne Reverse Proxy** sieht der Browser immer `Cache-Control: no-cache, private`. Der eingebaute
   Cache arbeitet trotzdem, erkennbar nur an `Age`, das zwischen zwei Aufrufen um die Pause wächst
-  (`Age` > 0 allein zeigt auch ein langsamer MISS), und an der Antwortzeit.
+  (`Age` > 0 allein zeigt auch ein langsamer MISS), und an der Antwortzeit. Mit ESI trägt die Seite
+  das `Age` des ältesten Fragments; `scripts/cache-debug.sh` verlangt deshalb beides.
 
 ## Schnellstart: eingebauter Cache
 

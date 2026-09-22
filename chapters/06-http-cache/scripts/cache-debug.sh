@@ -14,13 +14,20 @@
 #                                         seit dem Date-Header, und Shopware erzeugt
 #                                         die Response vor dem Twig-Rendern. Ein MISS
 #                                         trägt so Age 1 über eine Sekundengrenze und
-#                                         mehr bei langsamem Rendern.
+#                                         mehr bei langsamem Rendern, aber immer
+#                                         weniger als seine TTFB + 1 s.
+#                                         Mit ESI trägt die Seite das Age des ältesten
+#                                         Fragments (Symfony ResponseCacheStrategy):
+#                                         Age wächst dann auch, wenn die Seite selbst
+#                                         neu gerendert wird. Deshalb gilt als Treffer
+#                                         nur: Age wächst um mindestens die Pause UND der 2. Aufruf
+#                                         ist deutlich schneller.
 #
 # Umgebungsvariablen:
-#   CACHE_DEBUG_WAIT  Pause zwischen den Aufrufen in ganzen Sekunden (Default: 2,
-#                     mindestens 1). Bei einem Treffer wächst Age um mindestens
-#                     diesen Wert, bei zwei MISS nur, wenn der zweite so viel
-#                     langsamer rendert.
+#   CACHE_DEBUG_WAIT  Pause zwischen den Aufrufen in ganzen Sekunden (Default und
+#                     Minimum: 2). Bei einem Treffer wächst Age um mindestens
+#                     diesen Wert. Das Age zweier MISS kann sich durch die
+#                     Rundung auf Sekunden um 1 unterscheiden, deshalb nicht 1.
 #   CURL_CMD          curl-Befehl (Default: curl, für Tests austauschbar)
 #
 # Verwendung (im Ordner chapters/06-http-cache):
@@ -47,7 +54,7 @@ show_usage() {
     echo "Ohne Pfade wird nur / geprüft."
     echo ""
     echo "Umgebungsvariablen:"
-    echo "  CACHE_DEBUG_WAIT  Pause zwischen den Aufrufen in ganzen Sekunden (Default: 2, mindestens 1)"
+    echo "  CACHE_DEBUG_WAIT  Pause zwischen den Aufrufen in ganzen Sekunden (Default und Minimum: 2)"
     echo "  CURL_CMD          curl-Befehl (Default: curl)"
     echo ""
     echo "Beispiele:"
@@ -112,9 +119,24 @@ analyze_url() {
     elif [[ "${cache_control}" == *public* && "${cache_control}" == *s-maxage* ]]; then
         echo -e "${GREEN}Backend liefert cachebar für Reverse Proxy/CDN${NC} (Cache-Status beim Proxy prüfen)"
     elif [[ "${cache_control}" == *private* ]]; then
+        # Age wächst um mindestens die Pause, und Age >= TTFB + 1 s (das erreicht kein MISS)
+        local aged=0
         if [[ "${age1}" =~ ^[0-9]+$ && "${age}" =~ ^[0-9]+$ ]] \
-            && [[ $((age - age1)) -ge "${CACHE_DEBUG_WAIT}" ]]; then
-            echo -e "${GREEN}Eingebauter Shopware-Cache: 2. Aufruf aus dem Cache${NC} (Age um $((age - age1)) s gewachsen)"
+            && [[ $((age - age1)) -ge "${CACHE_DEBUG_WAIT}" ]] \
+            && awk -v g="${age}" -v b="${ttfb2}" 'BEGIN { exit !(g >= b + 1) }'; then
+            aged=1
+        fi
+        if [[ "${aged}" -eq 1 ]] && awk -v a="${ttfb1}" -v b="${ttfb2}" 'BEGIN { exit !(b * 2 < a) }'; then
+            echo -e "${GREEN}Eingebauter Shopware-Cache: 2. Aufruf aus dem Cache${NC} (Age um $((age - age1)) s gewachsen, TTFB deutlich kürzer)"
+        elif [[ "${aged}" -eq 1 ]]; then
+            echo -e "${YELLOW}Age wächst um mindestens die Pause, die TTFB sinkt aber nicht${NC}"
+            echo "                Kam schon der 1. Aufruf aus dem Cache? Oder bindet die Seite ESI-Fragmente ein"
+            echo "                (dann stammt Age vom ältesten Fragment, die Seite selbst wurde neu gerendert)?"
+            echo "                Eindeutig: bin/console cache:pool:clear cache.http, dann erneut prüfen."
+        elif [[ "${age1}" =~ ^[0-9]+$ && "${age}" =~ ^[0-9]+$ && "${age}" -lt "${age1}" ]]; then
+            echo -e "${YELLOW}Age gesunken: 1. Aufruf aus dem Cache, Eintrag danach abgelaufen oder invalidiert${NC}"
+        elif [[ "${age}" =~ ^[0-9]+$ && ! "${age1}" =~ ^[0-9]+$ ]]; then
+            echo -e "${YELLOW}Kein Treffer erkennbar: Age nur beim 2. Aufruf${NC} (erneut prüfen)"
         elif [[ "${age}" =~ ^[0-9]+$ ]]; then
             echo -e "${YELLOW}Kein Treffer erkennbar: Age nicht um die Pause gewachsen${NC} (zwei MISS? Route mit _httpCache? APP_ENV=prod?)"
         elif awk -v a="${ttfb1}" -v b="${ttfb2}" 'BEGIN { exit !(b * 3 < a) }'; then
@@ -139,8 +161,8 @@ case $1 in
         ;;
 esac
 
-if ! [[ "${CACHE_DEBUG_WAIT}" =~ ^[1-9][0-9]*$ ]]; then
-    echo "Fehler: CACHE_DEBUG_WAIT muss eine ganze Zahl ab 1 sein: ${CACHE_DEBUG_WAIT}" >&2
+if ! [[ "${CACHE_DEBUG_WAIT}" =~ ^([2-9]|[1-9][0-9]+)$ ]]; then
+    echo "Fehler: CACHE_DEBUG_WAIT muss eine ganze Zahl ab 2 sein: ${CACHE_DEBUG_WAIT}" >&2
     exit 1
 fi
 
