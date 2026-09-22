@@ -563,3 +563,54 @@ STUB
     done
 }
 
+# --- MEM-293: check-opcache.sh sieht, was "php-fpm -i" nicht zeigt ---------
+
+# Stub fuer php-fpm8.3: "-m" und "-i" aus Variablen, damit jeder Fall
+# einzeln einstellbar ist. SCAN_DIR zeigt auf ein Testverzeichnis.
+fpm_stub() {
+    stub_dir="$BATS_TEST_TMPDIR/bin"
+    mkdir -p "$stub_dir" "$BATS_TEST_TMPDIR/conf.d"
+    cat > "$stub_dir/php-fpm8.3" <<STUB
+#!/usr/bin/env bash
+case "\$1" in
+  -m) printf '%s\\n' "\${STUB_MODULES:-Zend OPcache}" ;;
+  -i) printf '%s\\n' \
+        "Scan this dir for additional .ini files => $BATS_TEST_TMPDIR/conf.d" \
+        "opcache.enable => On => On" \
+        "opcache.memory_consumption => 256 => 256" \
+        "opcache.interned_strings_buffer => 20 => 20" \
+        "opcache.max_accelerated_files => 32531 => 32531" \
+        "opcache.validate_timestamps => Off => Off" \
+        "opcache.revalidate_freq => 0 => 0" ;;
+esac
+STUB
+    chmod +x "$stub_dir/php-fpm8.3"
+}
+
+@test "check-opcache.sh erkennt eine nicht geladene Erweiterung statt still nichts zu melden" {
+    fpm_stub
+    STUB_MODULES="Core" PHP_FPM_BINARY="$stub_dir/php-fpm8.3" run bash "$DIR/check-opcache.sh"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"gar nicht geladen"* ]]
+}
+
+@test "check-opcache.sh bricht bei unlesbarer conf.d-Datei mit Exit 77 ab" {
+    [ "$(id -u)" -ne 0 ] || skip "root liest jede Datei"
+    fpm_stub
+    echo 'opcache.enable=1' > "$BATS_TEST_TMPDIR/conf.d/99-x.ini"
+    chmod 0 "$BATS_TEST_TMPDIR/conf.d/99-x.ini"
+    PHP_FPM_BINARY="$stub_dir/php-fpm8.3" run bash "$DIR/check-opcache.sh"
+    chmod 644 "$BATS_TEST_TMPDIR/conf.d/99-x.ini"
+    [ "$status" -eq 77 ]
+    [[ "$output" == *"99-x.ini"* ]]
+    [[ "$output" != *"brauchbar konfiguriert"* ]]
+}
+
+@test "check-opcache.sh meldet die Laufzeitmessung als uebersprungen, wenn der Socket fehlt" {
+    fpm_stub
+    FPM_SOCKET="$BATS_TEST_TMPDIR/gibt-es-nicht.sock" PHP_FPM_BINARY="$stub_dir/php-fpm8.3" \
+        run bash "$DIR/check-opcache.sh"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"3. Laufzeit (echter Request)"* ]]
+    [[ "$output" == *"uebersprungen"* ]]
+}

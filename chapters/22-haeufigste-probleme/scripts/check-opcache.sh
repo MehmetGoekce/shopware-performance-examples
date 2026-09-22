@@ -12,17 +12,31 @@
 # praktisch nie aktiv, auch wenn opcache.enable auf 1 steht. Wer die CLI
 # misst, bekommt ein falsches Ergebnis — in beide Richtungen.
 #
-# Dieses Skript liest deshalb primaer "php-fpm<version> -i".
+# Dieses Skript liest deshalb primaer "php-fpm<version> -i". Drei Grenzen
+# davon faengt es selbst ab (MEM-293):
+#   - Ist die Erweiterung gar nicht geladen (z. B. nach einem cp auf
+#     10-opcache.ini), liefert -i KEINE opcache-Zeile, nicht "Off". Deshalb
+#     zuerst "php-fpm -m".
+#   - Eine conf.d-Datei, die der aufrufende Benutzer nicht lesen kann (0600),
+#     laesst -i still aus und meldet Vorgabewerte. Das Skript bricht dann mit
+#     Exit 77 ab, statt falsche Befunde zu melden.
+#   - -i zeigt den EINGETRAGENEN Wert. Was wirklich gilt (gerundetes
+#     max_accelerated_files, laeuft der JIT?), zeigt nur ein echter Request.
+#     Ist cgi-fcgi installiert und der Socket erreichbar, stellt das Skript
+#     einen (FPM_SOCKET, Vorgabe /run/php/php<version>-fpm-shopware.sock).
 #
 # Verwendung:
 #   ./check-opcache.sh [SHOP_URL] [SHOP_PATH]
 #   PHP_FPM_BINARY=php-fpm8.3 ./check-opcache.sh
+#   sudo FPM_SOCKET=/run/php/php8.3-fpm-shopware.sock ./check-opcache.sh
 #
 # Exit-Codes:
 #   0 = OPcache aktiv und brauchbar konfiguriert
 #   1 = OPcache aus oder Einstellungen fuer Shopware zu knapp
 #   64 = Aufruffehler
 #   69 = keine FPM-Binary gefunden, Pruefung nicht moeglich
+#   77 = eine conf.d-Datei ist fuer diesen Benutzer nicht lesbar - mit sudo
+#        erneut aufrufen
 
 set -euo pipefail
 
@@ -38,6 +52,8 @@ Argumente:
 Umgebungsvariablen:
   PHP_FPM_BINARY  Optional. Name oder Pfad der FPM-Binary, z. B. php-fpm8.3.
                   Ohne Angabe wird die hoechste gefundene Version benutzt.
+  FPM_SOCKET      Optional. Socket des Shop-Pools fuer die Laufzeitmessung
+                  (braucht cgi-fcgi). Vorgabe: /run/php/php<version>-fpm-shopware.sock
 
 Hinweis: "php-fpm -i" liest die FPM-php.ini, aber keine pool-spezifischen
 php_admin_value-Ueberschreibungen aus der Pool-Konfiguration. Bei Abweichungen
@@ -97,7 +113,34 @@ fi
 echo "Gemessene SAPI: ${FPM_BIN}"
 echo
 
+# Ohne geladene Erweiterung gibt -i keine einzige opcache-Zeile aus - ein
+# grep darauf bleibt leer statt "Off" zu melden (MEM-293).
+FPM_MODULES=$("${FPM_BIN}" -m 2>/dev/null || true)
+if ! grep -q '^Zend OPcache$' <<< "${FPM_MODULES}"; then
+    echo "OPcache ist in ${FPM_BIN} gar nicht geladen ('-m' nennt kein 'Zend OPcache')."
+    echo "Haeufigste Ursache: eine eigene Datei wurde nach conf.d/10-opcache.ini"
+    echo "kopiert und hat die Zeile zend_extension=opcache.so ueberschrieben."
+    echo "Den Reparaturweg beschreibt Kapitel 9 (99-shopware-opcache.ini, Kopf)."
+    exit 1
+fi
+
 FPM_INI=$("${FPM_BIN}" -i 2>/dev/null)
+
+# conf.d-Dateien, die dieser Benutzer nicht lesen kann, laesst -i ohne
+# Meldung aus - die Werte unten waeren dann Vorgaben, nicht Ihre.
+SCAN_DIR=$(printf '%s\n' "${FPM_INI}" | sed -n 's/^Scan this dir for additional .ini files => //p')
+if [[ -n "${SCAN_DIR}" && -d "${SCAN_DIR}" ]]; then
+    UNREADABLE=()
+    for f in "${SCAN_DIR}"/*.ini; do
+        [[ -e "${f}" && ! -r "${f}" ]] && UNREADABLE+=("${f}")
+    done
+    if [[ ${#UNREADABLE[@]} -gt 0 ]]; then
+        echo "Als $(id -un) nicht lesbar - ${FPM_BIN} -i laesst diese Dateien still aus:"
+        printf '  %s\n' "${UNREADABLE[@]}"
+        echo "Die Werte waeren Vorgaben, nicht Ihre Konfiguration. Mit sudo erneut aufrufen."
+        exit 77
+    fi
+fi
 
 # Debian/Ubuntu nennen die Binary php-fpm8.3, den Dienst aber php8.3-fpm.
 FPM_VERSION=$(printf '%s\n' "${FPM_BIN##*/}" | sed -n 's/^php-fpm\([0-9.]\+\)$/\1/p')
@@ -147,8 +190,8 @@ if [[ "${MEMORY}" =~ ^[0-9]+$ ]] && [[ "${MEMORY}" -lt 256 ]]; then
     PROBLEMS=$((PROBLEMS + 1))
 fi
 
-if [[ "${INTERNED}" =~ ^[0-9]+$ ]] && [[ "${INTERNED}" -lt 16 ]]; then
-    echo "   interned_strings_buffer ${INTERNED} MB — 16 MB sind fuer Shopware ueblich."
+if [[ "${INTERNED}" =~ ^[0-9]+$ ]] && [[ "${INTERNED}" -lt 20 ]]; then
+    echo "   interned_strings_buffer ${INTERNED} MB — Shopwares Performance-Doku empfiehlt 20 MB."
     PROBLEMS=$((PROBLEMS + 1))
 fi
 
@@ -167,6 +210,46 @@ if [[ "${VALIDATE_TS}" == "On" || "${VALIDATE_TS}" == "1" ]]; then
     echo "     systemctl reload ${FPM_SERVICE}   (oder cachetool opcache:reset --fcgi=...)"
     echo "   Ohne diesen Schritt laeuft nach einem Deploy weiter der alte Code."
     PROBLEMS=$((PROBLEMS + 1))
+fi
+
+echo
+echo "3. Laufzeit (echter Request)"
+FPM_SOCKET="${FPM_SOCKET:-/run/php/php${FPM_VERSION:-}-fpm-shopware.sock}"
+if ! command -v cgi-fcgi >/dev/null 2>&1; then
+    echo "   uebersprungen: cgi-fcgi fehlt (Paket libfcgi-bin)."
+    echo "   -i zeigt nur eingetragene Werte: gerundetes max_accelerated_files und"
+    echo "   den JIT-Zustand liefert opcache_get_status(false) in einem Request."
+elif [[ ! -S "${FPM_SOCKET}" || ! -w "${FPM_SOCKET}" ]]; then
+    echo "   uebersprungen: Socket ${FPM_SOCKET} fehlt oder ist fuer $(id -un)"
+    echo "   nicht beschreibbar (FPM_SOCKET setzen, ggf. mit sudo)."
+else
+    PROBE=$(mktemp --suffix=.php)
+    trap 'rm -f "${PROBE}"' EXIT
+    chmod 644 "${PROBE}"
+    cat > "${PROBE}" <<'PHP'
+<?php
+$s = function_exists('opcache_get_status') ? opcache_get_status(false) : false;
+echo 'RT OPCACHE=', $s === false ? 0 : 1,
+     ' JIT=', ($s['jit']['enabled'] ?? false) ? 1 : 0,
+     ' KEYS=', $s['opcache_statistics']['max_cached_keys'] ?? 0, "\n";
+PHP
+    RT=$(SCRIPT_FILENAME="${PROBE}" SCRIPT_NAME=/check-opcache.php REQUEST_METHOD=GET \
+         cgi-fcgi -bind -connect "${FPM_SOCKET}" 2>/dev/null | tr -d '\r' | grep '^RT ' || true)
+    if [[ -z "${RT}" ]]; then
+        echo "   keine Antwort ueber ${FPM_SOCKET} - Laufzeitwerte unbekannt."
+    else
+        RT_OPCACHE=$(sed -n 's/.*OPCACHE=\([01]\).*/\1/p' <<< "${RT}")
+        RT_JIT=$(sed -n 's/.*JIT=\([01]\).*/\1/p' <<< "${RT}")
+        RT_KEYS=$(sed -n 's/.*KEYS=\([0-9]*\).*/\1/p' <<< "${RT}")
+        echo "   OPcache im Request:      $([[ "${RT_OPCACHE}" == 1 ]] && echo an || echo AUS)"
+        echo "   JIT im Request:          $([[ "${RT_JIT}" == 1 ]] && echo an || echo aus)"
+        echo "   max_cached_keys (wirksam): ${RT_KEYS}"
+        if [[ "${RT_OPCACHE}" != 1 ]]; then
+            echo "   opcache_get_status() liefert im Request false - OPcache arbeitet"
+            echo "   in diesem Pool nicht, egal was -i meldet."
+            PROBLEMS=$((PROBLEMS + 1))
+        fi
+    fi
 fi
 
 echo
