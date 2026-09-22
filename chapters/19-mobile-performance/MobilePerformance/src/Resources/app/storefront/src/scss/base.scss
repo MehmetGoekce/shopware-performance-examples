@@ -1,0 +1,15 @@
+/*
+ * Eingabefelder mit 16 px Schrift
+ * Kapitel 19: Mobile Performance
+ *
+ * Safari auf iOS zoomt beim Antippen in jedes Feld mit weniger als 16 px
+ * Schriftgroesse. Shopware 6.6 setzt $font-size-base auf 0.875rem (14 px),
+ * Felder erben das. Ab 6.7 (oder in 6.6 mit dem Feature-Flag
+ * ACCESSIBILITY_TWEAKS) ist die Vorgabe 1rem, dann ist diese Datei unnoetig.
+ *
+ * Wird mit bin/console theme:compile ins Theme uebernommen.
+ */
+.form-control,
+.form-select {
+    font-size: 1rem;
+}

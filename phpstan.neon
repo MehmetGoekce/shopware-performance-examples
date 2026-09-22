@@ -40,6 +40,9 @@ parameters:
         # Plugin-Klasse (Shopware Plugin)
         - chapters/21-third-party-scripts/ThirdPartyScripts/src/ThirdPartyScripts.php
 
+        # Plugin-Klasse (Shopware Plugin)
+        - chapters/19-mobile-performance/MobilePerformance/src/MobilePerformance.php
+
     reportUnmatchedIgnoredErrors: false
 
     ignoreErrors:

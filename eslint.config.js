@@ -126,7 +126,7 @@ export default [
 
     // Service Worker files
     {
-        files: ['chapters/**/ServiceWorker/**/*.js'],
+        files: ['chapters/**/Resources/sw/*.js'],
         languageOptions: {
             globals: swGlobals
         }

@@ -1,0 +1,21 @@
+{#
+ # Web App Manifest einbinden
+ # Kapitel 19: Mobile Performance
+ #
+ # Ablage im eigenen Theme/Plugin:
+ #   src/Resources/views/storefront/layout/meta.html.twig
+ #
+ # theme-color und apple-touch-icon setzt Shopware bereits selbst
+ # (Bloecke layout_head_meta_tags_theme und layout_head_apple).
+ # Das Manifest liegt unter Resources/public und wird per
+ # bin/console assets:install nach public/bundles/mobileperformance/ kopiert.
+ #
+ # @see https://github.com/MehmetGoekce/shopware-performance-examples
+ #}
+{% sw_extends '@Storefront/storefront/layout/meta.html.twig' %}
+
+{% block layout_head_favicon %}
+    {{ parent() }}
+
+    <link rel="manifest" href="{{ asset('bundles/mobileperformance/manifest.json', 'asset') }}">
+{% endblock %}

@@ -1,0 +1,29 @@
+{#
+ # Service Worker registrieren
+ # Kapitel 19: Mobile Performance
+ #
+ # Ablage im eigenen Theme/Plugin:
+ #   src/Resources/views/storefront/base.html.twig
+ #
+ # Erst nach dem load-Event: Das Registrieren laedt sw.js und startet den
+ # Worker, das soll nicht mit dem Seitenaufbau konkurrieren.
+ # Der Scope ist die Wurzel der Storefront (auch in einem Unterordner).
+ #
+ # @see https://github.com/MehmetGoekce/shopware-performance-examples
+ #}
+{% sw_extends '@Storefront/storefront/base.html.twig' %}
+
+{% block base_body_script %}
+    {{ parent() }}
+
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function () {
+                navigator.serviceWorker.register(
+                    {{ path('frontend.mobile_performance.service_worker')|json_encode|raw }},
+                    { scope: {{ (app.request.basePath ~ '/')|json_encode|raw }} }
+                );
+            });
+        }
+    </script>
+{% endblock %}

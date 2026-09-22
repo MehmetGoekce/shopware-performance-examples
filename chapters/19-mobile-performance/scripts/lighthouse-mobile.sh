@@ -1,251 +1,121 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
-# Lighthouse Mobile Performance Test
+# Lighthouse-Mobil-Test mit mehreren Laeufen und Median
+# Kapitel 19: Mobile Performance
 #
-# Runs Lighthouse audit with mobile emulation settings.
-# Generates HTML and JSON reports.
+# Lighthouse emuliert ab Werk ein Mobilgeraet (412 x 823, DPR 1,75) und
+# drosselt simuliert (Lantern: RTT 150 ms, 1,6 Mbit/s, CPU 4x) – dieselbe
+# Einstellung wie PageSpeed Insights. Das Skript aendert daran nichts.
+# --preset=perf wuerde auf echte DevTools-Drosselung umschalten; die Werte
+# waeren dann nicht mehr mit PSI vergleichbar.
 #
-# Usage:
-#   ./lighthouse-mobile.sh https://example.com
-#   ./lighthouse-mobile.sh https://example.com --iterations 3
+# Einzelne Laeufe streuen. Das Skript misst mehrmals und nennt den Median
+# und die Spanne.
 #
-# Requirements:
-#   - Node.js
-#   - Lighthouse (npm install -g lighthouse)
-#   - Chrome/Chromium
+# INP misst Lighthouse bei einem Seitenaufruf nicht (nur im Timespan-Modus
+# mit Interaktion). INP kommt aus Felddaten: CrUX/PageSpeed Insights oder
+# eigenem RUM (Kapitel 12).
+#
+# Verwendung:
+#   ./lighthouse-mobile.sh https://shop.example.com/
+#   ./lighthouse-mobile.sh https://shop.example.com/ --runs=5 --output=./reports
+#
+# Voraussetzungen: Node.js, Lighthouse (npm install -g lighthouse), jq, Chrome/Chromium
+#
+# @see https://github.com/MehmetGoekce/shopware-performance-examples
 
 set -euo pipefail
 
-# Configuration
-URL="${1:-}"
-OUTPUT_DIR="${OUTPUT_DIR:-./reports}"
-ITERATIONS="${ITERATIONS:-1}"
-THROTTLING="${THROTTLING:-mobile}"
+LIGHTHOUSE="${LIGHTHOUSE:-lighthouse}"
+CHROME_FLAGS="${CHROME_FLAGS:---headless=new}"
+URL=""
+RUNS=5
+OUTPUT_DIR="./reports"
 
-# Parse arguments
+usage() {
+    echo "Usage: $0 <url> [--runs=N] [--output=DIR]"
+    echo ""
+    echo "  --runs=N        Anzahl Laeufe (Vorgabe: 5)"
+    echo "  --output=DIR    Ordner fuer die JSON-Reports (Vorgabe: ./reports)"
+    echo "  --help          Diese Hilfe"
+}
+
 for arg in "$@"; do
-    case ${arg} in
-        --iterations=*)
-            ITERATIONS="${arg#*=}"
-            ;;
-        --output=*)
-            OUTPUT_DIR="${arg#*=}"
-            ;;
-        --no-throttle)
-            THROTTLING="none"
-            ;;
-        --help)
-            echo "Usage: $0 <url> [options]"
-            echo ""
-            echo "Options:"
-            echo "  --iterations=N    Number of test runs (default: 1)"
-            echo "  --output=DIR      Output directory (default: ./reports)"
-            echo "  --no-throttle     Disable network throttling"
-            echo "  --help            Show this help"
-            echo ""
-            echo "Examples:"
-            echo "  $0 https://example.com"
-            echo "  $0 https://example.com --iterations=3"
-            exit 0
-            ;;
-        -*)
-            ;;
-        *)
-            if [[ -z "${URL}" ]]; then
-                URL="${arg}"
-            fi
-            ;;
+    case "${arg}" in
+        --runs=*) RUNS="${arg#*=}" ;;
+        --output=*) OUTPUT_DIR="${arg#*=}" ;;
+        --help|-h) usage; exit 0 ;;
+        -*) echo "Unbekannte Option: ${arg}" >&2; usage >&2; exit 1 ;;
+        *) URL="${arg}" ;;
     esac
 done
 
 if [[ -z "${URL}" ]]; then
-    echo "Error: URL required"
-    echo "Usage: $0 <url>"
+    echo "Fehler: URL fehlt" >&2
+    usage >&2
     exit 1
 fi
 
-# Check dependencies
-if ! command -v lighthouse &> /dev/null; then
-    echo "Error: Lighthouse not found"
-    echo "Install with: npm install -g lighthouse"
+if ! [[ "${RUNS}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Fehler: --runs muss eine positive Zahl sein" >&2
     exit 1
 fi
 
-# Create output directory
-mkdir -p "${OUTPUT_DIR}"
-
-# Colors
-BLUE='\033[0;34m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m'
-
-echo -e "${BLUE}============================================${NC}"
-echo -e "${BLUE}  Lighthouse Mobile Performance Test${NC}"
-echo -e "${BLUE}============================================${NC}"
-echo ""
-echo "URL:        ${URL}"
-echo "Iterations: ${ITERATIONS}"
-echo "Throttling: ${THROTTLING}"
-echo "Output:     ${OUTPUT_DIR}"
-echo ""
-
-# Timestamp for filename
-TIMESTAMP=$(date '+%Y%m%d_%H%M%S')
-DOMAIN=$(echo "${URL}" | sed -e 's|https\?://||' -e 's|/.*||' -e 's|[^a-zA-Z0-9]|_|g')
-
-# Throttling settings
-if [[ "${THROTTLING}" = "mobile" ]]; then
-    THROTTLE_ARGS="--throttling.cpuSlowdownMultiplier=4 --throttling.downloadThroughputKbps=1600 --throttling.uploadThroughputKbps=750 --throttling.rttMs=150"
-else
-    THROTTLE_ARGS="--throttling-method=provided"
-fi
-
-# Run tests
-SCORES=()
-LCP_VALUES=()
-INP_VALUES=()
-CLS_VALUES=()
-
-for i in $(seq 1 "${ITERATIONS}"); do
-    echo -e "${YELLOW}Running test ${i} of ${ITERATIONS}...${NC}"
-
-    REPORT_NAME="${DOMAIN}_${TIMESTAMP}_run${i}"
-
-    lighthouse "${URL}" \
-        --preset=perf \
-        --form-factor=mobile \
-        --screenEmulation.mobile=true \
-        --screenEmulation.width=412 \
-        --screenEmulation.height=823 \
-        --screenEmulation.deviceScaleFactor=2.625 \
-        ${THROTTLE_ARGS} \
-        --output=html,json \
-        --output-path="${OUTPUT_DIR}/${REPORT_NAME}" \
-        --chrome-flags="--headless --no-sandbox --disable-gpu" \
-        --quiet
-
-    # Extract scores
-    JSON_FILE="${OUTPUT_DIR}/${REPORT_NAME}.report.json"
-
-    if [[ -f "${JSON_FILE}" ]]; then
-        SCORE=$(jq '.categories.performance.score * 100' "${JSON_FILE}")
-        LCP=$(jq '.audits["largest-contentful-paint"].numericValue // 0' "${JSON_FILE}")
-        INP=$(jq '.audits["interaction-to-next-paint"].numericValue // 0' "${JSON_FILE}")
-        CLS=$(jq '.audits["cumulative-layout-shift"].numericValue // 0' "${JSON_FILE}")
-
-        SCORES+=("${SCORE}")
-        LCP_VALUES+=("${LCP}")
-        INP_VALUES+=("${INP}")
-        CLS_VALUES+=("${CLS}")
-
-        echo "  Score: ${SCORE}%  LCP: ${LCP}ms  INP: ${INP}ms  CLS: ${CLS}"
-    fi
-
-    # Wait between runs to avoid rate limiting
-    if [[ ${i} -lt ${ITERATIONS} ]]; then
-        sleep 5
+for cmd in "${LIGHTHOUSE}" jq; do
+    if ! command -v "${cmd}" > /dev/null 2>&1; then
+        echo "Fehler: ${cmd} nicht gefunden" >&2
+        exit 1
     fi
 done
 
+mkdir -p "${OUTPUT_DIR}"
+
+# Median einer Zahlenliste (eine Zahl pro Zeile)
+median() {
+    sort -n | awk '{ v[NR] = $1 } END { if (NR % 2) print v[(NR + 1) / 2]; else print (v[NR / 2] + v[NR / 2 + 1]) / 2 }'
+}
+
+# Kleinster und groesster Wert
+range() {
+    sort -n | awk 'NR == 1 { min = $1 } { max = $1 } END { print min " - " max }'
+}
+
+SCORES=""
+LCPS=""
+TBTS=""
+CLSS=""
+
+echo "Lighthouse mobil: ${URL} (${RUNS} Laeufe)"
 echo ""
+printf '%-6s %6s %9s %9s %7s\n' "Lauf" "Score" "LCP (ms)" "TBT (ms)" "CLS"
 
-# Calculate averages
-calc_avg() {
-    local values=("$@")
-    local sum=0
-    local count=${#values[@]}
+for ((i = 1; i <= RUNS; i++)); do
+    report="${OUTPUT_DIR}/mobile-${i}.json"
+    "${LIGHTHOUSE}" "${URL}" \
+        --only-categories=performance \
+        --output=json \
+        --output-path="${report}" \
+        --chrome-flags="${CHROME_FLAGS}" \
+        --quiet
 
-    for val in "${values[@]}"; do
-        sum=$(echo "${sum} + ${val}" | bc)
-    done
+    score=$(jq -r '(.categories.performance.score * 100) | round' "${report}")
+    lcp=$(jq -r '.audits["largest-contentful-paint"].numericValue | round' "${report}")
+    tbt=$(jq -r '.audits["total-blocking-time"].numericValue | round' "${report}")
+    cls=$(jq -r '.audits["cumulative-layout-shift"].numericValue * 1000 | round / 1000' "${report}")
 
-    echo "scale=2; ${sum} / ${count}" | bc
-}
+    printf '%-6s %6s %9s %9s %7s\n' "${i}" "${score}" "${lcp}" "${tbt}" "${cls}"
+    SCORES+="${score}"$'\n'
+    LCPS+="${lcp}"$'\n'
+    TBTS+="${tbt}"$'\n'
+    CLSS+="${cls}"$'\n'
+done
 
-if [[ ${#SCORES[@]} -gt 0 ]]; then
-    AVG_SCORE=$(calc_avg "${SCORES[@]}")
-    AVG_LCP=$(calc_avg "${LCP_VALUES[@]}")
-    AVG_INP=$(calc_avg "${INP_VALUES[@]}")
-    AVG_CLS=$(calc_avg "${CLS_VALUES[@]}")
-
-    echo -e "${BLUE}============================================${NC}"
-    echo -e "${BLUE}  Results Summary${NC}"
-    echo -e "${BLUE}============================================${NC}"
-    echo ""
-    echo "Average Scores (${ITERATIONS} runs):"
-    echo "-------------------------------------------"
-    printf "  Performance Score: %6.1f%%\n" "${AVG_SCORE}"
-    printf "  LCP:               %6.0fms\n" "${AVG_LCP}"
-    printf "  INP:               %6.0fms\n" "${AVG_INP}"
-    printf "  CLS:               %6.3f\n" "${AVG_CLS}"
-    echo ""
-
-    # Determine status
-    echo "Core Web Vitals Status:"
-    echo "-------------------------------------------"
-
-    # LCP
-    if (( $(echo "${AVG_LCP} <= 2500" | bc -l) )); then
-        echo -e "  LCP: ${GREEN}Good${NC} (≤2.5s)"
-    elif (( $(echo "${AVG_LCP} <= 4000" | bc -l) )); then
-        echo -e "  LCP: ${YELLOW}Needs Improvement${NC} (2.5-4s)"
-    else
-        echo -e "  LCP: ${RED}Poor${NC} (>4s)"
-    fi
-
-    # INP
-    if (( $(echo "${AVG_INP} <= 200" | bc -l) )); then
-        echo -e "  INP: ${GREEN}Good${NC} (≤200ms)"
-    elif (( $(echo "${AVG_INP} <= 500" | bc -l) )); then
-        echo -e "  INP: ${YELLOW}Needs Improvement${NC} (200-500ms)"
-    else
-        echo -e "  INP: ${RED}Poor${NC} (>500ms)"
-    fi
-
-    # CLS
-    if (( $(echo "${AVG_CLS} <= 0.1" | bc -l) )); then
-        echo -e "  CLS: ${GREEN}Good${NC} (≤0.1)"
-    elif (( $(echo "${AVG_CLS} <= 0.25" | bc -l) )); then
-        echo -e "  CLS: ${YELLOW}Needs Improvement${NC} (0.1-0.25)"
-    else
-        echo -e "  CLS: ${RED}Poor${NC} (>0.25)"
-    fi
-
-    echo ""
-    echo "Reports saved to: ${OUTPUT_DIR}"
-    echo ""
-
-    # Create summary JSON
-    cat > "${OUTPUT_DIR}/summary_${DOMAIN}_${TIMESTAMP}.json" << EOF
-{
-    "url": "${URL}",
-    "timestamp": "$(date -Iseconds)",
-    "iterations": ${ITERATIONS},
-    "throttling": "${THROTTLING}",
-    "averages": {
-        "performance": ${AVG_SCORE},
-        "lcp_ms": ${AVG_LCP},
-        "inp_ms": ${AVG_INP},
-        "cls": ${AVG_CLS}
-    },
-    "runs": [
-        $(for i in "${!SCORES[@]}"; do
-            echo "{"
-            echo "  \"performance\": ${SCORES[${i}]},"
-            echo "  \"lcp_ms\": ${LCP_VALUES[${i}]},"
-            echo "  \"inp_ms\": ${INP_VALUES[${i}]},"
-            echo "  \"cls\": ${CLS_VALUES[${i}]}"
-            if [[ ${i} -lt $((${#SCORES[@]} - 1)) ]]; then
-                echo "},"
-            else
-                echo "}"
-            fi
-        done)
-   ]]
-}
-EOF
-
-    echo "Summary JSON: ${OUTPUT_DIR}/summary_${DOMAIN}_${TIMESTAMP}.json"
-fi
+echo ""
+echo "Median (Spanne):"
+echo "  Score: $(printf '%s' "${SCORES}" | median) ($(printf '%s' "${SCORES}" | range))"
+echo "  LCP:   $(printf '%s' "${LCPS}" | median) ms ($(printf '%s' "${LCPS}" | range))"
+echo "  TBT:   $(printf '%s' "${TBTS}" | median) ms ($(printf '%s' "${TBTS}" | range))"
+echo "  CLS:   $(printf '%s' "${CLSS}" | median) ($(printf '%s' "${CLSS}" | range))"
+echo "  INP:   nicht gemessen (nur Felddaten: CrUX/PageSpeed Insights, RUM aus Kapitel 12)"
+echo ""
+echo "Reports: ${OUTPUT_DIR}/mobile-1.json ... mobile-${RUNS}.json"

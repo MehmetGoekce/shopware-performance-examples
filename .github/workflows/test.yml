@@ -736,5 +736,9 @@ jobs:
       - name: make vorhanden
         run: make --version
 
+      # lighthouse-mobile.bats (Kapitel 19) ueberspringt ohne jq.
+      - name: jq vorhanden
+        run: jq --version
+
       - name: Run BATS Tests
         run: bats tests/Shell/

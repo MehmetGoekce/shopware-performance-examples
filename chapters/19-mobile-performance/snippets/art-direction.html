@@ -1,0 +1,26 @@
+<!--
+  Art Direction: anderes Motiv auf dem Handy
+  Kapitel 19: Mobile Performance
+
+  Der Browser nimmt die erste <source>, deren media passt, und laedt nur
+  diese eine Datei. width/height an jeder <source> reservieren den Platz
+  im Seitenverhaeltnis des jeweiligen Motivs – ohne sie springt das Layout,
+  wenn das Handy-Motiv ein anderes Format hat (gemessen: CLS 0,018 statt 0).
+  Chrome/Edge ab 90, Firefox ab 108, Safari ab 15.
+
+  Shopware 6.6 hat fuer ein zweites Motiv kein Feld: dafuer braucht es ein
+  eigenes Feld (Custom Field) oder ein zweites CMS-Element.
+
+  @see https://github.com/MehmetGoekce/shopware-performance-examples
+-->
+<picture>
+    <source media="(max-width: 767px)"
+            srcset="/media/hero-mobile-800.jpg 800w, /media/hero-mobile-1200.jpg 1200w"
+            sizes="100vw"
+            width="800" height="1000">
+    <img src="/media/hero-desktop-1600.jpg"
+         srcset="/media/hero-desktop-1600.jpg 1600w, /media/hero-desktop-2400.jpg 2400w"
+         sizes="100vw"
+         width="1600" height="600"
+         alt="Beschreibung des Motivs">
+</picture>

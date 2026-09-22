@@ -1,0 +1,23 @@
+{
+  "name": "memotech/mobile-performance",
+  "description": "Kapitel 19: Mobile Performance - Eingabefelder ohne iOS-Zoom, Service Worker fuer statische Assets und Offline-Seite, Web App Manifest",
+  "type": "shopware-platform-plugin",
+  "license": "MIT",
+  "version": "1.0.0",
+  "require": {
+    "shopware/core": "~6.6.0 || ~6.7.0",
+    "shopware/storefront": "~6.6.0 || ~6.7.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "MobilePerformance\\": "src/"
+    }
+  },
+  "extra": {
+    "shopware-plugin-class": "MobilePerformance\\MobilePerformance",
+    "label": {
+      "de-DE": "Mobile Performance (Kapitel 19)",
+      "en-GB": "Mobile Performance (chapter 19)"
+    }
+  }
+}

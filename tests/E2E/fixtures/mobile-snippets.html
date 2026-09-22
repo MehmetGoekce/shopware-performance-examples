@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Kapitel 19 Snippets</title>
+</head>
+<body>
+    <button id="filter">Filtern</button>
+    <script type="module">
+        import { applyInChunks, yieldToMain } from '/chapters/19-mobile-performance/snippets/yield-to-main.js';
+        import { prefersReducedData } from '/chapters/19-mobile-performance/snippets/connection-hints.js';
+
+        window.snippets = { applyInChunks, yieldToMain, prefersReducedData };
+        window.snippetsReady = true;
+    </script>
+</body>
+</html>
