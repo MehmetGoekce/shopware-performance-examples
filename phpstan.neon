@@ -31,8 +31,8 @@ parameters:
         # Elasticsearch extensions using Shopware ES classes
         - chapters/*/src/ElasticsearchExtension/*.php
 
-        # Controllers not in standard Controller/ directory
-        - chapters/12-real-user-monitoring/src/RumController.php
+        # Plugin-Klasse (Shopware Plugin)
+        - chapters/12-real-user-monitoring/RumMonitoring/src/RumMonitoring.php
 
         # Theme-Plugin-Klasse (Shopware Plugin + ThemeInterface)
         - chapters/16-shopware-themes/PerformanceTheme/src/PerformanceTheme.php

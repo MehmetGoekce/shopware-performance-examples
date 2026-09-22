@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="https://raw.githubusercontent.com/shopware/shopware/trunk/src/Core/System/SystemConfig/Schema/config.xsd">
+    <card>
+        <title>Real User Monitoring</title>
+        <title lang="de-DE">Real User Monitoring</title>
+
+        <input-field type="float">
+            <name>sampleRate</name>
+            <label>Sample rate (0 = off, 1 = every page view)</label>
+            <label lang="de-DE">Stichprobe (0 = aus, 1 = jeder Seitenaufruf)</label>
+            <defaultValue>1</defaultValue>
+            <min>0</min>
+            <max>1</max>
+            <step>0.01</step>
+        </input-field>
+    </card>
+</config>

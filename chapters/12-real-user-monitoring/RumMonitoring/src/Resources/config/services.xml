@@ -1,0 +1,29 @@
+<?xml version="1.0" ?>
+<container xmlns="http://symfony.com/schema/dic/services"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xsi:schemaLocation="http://symfony.com/schema/dic/services http://symfony.com/schema/dic/services/services-1.0.xsd">
+    <services>
+        <!-- Logger des Kanals "rum" aus packages/monolog.yaml -->
+        <service id="RumMonitoring\Controller\RumController" public="true">
+            <argument type="service" id="monolog.logger.rum"/>
+            <tag name="controller.service_arguments"/>
+        </service>
+
+        <service id="RumMonitoring\Rum\RumLogReader">
+            <argument>%kernel.logs_dir%</argument>
+        </service>
+
+        <service id="RumMonitoring\Command\RumReportCommand">
+            <argument type="service" id="RumMonitoring\Rum\RumLogReader"/>
+            <tag name="console.command"/>
+        </service>
+
+        <!-- Webhook optional: ohne RUM_ALERT_WEBHOOK nur Konsolenausgabe -->
+        <service id="RumMonitoring\Command\RumCheckAlertsCommand">
+            <argument type="service" id="RumMonitoring\Rum\RumLogReader"/>
+            <argument type="service" id="http_client"/>
+            <argument>%env(default::RUM_ALERT_WEBHOOK)%</argument>
+            <tag name="console.command"/>
+        </service>
+    </services>
+</container>

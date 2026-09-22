@@ -184,6 +184,8 @@ export default [
             'coverage/**',
             'dist/**',
             '**/*.min.js',
+            // Fremdcode, unveraendert aus web-vitals 6.2.2 (Kapitel 12)
+            '**/web-vitals.attribution.js',
         ]
     }
 ];

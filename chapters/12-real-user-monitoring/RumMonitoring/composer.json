@@ -1,0 +1,23 @@
+{
+  "name": "memotech/rum-monitoring",
+  "description": "Kapitel 12: Real User Monitoring - Web Vitals per Beacon an eine Storefront-Route, JSON-Log, Auswertung und Alert per Command",
+  "type": "shopware-platform-plugin",
+  "license": "MIT",
+  "version": "1.0.0",
+  "require": {
+    "shopware/core": "~6.6.0 || ~6.7.0",
+    "shopware/storefront": "~6.6.0 || ~6.7.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "RumMonitoring\\": "src/"
+    }
+  },
+  "extra": {
+    "shopware-plugin-class": "RumMonitoring\\RumMonitoring",
+    "label": {
+      "de-DE": "RUM Monitoring (Kapitel 12)",
+      "en-GB": "RUM Monitoring (chapter 12)"
+    }
+  }
+}

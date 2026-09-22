@@ -1,0 +1,16 @@
+{% sw_extends '@Storefront/storefront/layout/meta.html.twig' %}
+
+{% block layout_head_javascript_tracking %}
+    {{ parent() }}
+
+    {# Nur in Produktion und nur mit Stichprobe > 0 (Plugin-Konfiguration) #}
+    {% set rumSampleRate = config('RumMonitoring.config.sampleRate') %}
+    {% if app.environment == 'prod' and rumSampleRate > 0 %}
+        {# /api/rum liegt an der Wurzel, auch bei Domains wie https://shop.example/de #}
+        <script type="module"
+                src="{{ asset('bundles/rummonitoring/rum.js', 'asset') }}"
+                data-rum-endpoint="{{ path('api.rum.collect') }}"
+                data-rum-route="{{ activeRoute }}"
+                data-rum-sample-rate="{{ rumSampleRate }}"></script>
+    {% endif %}
+{% endblock %}
