@@ -30,9 +30,10 @@ Buchs hält beides gegeneinander. Gegenbeispiele und Einzelbefehle stehen nur im
 Buch, die ausführlichen Werkzeuge sind die anderen Dateien.
 `chapter-queries.sql` liest den Datenbanknamen aus `DATABASE()` und braucht
 einen administrativen Zugang (`mysql.innodb_index_stats`, `sys`):
-`mysql -u root -p shopware < scripts/chapter-queries.sql`. Auf einer
-Paketinstallation unter Debian oder Ubuntu meldet sich root über den
-Unix-Socket an; dort endet dieser Aufruf mit `ERROR 1698`, und es heisst
+`mysql -u root -p shopware < scripts/chapter-queries.sql`. Ubuntus Paket
+`mysql-server` und MariaDB aus Debian oder Ubuntu richten root ab Werk über
+den Unix-Socket ein; dort endet dieser Aufruf für jeden Systembenutzer ausser
+root mit `ERROR 1698`, und es heisst
 `sudo mysql shopware < scripts/chapter-queries.sql`. Die
 `OPTIMIZE TABLE`-Zeilen darin sind auskommentiert.
 

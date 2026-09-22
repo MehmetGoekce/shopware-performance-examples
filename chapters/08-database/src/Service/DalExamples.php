@@ -20,9 +20,11 @@ declare(strict_types=1);
  * Was gemessen ist (Kapitel 8):
  * - new Criteria() ohne Limit: eine einzige Query ohne LIMIT ueber alle
  *   Produkte, mit den eigenen und den uebersetzten Feldern. Associations
- *   kommen nur mit, wenn die Definition autoload setzt: in 6.6 allein tax,
- *   ab 6.7 keine (ProductDefinition). Nicht "alle Relationen" - teuer ist
- *   das fehlende Limit.
+ *   kommen nur mit, wenn die Definition autoload setzt: in 6.6.10.6 allein
+ *   tax (JOIN im General-Log). Laut Quelltext haengt das an
+ *   !Feature::isActive('v6.7.0.0'); ab 6.7 laedt es keine Association
+ *   (ProductDefinition). Nicht "alle Relationen" - teuer ist das fehlende
+ *   Limit.
  * - addFields() liefert PartialEntity: get('feld') geht, jeder Getter, den erst
  *   ProductEntity mitbringt (getProductNumber, getName, getCover), wirft
  *   "Error: Call to undefined method" - zur Laufzeit, nicht beim Deployment.
