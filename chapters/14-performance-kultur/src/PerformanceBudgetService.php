@@ -2,256 +2,115 @@
 
 declare(strict_types=1);
 
-namespace App\Service;
+namespace PerformanceKultur;
 
-use Psr\Log\LoggerInterface;
+use RumMonitoring\Rum\RumStatistics;
 
 /**
- * Performance Budget Tracker
+ * Error Budget je Core Web Vital aus den RUM-Logs von Kapitel 12.
  *
- * Berechnet und trackt das Performance Error Budget basierend auf RUM-Daten.
- * Integriert mit Kapitel 12 (RUM) und Kapitel 13 (CI).
+ * Das SLO lautet wie bei Google "p75 <= Schwelle". Daraus folgt das Budget:
+ * Hoechstens 25 % der Seitenaufrufe duerfen ueber der Schwelle liegen, sonst
+ * kippt das p75. Verbraucht = Anteil ueber der Schwelle / 25 %.
+ * Bei 100 % verbraucht ist das p75 noch "gut", darueber nicht mehr.
+ *
+ * Eingabe sind die Log-Kontexte aus RumLogReader::read() (Plugin RumMonitoring).
+ * Wie RumStatistics zaehlt jeder Seitenaufruf (id) einmal, mit seinem letzten Wert.
  *
  * @see https://sre.google/workbook/error-budget-policy/
+ * @see https://web.dev/articles/defining-core-web-vitals-thresholds
  */
-class PerformanceBudgetService
+final class PerformanceBudgetService
 {
-    // SLO-Schwellenwerte (p75)
-    private const SLO_LCP_P75 = 2500;  // ms
-    private const SLO_CLS_P75 = 0.1;
-    private const SLO_INP_P75 = 200;   // ms
+    public const METRICS = ['LCP', 'INP', 'CLS'];
 
-    // Budget-Periode
-    private const BUDGET_PERIOD_DAYS = 30;
-
-    // Erlaubte Fehlerrate (0.1% = 99.9% SLO)
-    private const ALLOWED_ERROR_RATE = 0.001;
-
-    public function __construct(
-        private readonly RumDataRepository $rumRepository,
-        private readonly LoggerInterface $logger
-    ) {}
+    /** p75-SLO: 25 % der Seitenaufrufe duerfen die Schwelle ueberschreiten */
+    public const ALLOWED_SHARE = 0.25;
 
     /**
-     * Berechnet das verbleibende Error Budget
+     * @param iterable<array<string, mixed>> $records    Log-Kontexte, in Log-Reihenfolge
+     * @param int                            $minSamples darunter keine Bewertung (wie rum:check-alerts)
      *
-     * @return array{
-     *     remaining_percent: float,
-     *     used_percent: float,
-     *     policy: string,
-     *     violations: array,
-     *     total_samples: int,
-     *     period_start: string,
-     *     period_end: string,
-     *     details: array
-     * }
+     * @return array<string, array{samples: int, over: int, used_percent: float|null, remaining_percent: float|null, policy: string}>
      */
-    public function calculateRemainingBudget(): array
+    public static function calculate(iterable $records, int $minSamples = 100): array
     {
-        $startDate = new \DateTimeImmutable('-' . self::BUDGET_PERIOD_DAYS . ' days');
-        $endDate = new \DateTimeImmutable();
+        $latest = [];
+        $n = 0;
+        foreach ($records as $record) {
+            $metric = $record['metric'] ?? null;
+            if (!\in_array($metric, self::METRICS, true) || !is_numeric($record['value'] ?? null)) {
+                continue;
+            }
 
-        $metrics = $this->rumRepository->getMetricsSince($startDate);
-
-        if ($metrics['total_samples'] === 0) {
-            return $this->emptyBudgetResult($startDate, $endDate);
+            $id = \is_string($record['id'] ?? null) ? $record['id'] : '#' . $n++;
+            $latest[$metric][$id] = (float) $record['value'];
         }
 
-        // Violations zählen
-        $violations = [
-            'lcp' => $this->countViolations($metrics['lcp'] ?? [], self::SLO_LCP_P75),
-            'cls' => $this->countViolations($metrics['cls'] ?? [], self::SLO_CLS_P75),
-            'inp' => $this->countViolations($metrics['inp'] ?? [], self::SLO_INP_P75),
-        ];
+        $result = [];
+        foreach (self::METRICS as $metric) {
+            $values = $latest[$metric] ?? [];
+            $samples = \count($values);
 
-        $totalViolations = array_sum($violations);
-        $totalSamples = $metrics['total_samples'];
+            // "gut" heisst <= Schwelle, also zaehlt erst ein Wert darueber gegen das Budget
+            $threshold = RumStatistics::THRESHOLDS[$metric][0];
+            $over = \count(array_filter($values, static fn (float $v): bool => $v > $threshold));
 
-        // Actual Error Rate
-        $actualErrorRate = $totalSamples > 0
-            ? $totalViolations / $totalSamples
-            : 0;
+            if ($samples === 0 || $samples < $minSamples) {
+                $result[$metric] = [
+                    'samples' => $samples,
+                    'over' => $over,
+                    'used_percent' => null,
+                    'remaining_percent' => null,
+                    'policy' => 'no-data',
+                ];
+                continue;
+            }
 
-        // Budget Consumption: actual / allowed
-        $budgetConsumption = self::ALLOWED_ERROR_RATE > 0
-            ? min($actualErrorRate / self::ALLOWED_ERROR_RATE, 1)
-            : 0;
+            $used = $over / $samples / self::ALLOWED_SHARE * 100;
+            $remaining = 100 - $used;
 
-        $usedPercent = $budgetConsumption * 100;
-        $remainingPercent = max(100 - $usedPercent, 0);
+            $result[$metric] = [
+                'samples' => $samples,
+                'over' => $over,
+                'used_percent' => round($used, 1),
+                'remaining_percent' => round($remaining, 1),
+                'policy' => self::policy($remaining),
+            ];
+        }
 
-        $policy = $this->determinePolicy($remainingPercent);
-
-        $this->logBudgetStatus($remainingPercent, $policy, $violations);
-
-        return [
-            'remaining_percent' => round($remainingPercent, 1),
-            'used_percent' => round($usedPercent, 1),
-            'policy' => $policy,
-            'violations' => $violations,
-            'total_samples' => $totalSamples,
-            'period_start' => $startDate->format('Y-m-d'),
-            'period_end' => $endDate->format('Y-m-d'),
-            'details' => [
-                'actual_error_rate' => round($actualErrorRate * 100, 4),
-                'allowed_error_rate' => self::ALLOWED_ERROR_RATE * 100,
-                'slos' => [
-                    'lcp_p75' => self::SLO_LCP_P75,
-                    'cls_p75' => self::SLO_CLS_P75,
-                    'inp_p75' => self::SLO_INP_P75,
-                ],
-            ],
-        ];
+        return $result;
     }
 
     /**
-     * Bestimmt die Policy basierend auf verbleibendem Budget
+     * Stufen wie in templates/error-budget-policy.yaml
      */
-    private function determinePolicy(float $remaining): string
+    public static function policy(float $remainingPercent): string
     {
         return match (true) {
-            $remaining > 50 => 'green',      // Normal development
-            $remaining > 20 => 'yellow',     // Cautious releases
-            $remaining > 0 => 'orange',      // Performance focus
-            default => 'red',                // Feature freeze
+            $remainingPercent > 50 => 'green',   // normale Entwicklung
+            $remainingPercent >= 20 => 'yellow', // vorsichtige Releases
+            $remainingPercent >= 0 => 'orange',  // Performance-Fokus, p75 noch gut
+            default => 'red',                    // SLO verletzt: Feature Freeze
         };
     }
 
     /**
-     * Gibt Policy-Beschreibung zurück
+     * Gesamtstatus = schlechteste Metrik mit Daten; ohne Daten "no-data"
+     *
+     * @param array<string, array{policy: string}> $budget
      */
-    public function getPolicyDescription(string $policy): array
+    public static function overall(array $budget): string
     {
-        return match ($policy) {
-            'green' => [
-                'title' => 'Normal Development',
-                'description' => 'Budget gesund. Normale Feature-Entwicklung möglich.',
-                'actions' => [
-                    'Normale Release-Kadenz',
-                    'Experimente erlaubt',
-                    'Standard Review-Prozess',
-                ],
-            ],
-            'yellow' => [
-                'title' => 'Vorsicht',
-                'description' => 'Budget unter 50%. Erhöhte Aufmerksamkeit erforderlich.',
-                'actions' => [
-                    'Performance-Review für neue Features',
-                    'Keine großen Refactorings',
-                    'Täglicher Dashboard-Review',
-                ],
-            ],
-            'orange' => [
-                'title' => 'Performance-Fokus',
-                'description' => 'Budget kritisch. Priorität auf Stabilität.',
-                'actions' => [
-                    '50% Kapazität für Performance',
-                    'Nur kritische Features',
-                    'Extended Reviews erforderlich',
-                ],
-            ],
-            'red' => [
-                'title' => 'Feature Freeze',
-                'description' => 'Budget aufgebraucht. Nur Fixes erlaubt.',
-                'actions' => [
-                    'Keine neuen Features',
-                    'Nur P0/Security Fixes',
-                    'War Room Setup',
-                ],
-            ],
-            default => [
-                'title' => 'Unknown',
-                'description' => 'Policy nicht definiert',
-                'actions' => [],
-            ],
-        };
-    }
+        $order = ['red', 'orange', 'yellow', 'green'];
+        $policies = array_column($budget, 'policy');
 
-    /**
-     * Zählt Violations über Schwellenwert
-     */
-    private function countViolations(array $values, float $threshold): int
-    {
-        return count(array_filter($values, fn($v) => $v > $threshold));
-    }
-
-    /**
-     * Leeres Budget-Ergebnis wenn keine Daten
-     */
-    private function emptyBudgetResult(
-        \DateTimeImmutable $start,
-        \DateTimeImmutable $end
-    ): array {
-        return [
-            'remaining_percent' => 100.0,
-            'used_percent' => 0.0,
-            'policy' => 'green',
-            'violations' => ['lcp' => 0, 'cls' => 0, 'inp' => 0],
-            'total_samples' => 0,
-            'period_start' => $start->format('Y-m-d'),
-            'period_end' => $end->format('Y-m-d'),
-            'details' => [
-                'message' => 'No RUM data available',
-            ],
-        ];
-    }
-
-    /**
-     * Loggt Budget-Status
-     */
-    private function logBudgetStatus(
-        float $remaining,
-        string $policy,
-        array $violations
-    ): void {
-        $context = [
-            'remaining_percent' => $remaining,
-            'policy' => $policy,
-            'violations' => $violations,
-        ];
-
-        if ($policy === 'red') {
-            $this->logger->critical('Performance budget exhausted!', $context);
-        } elseif ($policy === 'orange') {
-            $this->logger->warning('Performance budget critical', $context);
-        } elseif ($policy === 'yellow') {
-            $this->logger->notice('Performance budget below 50%', $context);
-        } else {
-            $this->logger->info('Performance budget healthy', $context);
-        }
-    }
-
-    /**
-     * Gibt Trend im Vergleich zum Vormonat zurück
-     */
-    public function getBudgetTrend(): string
-    {
-        $current = $this->calculateRemainingBudget();
-
-        // Vormonat berechnen (vereinfacht)
-        $previousStart = new \DateTimeImmutable('-60 days');
-        $previousEnd = new \DateTimeImmutable('-30 days');
-        $previousMetrics = $this->rumRepository->getMetricsBetween($previousStart, $previousEnd);
-
-        if ($previousMetrics['total_samples'] === 0) {
-            return 'unknown';
+        foreach ($order as $policy) {
+            if (\in_array($policy, $policies, true)) {
+                return $policy;
+            }
         }
 
-        $previousViolations = [
-            'lcp' => $this->countViolations($previousMetrics['lcp'] ?? [], self::SLO_LCP_P75),
-            'cls' => $this->countViolations($previousMetrics['cls'] ?? [], self::SLO_CLS_P75),
-            'inp' => $this->countViolations($previousMetrics['inp'] ?? [], self::SLO_INP_P75),
-        ];
-
-        $previousRate = array_sum($previousViolations) / $previousMetrics['total_samples'];
-        $currentRate = array_sum($current['violations']) / max($current['total_samples'], 1);
-
-        $diff = $currentRate - $previousRate;
-
-        return match (true) {
-            $diff < -0.001 => 'improving',  // Weniger Violations
-            $diff > 0.001 => 'declining',   // Mehr Violations
-            default => 'stable',
-        };
+        return 'no-data';
     }
 }
