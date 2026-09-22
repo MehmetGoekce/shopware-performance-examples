@@ -10,9 +10,14 @@ Companion-Code zum Buch **"Shop-Performance in 30 Tagen"**
   und Anhang C verweisen hierher und liefern keine eigene Fassung.
 - `99-shopware.ini` - php.ini-Einstellungen fuer FPM
 - `99-shopware-cli.ini` - php.ini-Einstellungen fuer CLI
-- `shopware-fpm.conf` - PHP-FPM Pool-Konfiguration
-- `nginx-php-fpm.conf` - Nginx-Upstream plus Vorlage fuer die location-Bloecke
-- `nginx-shopware-vhost.conf` - vollstaendiger vHost, der diesen Upstream nutzt
+- `shopware-fpm.conf` - PHP-FPM Pool-Konfiguration.
+  **Die kanonische Pool-Vorlage des Companions.** Anhang C druckt sie ab und
+  liefert keine eigene Fassung.
+
+Den nginx-vHost liefert dieses Kapitel nicht selbst: Kanonisch ist
+`../anhang-c-konfigurationen/config/nginx-shopware.conf`. Kapitel 9 erklaert
+daraus den PHP-FPM-Teil - Upstream, `location ~ \.php$` und den
+Status-Listener auf `127.0.0.1:8080`.
 - `frankenphp-Caddyfile.example` - Evaluierungs-Skelett, kein Production-Setup
 
 ### scripts/
@@ -78,9 +83,7 @@ php -m 2>&1 | grep -E 'Zend OPcache|already loaded'
 # Damit rechnen (Vorgabewerte = Beispielserver des Buchs, 16 GB)
 ./scripts/calculate-max-children.sh -w 82
 
-# PHP-Einstellungen fuer die FPM-SAPI - NICHT auslassen: hier stehen u. a.
-# upload_max_filesize und post_max_size auf 128M. Ohne diese Datei bleibt es
-# bei PHPs Vorgabe 2M bzw. 8M, denn der Pool unten setzt beides nicht.
+# PHP-Einstellungen fuer die FPM-SAPI (Sessions, Input-Limits, Uploads)
 sudo cp config/99-shopware.ini /etc/php/8.3/fpm/conf.d/
 
 # Pool einspielen
@@ -88,11 +91,12 @@ sudo cp config/shopware-fpm.conf /etc/php/8.3/fpm/pool.d/shopware.conf
 sudo mkdir -p /var/log/php-fpm && sudo chown www-data:www-data /var/log/php-fpm
 sudo php-fpm8.3 -t && sudo systemctl restart php8.3-fpm
 
-# Webserver: Upstream global, vHost je Shop
-sudo cp config/nginx-php-fpm.conf /etc/nginx/conf.d/php-fpm.conf
-sudo cp config/nginx-shopware-vhost.conf /etc/nginx/sites-available/shopware
-sudo ln -s /etc/nginx/sites-available/shopware /etc/nginx/sites-enabled/
+# Webserver: der vHost aus Anhang C bringt den Upstream mit
+sudo cp ../anhang-c-konfigurationen/config/nginx-shopware.conf /etc/nginx/sites-available/shopware.conf
+sudo ln -s /etc/nginx/sites-available/shopware.conf /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
+# muss leer bleiben - sonst ist ein zweiter vHost fuer denselben Namen aktiv:
+sudo nginx -t 2>&1 | grep 'conflicting server name'
 
 # Erst jetzt den mitgelieferten Pool www.conf abschalten. Diese Suche muss
 # leer bleiben - sonst fragt nginx noch dessen Socket an (502):

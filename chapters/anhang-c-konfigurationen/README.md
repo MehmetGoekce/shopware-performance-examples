@@ -10,6 +10,7 @@ die Stelle, an der das zuerst auffaellt:
 | Thema | Datei |
 |---|---|
 | OPcache | `../09-php-performance/config/99-shopware-opcache.ini` |
+| PHP-FPM-Pool | `../09-php-performance/config/shopware-fpm.conf` |
 | Gzip | `../22-haeufigste-probleme/config/nginx-gzip.conf` |
 | Logrotate | `../22-haeufigste-probleme/config/logrotate.conf` |
 | Brotli | `../11-cdn-integration/config/nginx-brotli.conf` |
@@ -25,14 +26,19 @@ kanonische Vorlage und liefert keine zweite. Grund: Zwei Vorlagen auf einer
 Zieldatei ueberschreiben sich, und zwar lautlos — `php-fpm8.3 -t` und
 `nginx -t` melden dabei weiter Erfolg. OPcache lag deshalb bis September 2026
 doppelt vor (Kapitel 9 und Kapitel 22, beide nach
-`conf.d/99-shopware-opcache.ini`); kanonisch ist jetzt Kapitel 9.
+`conf.d/99-shopware-opcache.ini`); kanonisch ist jetzt Kapitel 9. Ebenso
+den PHP-FPM-Pool (Kapitel 9 und Anhang C, beide nach
+`pool.d/shopware.conf`, MEM-288) und den nginx-vHost (Kapitel 9 und Anhang C,
+beide `server_name shop.example.com` auf 443 - nginx ignoriert den zweiten mit
+einer Warnung, MEM-290). Kanonisch ist beim Pool Kapitel 9, das ihn erklaert;
+beim vHost dieser Anhang, denn Kapitel 9 erklaert nur dessen PHP-FPM-Teil.
+Das Gate dafuer ist `tests/Shell/pool-template-drift.bats`.
 
 ## Dateien
 
 | Datei | Ziel auf dem Server | Geprueft mit |
 |---|---|---|
-| `config/nginx-shopware.conf` | `/etc/nginx/sites-available/shopware.conf` | `nginx -t` (nginx 1.27.5) + Header- und ACME-Abfrage am laufenden nginx |
-| `config/php-fpm-pool.conf` | `/etc/php/8.3/fpm/pool.d/shopware.conf` | `php-fpm -t` gegen `php:8.3-fpm` (CI); FastCGI-Request (`cgi-fcgi`) von Hand auf `ubuntu:24.04` |
+| `config/nginx-shopware.conf` | `/etc/nginx/sites-available/shopware.conf` | `nginx -t` (nginx 1.27.5) + Header- und ACME-Abfrage am laufenden nginx; von Hand auf `ubuntu:24.04` (nginx 1.24, `listen 443 ssl http2`) mit dem Kapitel-9-Pool: Routing, Upload bis 128M (darueber 413), Status-Listener `127.0.0.1:8080` |
 | `config/mysql-shopware.cnf` | `/etc/mysql/mysql.conf.d/shopware.cnf` | `mysqld --validate-config` + Start von `mysql:8.0` auf frischem Datadir, `SHOW VARIABLES` und Groesse von `#innodb_redo` |
 | `config/supervisor-shopware.conf` | `/etc/supervisor/conf.d/shopware-worker.conf` | `supervisord -n`, alle drei Prozesse erreichen RUNNING |
 | `config/env.local.example` | `<shop>/.env.local` | im Testshop (Shopware 6.6.10.6) eingespielt, Shop antwortet mit 200, Keys in beiden Redis-Instanzen |
@@ -45,7 +51,6 @@ Verhaltens-Gate. Er faengt, was einen Dienst nicht starten laesst:
 | Schritt | Faengt | Faengt nicht |
 |---|---|---|
 | `nginx -t` + Laufzeitabfrage | Syntaxfehler, fehlende Direktiven, dazu die drei Fallen unten als echte HTTP-Antworten | semantische Fehler ausserhalb dieser drei Pruefungen, z. B. einen Socket-Pfad, der nicht zum FPM-Pool passt |
-| `php-fpm -t` | Tippfehler, unplausible `pm.*`-Kombinationen, fehlendes Log-Verzeichnis | ungueltige `php_value`-Werte (`memory_limit = 512Mib` geht durch) |
 | `mysqld --validate-config` | unbekannte Variablen und Tippfehler | Werte ausserhalb des gueltigen Bereichs (`instances = 999` geht durch) und **abgekuendigte** Direktiven — die Warnung MY-013907 erscheint erst beim echten Start |
 | `supervisord -n` | Parsefehler, `numprocs` ohne `process_name`, falscher PHP-Pfad, Programme, die nicht RUNNING erreichen | Tippfehler im Shopware-Befehl selbst: der Schritt stubt `php` und `bin/console` weg, ein `messenger:consume asyncc` besteht ihn |
 
