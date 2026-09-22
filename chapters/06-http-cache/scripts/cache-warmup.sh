@@ -10,8 +10,15 @@
 #     cache:warmup" wärmt nur den Symfony-Container-Cache, nicht die Seiten.
 #   - Gewärmt wird nur die Gast-Variante in der Standardwährung. Andere
 #     Währungen (Cookie sw-currency) bekommen eigene Cache-Einträge.
-#   - Nach "bin/console cache:clear" oder "cache:clear:http" ist der
-#     HTTP-Cache leer - Warmup danach laufen lassen.
+#   - Nach "bin/console cache:clear:http" ist der HTTP-Cache leer, nach
+#     "cache:clear" mit Filesystem-Cache oder Varnish auch (mit Redis nicht,
+#     siehe Kapitel 7) - Warmup danach laufen lassen.
+#   - Bei --parallel > 1 ruft das Skript alle URLs zweimal ab. Nach
+#     "cache:clear" sind die Tag-Versionen des Filesystem-Caches leer, und
+#     parallele erste Requests legen für dieselben Tags verschiedene Versionen
+#     an. Die Seiten mit der überschriebenen Version gelten beim nächsten
+#     Aufruf als ungültig (Test 6.6.10.6: 6-9 von 21 Seiten kalt, mit dem
+#     zweiten Durchgang 0). Der zweite Durchgang ist fast nur Cache-Treffer.
 #
 # Verwendung:
 #   ./cache-warmup.sh https://ihr-shop.ch
@@ -41,7 +48,8 @@ show_usage() {
     echo ""
     echo "Optionen:"
     echo "  --sitemap       URLs aus der Shopware-Sitemap laden (sitemap.xml und .xml.gz-Teile)"
-    echo "  --parallel N    Anzahl paralleler Requests (Standard: 2)"
+    echo "  --parallel N    Anzahl paralleler Requests (Standard: 2); ab 2 folgt ein"
+    echo "                  zweiter Durchgang, der nur Fehler ausgibt"
     echo "  --limit N       Maximale Anzahl URLs aus der Sitemap (Standard: 100)"
     echo ""
     echo "Beispiele:"
@@ -60,7 +68,8 @@ warmup_url() {
     ttfb=$(awk -v t="${result##* }" 'BEGIN { printf "%.0f", t * 1000 }')
 
     if [[ "${status}" == "200" ]]; then
-        echo -e "${GREEN}OK${NC}  ${url} (${ttfb} ms)"
+        # Im zweiten Durchgang nur Fehler ausgeben
+        [[ -n "${QUIET:-}" ]] || echo -e "${GREEN}OK${NC}  ${url} (${ttfb} ms)"
     else
         echo -e "${YELLOW}${status}${NC} ${url}"
     fi
@@ -127,6 +136,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+if ! [[ "${PARALLEL}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Fehler: --parallel braucht eine Zahl >= 1."
+    exit 1
+fi
+
 export -f warmup_url
 export GREEN YELLOW NC CURL_CMD
 
@@ -148,6 +162,12 @@ fi
 echo "URLs: $(echo "${urls}" | wc -l)"
 echo ""
 echo "${urls}" | xargs -P "${PARALLEL}" -I {} bash -c 'warmup_url "$@"' _ {}
+
+if [[ "${PARALLEL}" -gt 1 ]]; then
+    echo ""
+    echo "Zweiter Durchgang (parallele erste Aufrufe lassen nach cache:clear Seiten kalt)"
+    echo "${urls}" | QUIET=1 xargs -P "${PARALLEL}" -I {} bash -c 'warmup_url "$@"' _ {}
+fi
 
 echo ""
 echo "Nächster Schritt: ./cache-debug.sh ${BASE_URL}"

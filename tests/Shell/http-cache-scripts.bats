@@ -107,7 +107,9 @@ make_curl_stub() {
 url="${!#}"
 for arg in "$@"; do
     if [[ "$arg" == "%{http_code} %{time_starttransfer}" ]]; then
-        echo "200 0.010"
+        # Warmup-Aufruf: protokollieren, URLs aus $FIXTURES/fail liefern 503
+        echo "$url" >> "$FIXTURES/warm.log"
+        if grep -qxF "$url" "$FIXTURES/fail" 2>/dev/null; then echo "503 0.010"; else echo "200 0.010"; fi
         exit 0
     fi
 done
@@ -176,6 +178,60 @@ XML
     [[ "$output" == *"URLs: 2"* ]]
     [[ "$output" == *"OK"*"http://shop.test/p1"* ]]
     [[ "$output" != *"other.test"*"OK"* ]]
+}
+
+make_sitemap3() {
+    cat > "$FIXTURES/shop.test_sitemap.xml" <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<sitemapindex><sitemap><loc>http://shop.test/sitemap/a.xml.gz</loc></sitemap></sitemapindex>
+XML
+    printf '<urlset><url><loc>http://shop.test/p1</loc></url><url><loc>http://shop.test/p2</loc></url><url><loc>http://shop.test/p3</loc></url></urlset>' \
+        | gzip -c > "$FIXTURES/shop.test_sitemap_a.xml.gz"
+}
+
+# MEM-313: Nach cache:clear legen parallele erste Aufrufe verschiedene
+# Tag-Versionen an, ein Teil der Seiten ist danach kalt. Ab --parallel 2
+# ruft das Skript deshalb jede URL zweimal ab.
+@test "cache-warmup.sh fetches every URL twice with --parallel 2 and prints OK only once" {
+    make_curl_stub
+    make_sitemap3
+    CURL_CMD="$TMP/curl" run "$DIR/cache-warmup.sh" http://shop.test --sitemap --parallel 2
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Zweiter Durchgang"* ]]
+    for p in p1 p2 p3; do
+        [ "$(grep -cxF "http://shop.test/$p" "$FIXTURES/warm.log")" -eq 2 ]
+        [ "$(grep -c "OK.*http://shop.test/$p " <<< "$output")" -eq 1 ]
+    done
+    [ "$(wc -l < "$FIXTURES/warm.log")" -eq 6 ]
+}
+
+@test "cache-warmup.sh fetches every URL once with --parallel 1" {
+    make_curl_stub
+    make_sitemap3
+    CURL_CMD="$TMP/curl" run "$DIR/cache-warmup.sh" http://shop.test --sitemap --parallel 1
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"Zweiter Durchgang"* ]]
+    [ "$(wc -l < "$FIXTURES/warm.log")" -eq 3 ]
+    [ "$(sort -u "$FIXTURES/warm.log" | wc -l)" -eq 3 ]
+}
+
+@test "cache-warmup.sh second pass reports failed pages" {
+    make_curl_stub
+    make_sitemap3
+    echo "http://shop.test/p2" > "$FIXTURES/fail"
+    CURL_CMD="$TMP/curl" run "$DIR/cache-warmup.sh" http://shop.test --sitemap --parallel 2
+    [ "$status" -eq 0 ]
+    second="${output#*Zweiter Durchgang}"
+    [[ "$second" == *"503"*"http://shop.test/p2"* ]]
+    [[ "$second" != *"OK"* ]]
+}
+
+@test "cache-warmup.sh rejects --parallel values below 1 or not a number" {
+    for v in 0 x -1; do
+        run "$DIR/cache-warmup.sh" http://127.0.0.1:9 --parallel "$v"
+        [ "$status" -eq 1 ]
+        [[ "$output" == *"--parallel braucht eine Zahl"* ]]
+    done
 }
 
 # MEM-307: Das alte Root-Skript scripts/cache-warmup.sh leerte den Cache,
