@@ -15,7 +15,7 @@ jobs:
         php-version: ['8.2', '8.3']
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -28,7 +28,7 @@ jobs:
         run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
 
       - name: Cache Composer Dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ steps.composer-cache.outputs.dir }}
           key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
@@ -48,12 +48,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Install Dependencies
@@ -71,12 +71,12 @@ jobs:
     needs: [php, javascript]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Install Dependencies
@@ -91,7 +91,7 @@ jobs:
           BASE_URL: ${{ secrets.BASE_URL || 'http://localhost:3000' }}
 
       - name: Upload Playwright Report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: playwright-report
@@ -103,7 +103,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Compile chapter 6 VCL with the Shopware Varnish image
         run: |
@@ -118,7 +118,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Ein reiner Syntaxcheck sagt hier nichts: MySQL startet auch dann
       # sauber, wenn es die Datei gar nicht liest. Dieser Job startet den
@@ -267,7 +267,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # `php-fpm8.3 -t` reicht als Gate nicht: Es meldet auch dann Erfolg,
       # wenn OPcache gar nicht mehr geladen ist. Dieser Job startet den Pool
@@ -445,7 +445,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Run ShellCheck
         uses: ludeeus/action-shellcheck@master
@@ -459,7 +459,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Validate chapter 11 CDN header config
         run: |
@@ -533,7 +533,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Validate the Nginx vHost
         run: |
@@ -716,10 +716,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
+      # bats aus dem Ubuntu-Paket (1.10.0 auf 24.04) wie im lokalen Testimage;
+      # bats-core/bats-action nutzt intern noch actions/cache@v4 (node20)
       - name: Setup BATS
-        uses: bats-core/bats-action@2.0.0
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq bats && bats --version
 
       # plugin-scripts.bats (Kapitel 17) überspringt ohne php - hier
       # soll ein fehlendes php den Job rot machen, nicht still grün.
