@@ -121,7 +121,7 @@ Die folgenden API-Änderungen wurden dokumentiert (temporär ignoriert):
 #### JavaScript Unit Tests (81 tests)
 - [x] `analyze-experiment.test.js` - 22 tests (statistical analysis, CLI parsing)
 - [x] `coverage-analysis.test.js` - 27 tests (render-blocking, bundle analysis)
-- [x] `network-aware-images.test.js` - 23 tests (existing)
+- ~~`network-aware-images.test.js`~~ - entfernt mit MEM-276 (baute die Logik nach, statt die Datei zu laden); Kapitel-19-Snippets jetzt in `tests/JavaScript/mobile-snippets.test.js` und `tests/E2E/mobile-snippets.spec.ts`
 - [x] `config-validation.test.js` - 9 tests (existing)
 
 ### Phase 4: E2E & Integration Tests (Done)
@@ -129,13 +129,14 @@ Die folgenden API-Änderungen wurden dokumentiert (temporär ignoriert):
 **Status:** Playwright E2E tests + Twig Snapshots created
 
 #### Playwright E2E Tests
-- [x] `swipe-gestures.spec.ts` - Touch gesture detection, ProductGallery, SwipeToDelete
-- [x] `service-worker.spec.ts` - SW lifecycle, caching strategies, offline behavior
+- ~~`swipe-gestures.spec.ts`~~ - entfernt mit MEM-276 (Storefront-Galerie wischt schon ueber tiny-slider)
+- ~~`service-worker.spec.ts`~~ - entfernt mit MEM-276 (testete `fixtures/mock-sw.js`, nicht den Kapitel-SW; der SW des Plugins `MobilePerformance` ist im Dockware-Shop getestet)
+- [x] `mobile-snippets.spec.ts` - Kapitel 19: `yield-to-main.js`, `connection-hints.js` in Chromium und WebKit (MEM-276)
 - ~~`rum-tracker.spec.ts`~~ - entfernt mit MEM-275 (testete eine Kopie des Trackers im Fixture); RUM jetzt in `tests/JavaScript/rum-payload.test.js` und `tests/Unit/RumMonitoringTest.php`
 
 #### Test Fixtures
-- [x] `fixtures/swipe-gestures.html` - Touch gesture test page
-- [x] `fixtures/service-worker.html` - Service Worker test page
+- ~~`fixtures/swipe-gestures.html`, `fixtures/service-worker.html`, `fixtures/mock-sw.js`~~ - entfernt mit MEM-276
+- [x] `fixtures/mobile-snippets.html` - laedt die Kapitel-19-Snippets
 
 #### Twig Snapshot Tests (75 tests)
 - [x] 15 templates with snapshot verification

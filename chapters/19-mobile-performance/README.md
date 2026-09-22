@@ -1,194 +1,72 @@
-# Chapter 19: Mobile Performance
+# Kapitel 19: Mobile Performance
 
-Companion code for Chapter 19 of "Shop-Performance in 30 Tagen".
+Code-Beispiele für Woche 5 der 30-Tage-Roadmap. Getestet gegen Shopware 6.6.10.6 (Dockware, prod) mit Chromium und Lighthouse 13.5; die Snippets zusätzlich in WebKit.
 
-This chapter covers mobile performance optimization for Shopware 6, including Core Web Vitals, touch optimization, responsive images, Service Workers, and mobile checkout.
+## Dateien
 
-## The Mobile Performance Gap
+| Datei | Beschreibung |
+|-------|--------------|
+| `MobilePerformance/` | Plugin: Eingabefelder mit 16 px, Service Worker, Web App Manifest |
+| `MobilePerformance/src/Resources/app/storefront/src/scss/base.scss` | `.form-control`/`.form-select` auf 1rem (Shopware 6.6: 14 px) |
+| `MobilePerformance/src/Resources/sw/sw.js` | Service Worker: statische Theme-Dateien aus dem Cache, Offline-Seite, Navigation Preload |
+| `MobilePerformance/src/Controller/ServiceWorkerController.php` | liefert `sw.js` unter `/sw.js` aus (Scope = ganze Storefront) |
+| `MobilePerformance/src/Resources/views/storefront/base.html.twig` | registriert den Service Worker nach dem `load`-Event |
+| `MobilePerformance/src/Resources/views/storefront/layout/meta.html.twig` | bindet das Manifest ein |
+| `MobilePerformance/src/Resources/public/manifest.json` | Web App Manifest mit Beispiel-Icons |
+| `scripts/lighthouse-mobile.sh` | Lighthouse mobil, mehrere Läufe, Median und Spanne |
+| `snippets/yield-to-main.js` | Lange Aufgaben aufteilen (INP), mit Rückfall ohne `scheduler.yield` |
+| `snippets/connection-hints.js` | Datensparmodus/langsame Verbindung erkennen (nur Chromium) |
+| `snippets/art-direction.html` | `<picture>` mit anderem Motiv auf dem Handy, `width`/`height` je `<source>` |
 
-| Metric | Mobile | Desktop |
-|--------|--------|---------|
-| Traffic Share | 75% | 25% |
-| Conversion Rate | 2.85% | 3.85% |
-| Cart Abandonment | 85.65% | 73.76% |
-
-**Every 0.1s improvement = 8.4% higher conversion rate.**
-
-## Directory Structure
-
-```
-chapters/19-mobile-performance/
-├── config/
-│   └── manifest.json              # PWA Web App Manifest
-├── scripts/
-│   ├── mobile-audit.sh            # Quick mobile audit
-│   └── lighthouse-mobile.sh       # Lighthouse mobile test
-├── src/
-│   ├── ServiceWorker/
-│   │   ├── sw.js                  # Service Worker with caching
-│   │   └── register.js            # SW registration & updates
-│   ├── TouchOptimization/
-│   │   ├── touch-targets.css      # Touch-friendly sizes
-│   │   └── swipe-gestures.js      # Swipe detection
-│   └── ResponsiveImages/
-│       ├── responsive-picture.html.twig  # Twig template
-│       └── network-aware-images.js       # Adaptive loading
-├── templates/
-│   └── mobile-checkout.html.twig  # One-page mobile checkout
-└── README.md
-```
-
-## Quick Start
-
-### 1. Run Mobile Audit
+## Installation des Plugins
 
 ```bash
-./scripts/mobile-audit.sh https://your-shop.com
+cp -r MobilePerformance <shopware>/custom/plugins/
+cd <shopware>
+bin/console plugin:refresh
+bin/console plugin:install --activate MobilePerformance
+bin/console assets:install
+bin/console theme:compile
+bin/console cache:clear
 ```
 
-### 2. Run Lighthouse Mobile Test
+Im Manifest Name, Farben und Icons durch die eigenen ersetzen. Liegt der Shop in einem Unterordner, `start_url` und `scope` anpassen.
 
-```bash
-./scripts/lighthouse-mobile.sh https://your-shop.com --iterations=3
-```
+## Was gemessen wurde
 
-### 3. Add Service Worker
+Test-Shop, Demo-Daten, Chromium:
 
-```html
-<!-- In your base template -->
-<script type="module" src="/path/to/register.js"></script>
-```
+| Prüfung | Ergebnis |
+|---------|----------|
+| Schriftgrösse der Formularfelder, ab Werk / mit Plugin | 14 px / 16 px |
+| Touch-Ziele unter 24 × 24 px (390 px Breite, Start, Kategorie, Produkt, Login) | nur Skip-Link, Breadcrumb- und Textlinks, Checkbox mit Label |
+| `/sw.js` | 200, `application/javascript`, `Cache-Control: no-cache` |
+| Service Worker | Scope `/`, aktiv, Navigation Preload an |
+| Cache nach drei Seitenaufrufen | 28 Einträge, alle unter `/theme/` oder `/bundles/`, keine HTML-Seite |
+| Offline: Seitenaufruf / CSS | Offline-Seite / CSS aus dem Cache |
+| Manifest | keine Fehler, keine Installability-Fehler (Chromium, `Page.getAppManifest`) |
+| `lighthouse-mobile.sh`, Startseite, 5 Läufe | Score 89 (89–90), LCP 2924 ms (2882–2932), TBT 196 ms (172–209), CLS 0,075 |
 
-### 4. Add PWA Manifest
+Die Lighthouse-Werte sind eine Simulation (Lantern) auf einer Maschine mit weiteren Containern, nur als Beispiel für die Ausgabe.
 
-```html
-<link rel="manifest" href="/manifest.json">
-<meta name="theme-color" content="#1a1a1a">
-```
+## Tests
 
-## Key Components
+- `tests/Shell/lighthouse-mobile.bats` – Aufruf je Lauf (Stub protokolliert die Argumente), Median/Spanne bei gerader und ungerader Laufzahl, INP nicht als Messwert; braucht `jq`.
+- `tests/JavaScript/mobile-snippets.test.js` – `yieldToMain` mit und ohne `scheduler.yield`, Reihenfolge Rückmeldung → Arbeit, `prefersReducedData`.
+- `tests/E2E/mobile-snippets.spec.ts` – dieselben Snippets in Chromium, Pixel 5 und iPhone 12 (WebKit).
+- `tests/JavaScript/config-validation.test.js` – Manifest: Pflichtfelder, ein `purpose` je Icon, Icon-Dateien vorhanden.
+- Plugin im Dockware-Shop (6.6.10.6): siehe Tabelle oben.
 
-### Service Worker (`sw.js`)
+## Weiter in anderen Kapiteln
 
-Implements multiple caching strategies:
+- Core Web Vitals messen, LCP-Bild vorladen (`imagesrcset`): Kapitel 3 und 4
+- Bildgrössen je Media-Ordner, `sizes` im Listing: Kapitel 4
+- Felddaten (INP) mit RUM: Kapitel 12
 
-| Strategy | Use Case |
-|----------|----------|
-| Cache First | CSS, JS, fonts |
-| Network First | API calls |
-| Stale While Revalidate | Images |
-| Network Only | Checkout, cart |
+## Quellen
 
-### Touch Optimization
-
-Ensures all interactive elements meet accessibility guidelines:
-
-- WCAG 2.2 (AA): 24×24 CSS pixels minimum
-- WCAG 2.1 (AAA): 44×44 CSS pixels minimum
-- Material Design: 48×48 dp recommended
-
-```css
-/* Include in your theme */
-@import 'touch-targets.css';
-```
-
-### Swipe Gestures
-
-```javascript
-import { SwipeGesture, ProductGallery } from './swipe-gestures.js';
-
-// Product gallery with swipe
-const gallery = new ProductGallery(element, images, {
-    loop: true,
-    autoplay: false
-});
-```
-
-### Responsive Images
-
-```twig
-{% sw_include '@Storefront/component/responsive-picture.html.twig' with {
-    media: product.cover.media,
-    alt: product.name,
-    lazy: true,
-    priority: false,
-    sizes: '(max-width: 480px) 100vw, 50vw'
-} %}
-```
-
-### Network-Aware Loading
-
-Adapts image quality based on connection:
-
-- 4G: Full quality
-- 3G: 70% quality
-- 2G/Slow: 40% quality
-- Data Saver: Minimal
-
-```javascript
-import { NetworkAwareImages } from './network-aware-images.js';
-NetworkAwareImages.init();
-```
-
-### Mobile Checkout
-
-One-page checkout with:
-
-- 37% higher conversion vs multi-page
-- Accordion sections
-- Touch-optimized inputs (48px)
-- Sticky order summary
-- Express checkout options
-
-## Core Web Vitals Targets
-
-| Metric | Good | Needs Work | Poor |
-|--------|------|------------|------|
-| LCP | ≤2.5s | 2.5-4s | >4s |
-| INP | ≤200ms | 200-500ms | >500ms |
-| CLS | ≤0.1 | 0.1-0.25 | >0.25 |
-
-## Mobile-First Indexing Checklist
-
-Since July 2024, Google uses mobile-only indexing:
-
-- [ ] Same content on mobile and desktop
-- [ ] Viewport meta tag with `width=device-width`
-- [ ] No `user-scalable=no` (accessibility)
-- [ ] Touch targets ≥44px
-- [ ] Font size ≥16px for inputs
-- [ ] No content hidden only on mobile
-- [ ] Same structured data on both
-
-## Performance Tips
-
-1. **Images**: Use srcset + sizes, serve WebP/AVIF
-2. **Touch**: Minimum 44×44px touch targets
-3. **Checkout**: One-page, guest checkout, express options
-4. **Fonts**: Use `font-display: swap`
-5. **JS**: Defer non-critical, use code splitting
-6. **Service Worker**: Cache static assets, network-first for API
-
-## Testing
-
-### Chrome DevTools
-
-1. Open DevTools (F12)
-2. Toggle Device Toolbar (Ctrl+Shift+M)
-3. Select mobile device preset
-4. Enable CPU throttling (4x slowdown)
-5. Enable network throttling (3G)
-
-### Real Device Testing
-
-1. Enable USB debugging on Android
-2. Connect device via USB
-3. Open `chrome://inspect` in Chrome
-4. Find your device and click "Inspect"
-
-## Resources
-
-- [Google Mobile-First Indexing](https://developers.google.com/search/docs/crawling-indexing/mobile/mobile-sites-mobile-first-indexing)
-- [Core Web Vitals](https://web.dev/articles/vitals)
-- [WCAG Touch Target Size](https://www.w3.org/WAI/WCAG21/Understanding/target-size.html)
-- [Service Worker Strategies](https://developer.chrome.com/docs/workbox/caching-strategies-overview/)
+- [web.dev: Core Web Vitals Schwellenwerte](https://web.dev/articles/defining-core-web-vitals-thresholds)
+- [MDN: Service Worker API](https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API)
+- [MDN: scheduler.yield()](https://developer.mozilla.org/en-US/docs/Web/API/Scheduler/yield)
+- [MDN: Network Information API](https://developer.mozilla.org/en-US/docs/Web/API/Network_Information_API)
+- [web.dev: Maskable icons](https://web.dev/articles/maskable-icon)

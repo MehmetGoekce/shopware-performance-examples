@@ -2,7 +2,7 @@
  * Tests for JSON Configuration Files
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -12,7 +12,7 @@ const rootDir = resolve(__dirname, '../..');
 describe('PWA Manifest Validation', () => {
     const manifestPath = resolve(
         rootDir,
-        'chapters/19-mobile-performance/config/manifest.json'
+        'chapters/19-mobile-performance/MobilePerformance/src/Resources/public/manifest.json'
     );
 
     let manifest;
@@ -59,6 +59,15 @@ describe('PWA Manifest Validation', () => {
             expect(icon).toHaveProperty('src');
             expect(icon).toHaveProperty('sizes');
             expect(icon).toHaveProperty('type');
+        });
+    });
+
+    it('should not combine purposes like "any maskable" and ship every icon file', () => {
+        if (!manifest || !manifest.icons) return;
+
+        manifest.icons.forEach((icon) => {
+            expect((icon.purpose || 'any').split(' ')).toHaveLength(1);
+            expect(existsSync(resolve(dirname(manifestPath), icon.src))).toBe(true);
         });
     });
 
