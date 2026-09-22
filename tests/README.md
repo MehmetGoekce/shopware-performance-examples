@@ -132,12 +132,11 @@ Die folgenden API-Änderungen wurden dokumentiert (temporär ignoriert):
 #### Playwright E2E Tests
 - [x] `swipe-gestures.spec.ts` - Touch gesture detection, ProductGallery, SwipeToDelete
 - [x] `service-worker.spec.ts` - SW lifecycle, caching strategies, offline behavior
-- [x] `rum-tracker.spec.ts` - Web Vitals collection, analytics integration
+- ~~`rum-tracker.spec.ts`~~ - entfernt mit MEM-275 (testete eine Kopie des Trackers im Fixture); RUM jetzt in `tests/JavaScript/rum-payload.test.js` und `tests/Unit/RumMonitoringTest.php`
 
 #### Test Fixtures
 - [x] `fixtures/swipe-gestures.html` - Touch gesture test page
 - [x] `fixtures/service-worker.html` - Service Worker test page
-- [x] `fixtures/rum-tracker.html` - RUM tracker test page
 
 #### Twig Snapshot Tests (75 tests)
 - [x] 15 templates with snapshot verification
