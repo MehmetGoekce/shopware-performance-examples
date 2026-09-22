@@ -6,8 +6,9 @@
  #   src/Resources/views/storefront/layout/meta.html.twig
  #
  # Block layout_head_javascript_tracking ist Shopwares Platz fuer Tracking
- # im <head>. parent() behaelt die eingebaute Google-Analytics-Anbindung
- # samt Consent-Mode-Vorgabe (alles «denied», solange keine Einwilligung).
+ # im <head>. parent() behaelt die eingebaute Google-Analytics-Anbindung.
+ # Die Consent-Mode-Signale fuer Google-Tags setzt Shopware nur vollstaendig,
+ # wenn diese Anbindung am Verkaufskanal aktiv ist (Kapitel 21, Schritt 4).
  #
  # Ablauf im Browser – die Seite selbst ist fuer alle Besucher gleich und
  # darf deshalb im HTTP-Cache liegen:
@@ -39,8 +40,8 @@
 
         {% if usePartytown %}
             {# lib muss ein Pfad sein, der mit / beginnt: asset() liefert eine #}
-            {# absolute URL, damit startet Partytown nicht (nur eine Warnung in #}
-            {# der Konsole). Ohne debug: false laedt es aus lib/debug/. #}
+            {# absolute URL, damit startet Partytown nicht, ohne jede Meldung in #}
+            {# der Konsole. debug: false ist die Vorgabe, hier nur ausdruecklich. #}
             {% set partytownLib = app.request.basePath ~ '/bundles/thirdpartyscripts/partytown/' %}
             <script>
                 partytown = {

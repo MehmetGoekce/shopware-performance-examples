@@ -41,6 +41,7 @@ namespace Memotech\ShopwarePerformance\Tests\Unit {
                 array_column($groups[1]['entries'], 'cookie')
             );
             self::assertSame('1', $groups[1]['entries'][1]['value']);
+        self::assertSame('30', $groups[1]['entries'][1]['expiration']);
             self::assertSame(['session-'], array_column($groups[0]['entries'], 'cookie'));
             self::assertSame(['google-ads-enabled'], array_column($groups[2]['entries'], 'cookie'));
         }

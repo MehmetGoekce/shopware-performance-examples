@@ -1,6 +1,6 @@
 # Kapitel 21: Third-Party Scripts & Tag Management
 
-Code-Beispiele für Woche 5 der 30-Tage-Roadmap. Getestet gegen Shopware 6.6.10.6 (Dockware, prod) mit Chromium; Blocknamen, Event und Twig-Variablen am Quelltext von 6.7.2.2 geprüft.
+Code-Beispiele für Woche 5 der 30-Tage-Roadmap. Getestet gegen Shopware 6.6.10.6 (Dockware, prod) mit Chromium; Blocknamen, Event und Twig-Variablen am Quelltext von 6.7.2.2 geprüft, Consent Mode zusätzlich live auf 6.7.2.2 (verhält sich dort anders, siehe unten).
 
 ## Dateien
 
@@ -43,18 +43,22 @@ Die Seite ist für alle Besucher gleich und darf im HTTP-Cache liegen. Entschied
 
 Chromium, Startseite, fremde Hosts gestubbt, je ein Lauf.
 
-Consent Mode: Shopware setzt vor allem anderen `gtag('consent', 'default', …)` mit `analytics_storage` und `ad_storage` aus den eigenen Cookies `google-analytics-enabled` und `google-ads-enabled`. Die Tags im GTM-Container sehen diese Werte. Die Einwilligung für GTM selbst (`gtm-enabled`) setzt sie nicht.
+Consent Mode: Shopware setzt vor den Tracking-Skripten `gtag('consent', 'default', …)` mit `analytics_storage` und `ad_storage` aus den eigenen Cookies `google-analytics-enabled` und `google-ads-enabled`, nach der Zustimmung `gtag('consent', 'update', …)`. Die Einwilligung für GTM selbst (`gtm-enabled`) setzt keinen dieser Werte. Vollständig ist das nur mit **aktiver** Google-Analytics-Anbindung am Verkaufskanal:
+
+| Shopware | GA-Anbindung aus (gemessen nach «Alle akzeptieren») |
+|----------|------------------------------------------------------|
+| 6.6.10.6 | Vorgabe `denied`, kein `update`; die Einträge `google-analytics-enabled`/`google-ads-enabled` fehlen im Banner (`CookieController`). Google-Tags im Container bleiben `denied` |
+| 6.7.2.2 | gar keine Vorgabe (`component_head_analytics_gtag_consent` nur bei aktiver Anbindung). Google-Tags im Container laufen ohne Consent-Signale |
+
+Wer Consent Mode für Tags im Container braucht, lässt die GA-Anbindung aktiv und entfernt ein GA4-Tag aus dem Container (sonst zählt GA4 doppelt).
 
 Widerruf: Shopware löscht `gtm-enabled`. Ein schon geladener Container läuft bis zum nächsten Seitenaufruf weiter, Cookies der Tags bleiben liegen.
 
-Ist Shopwares eigene Google-Analytics-Anbindung aktiv und der GTM-Container enthält ebenfalls ein GA4-Tag, zählt GA4 doppelt. Eins von beiden abschalten.
+Ab 6.7 lädt Shopwares GA-Anbindung selbst `gtm.js`, wenn die Tracking-ID mit `GTM-` beginnt (hinter `google-analytics-enabled`). Das Plugin brauchen Sie dann nur für die Verzögerung bei Wiederkehrern, Partytown oder einen eigenen Banner-Eintrag.
 
 ## Partytown
 
-`usePartytown` führt `gtm.js` in einem Web Worker aus. Zwei Fallen, beide gemessen:
-
-- `partytown.lib` muss ein Pfad sein, der mit `/` beginnt. Shopwares `asset()` liefert eine absolute URL; damit startet Partytown nicht und meldet nur eine Warnung in der Konsole.
-- Ohne `debug: false` lädt Partytown seine Dateien aus `lib/debug/`.
+`usePartytown` führt `gtm.js` in einem Web Worker aus. Eine Falle, gemessen: `partytown.lib` muss ein Pfad sein, der mit `/` beginnt. Shopwares `asset()` liefert eine absolute URL; damit startet Partytown nicht, ohne jede Meldung in der Konsole (im Netzwerk-Tab fehlt `partytown-sw.js`). `debug: false` ist die Vorgabe (`lib/debug/` nur mit `debug: true`), der Loader setzt es nur ausdrücklich.
 
 Die Dateien müssen von derselben Domain kommen wie die Seite (Service Worker). Liegen die Bundles auf einem CDN (`shopware.filesystem.asset`), funktioniert das nicht.
 
