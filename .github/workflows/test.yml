@@ -291,7 +291,7 @@ jobs:
             cp /code/chapters/09-php-performance/config/99-shopware-opcache.ini /etc/php/8.3/fpm/conf.d/
             mkdir -p /var/log/php-fpm && chown www-data:www-data /var/log/php-fpm
 
-            # MEM-298: Kapitel 9, Anhang C und beide Vorlagen begruenden das
+            # MEM-298: Kapitel 9, Anhang C und die Pool-Vorlage begruenden das
             # Abschalten von www.conf mit dessen Vorgaben - zwei Worker im
             # Leerlauf, hoechstens fuenf. Aendert das Paket sie, stimmt der Satz nicht mehr.
             WWW=/etc/php/8.3/fpm/pool.d/www.conf
@@ -300,7 +300,7 @@ jobs:
               || { echo "www.conf hat nicht mehr dynamic/5/2 - Kapitel 9 und Anhang C nachziehen"; exit 1; }
             echo "ok: www.conf ab Werk dynamic, max 5, start 2"
 
-            # MEM-299: Kapitel 9, Anhang C und beide Vorlagen schalten www.conf
+            # MEM-299: Kapitel 9, Anhang C und die Pool-Vorlage schalten www.conf
             # per mv auf www.conf.disabled ab. Das traegt nur, solange
             # php-fpm.conf allein pool.d/*.conf einliest - und solange ein
             # Reinstall die Datei nicht zurueckbringt.

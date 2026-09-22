@@ -161,5 +161,6 @@ fi
 echo ""
 echo "Diese Rechnung ist ein Startwert, kein Ergebnis."
 echo "Pruefen Sie danach die Statusseite des Pools:"
-echo "  curl -s http://127.0.0.1:8080/fpm-status | grep -E 'listen queue|max children'"
-echo "'max children reached' darf nie ueber 0 stehen, 'listen queue' nie dauerhaft."
+echo "  curl -s http://127.0.0.1:8081/fpm-status | grep 'max children'"
+echo "'max children reached' darf nicht steigen. 'listen queue' meldet FPM nur bei"
+echo "TCP; auf dem Unix-Socket der Vorlage steht es immer auf 0."

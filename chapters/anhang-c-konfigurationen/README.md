@@ -27,8 +27,8 @@ Zieldatei ueberschreiben sich, und zwar lautlos — `php-fpm8.3 -t` und
 `nginx -t` melden dabei weiter Erfolg. OPcache lag deshalb bis September 2026
 doppelt vor (Kapitel 9 und Kapitel 22, beide nach
 `conf.d/99-shopware-opcache.ini`); kanonisch ist jetzt Kapitel 9. Ebenso
-den PHP-FPM-Pool (Kapitel 9 und Anhang C, beide nach
-`pool.d/shopware.conf`, MEM-288) und den nginx-vHost (Kapitel 9 und Anhang C,
+doppelt lagen der PHP-FPM-Pool (Kapitel 9 und Anhang C, beide nach
+`pool.d/shopware.conf`, MEM-288) und der nginx-vHost (Kapitel 9 und Anhang C,
 beide `server_name shop.example.com` auf 443 - nginx ignoriert den zweiten mit
 einer Warnung, MEM-290). Kanonisch ist beim Pool Kapitel 9, das ihn erklaert;
 beim vHost dieser Anhang, denn Kapitel 9 erklaert nur dessen PHP-FPM-Teil.
@@ -38,7 +38,7 @@ Das Gate dafuer ist `tests/Shell/pool-template-drift.bats`.
 
 | Datei | Ziel auf dem Server | Geprueft mit |
 |---|---|---|
-| `config/nginx-shopware.conf` | `/etc/nginx/sites-available/shopware.conf` | `nginx -t` (nginx 1.27.5) + Header- und ACME-Abfrage am laufenden nginx; von Hand auf `ubuntu:24.04` (nginx 1.24, `listen 443 ssl http2`) mit dem Kapitel-9-Pool: Routing, Upload bis 128M (darueber 413), Status-Listener `127.0.0.1:8080` |
+| `config/nginx-shopware.conf` | `/etc/nginx/sites-available/shopware.conf` | `nginx -t` (nginx 1.27.5) + Header- und ACME-Abfrage am laufenden nginx; von Hand auf `ubuntu:24.04` (nginx 1.24, `listen 443 ssl http2`) mit dem Kapitel-9-Pool: Routing, Upload bis 128M (darueber 413), Status-Listener `127.0.0.1:8081` |
 | `config/mysql-shopware.cnf` | `/etc/mysql/mysql.conf.d/shopware.cnf` | `mysqld --validate-config` + Start von `mysql:8.0` auf frischem Datadir, `SHOW VARIABLES` und Groesse von `#innodb_redo` |
 | `config/supervisor-shopware.conf` | `/etc/supervisor/conf.d/shopware-worker.conf` | `supervisord -n`, alle drei Prozesse erreichen RUNNING |
 | `config/env.local.example` | `<shop>/.env.local` | im Testshop (Shopware 6.6.10.6) eingespielt, Shop antwortet mit 200, Keys in beiden Redis-Instanzen |
@@ -114,6 +114,6 @@ laeuft — auf dieser Maschine waeren das 11 GB und der Server wuerde swappen.
 
 Geprueft am 2026-09-19 gegen Shopware 6.6.10.6 (`dockware/dev:6.6.10.6`),
 PHP 8.3.23, MySQL 8.0.46, Redis 7.4, nginx 1.27.5 und supervisor 4.3.0.
-Gegen nginx 1.24.0 wurde nur gegengeprueft, dass `http2 on;` dort nicht
-existiert — die Vorlage laeuft auf 1.24 erst nach der im Kopf beschriebenen
-Anpassung. Vollstaendige Matrix: `../../COMPATIBILITY.md`.
+Gegen nginx 1.24.0 (ubuntu:24.04) lief die Vorlage am 2026-09-22 nach der
+im Kopf beschriebenen http2-Anpassung zusammen mit dem Kapitel-9-Pool
+(MEM-290): Routing, Upload-Grenze, Status-Listener, Header, ACME. Vollstaendige Matrix: `../../COMPATIBILITY.md`.

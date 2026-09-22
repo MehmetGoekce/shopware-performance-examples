@@ -13,12 +13,12 @@ Companion-Code zum Buch **"Shop-Performance in 30 Tagen"**
 - `shopware-fpm.conf` - PHP-FPM Pool-Konfiguration.
   **Die kanonische Pool-Vorlage des Companions.** Anhang C druckt sie ab und
   liefert keine eigene Fassung.
+- `frankenphp-Caddyfile.example` - Evaluierungs-Skelett, kein Production-Setup
 
 Den nginx-vHost liefert dieses Kapitel nicht selbst: Kanonisch ist
 `../anhang-c-konfigurationen/config/nginx-shopware.conf`. Kapitel 9 erklaert
 daraus den PHP-FPM-Teil - Upstream, `location ~ \.php$` und den
-Status-Listener auf `127.0.0.1:8080`.
-- `frankenphp-Caddyfile.example` - Evaluierungs-Skelett, kein Production-Setup
+Status-Listener auf `127.0.0.1:8081`.
 
 ### scripts/
 - `opcache-status.php` - OPcache-Monitoring (gehaertet)
@@ -93,10 +93,18 @@ sudo php-fpm8.3 -t && sudo systemctl restart php8.3-fpm
 
 # Webserver: der vHost aus Anhang C bringt den Upstream mit
 sudo cp ../anhang-c-konfigurationen/config/nginx-shopware.conf /etc/nginx/sites-available/shopware.conf
-sudo ln -s /etc/nginx/sites-available/shopware.conf /etc/nginx/sites-enabled/
+# Vorher in der Datei anpassen: server_name, root, ssl_certificate(_key).
+# Das Zertifikat muss existieren, sonst "cannot load certificate".
+# Nur nginx < 1.25.1 (Ubuntu 22.04/24.04): http2 an beide listen-Zeilen
+sudo sed -i -e '/^[[:space:]]*http2 on;/d' \
+  -e 's/^\([[:space:]]*listen .*443 ssl\);/\1 http2;/' \
+  /etc/nginx/sites-available/shopware.conf
+sudo ln -sf /etc/nginx/sites-available/shopware.conf /etc/nginx/sites-enabled/
+# Nach einer frueheren Fassung dieses Kapitels: alten vHost und Upstream weg
+#   sudo rm -f /etc/nginx/sites-enabled/shopware /etc/nginx/conf.d/php-fpm.conf
+# muss leer bleiben - sonst Abbruch oder ein zweiter vHost fuer denselben Namen:
+sudo nginx -t 2>&1 | grep -E 'emerg|conflicting server name'
 sudo nginx -t && sudo systemctl reload nginx
-# muss leer bleiben - sonst ist ein zweiter vHost fuer denselben Namen aktiv:
-sudo nginx -t 2>&1 | grep 'conflicting server name'
 
 # Erst jetzt den mitgelieferten Pool www.conf abschalten. Diese Suche muss
 # leer bleiben - sonst fragt nginx noch dessen Socket an (502):
@@ -105,7 +113,7 @@ sudo mv /etc/php/8.3/fpm/pool.d/www.conf /etc/php/8.3/fpm/pool.d/www.conf.disabl
 sudo php-fpm8.3 -t && sudo systemctl restart php8.3-fpm
 
 # Gegenprobe: die Statusseite muss von FPM kommen, nicht aus dem Shop
-curl -s http://127.0.0.1:8080/fpm-status | head -3
+curl -s http://127.0.0.1:8081/fpm-status | head -3
 ```
 
 Zwei Dinge, die sonst schiefgehen:

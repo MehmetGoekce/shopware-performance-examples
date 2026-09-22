@@ -7,8 +7,9 @@
  * Empfohlenes Setup:
  *   1. Ablage AUSSERHALB von public/ (z.B. /var/www/shopware/private/opcache-status.php),
  *      damit das Script nicht direkt via HTTP erreichbar ist. Wenn ein
- *      HTTP-Endpoint gebraucht wird, dann ueber eine eigene Location mit
- *      Quell-IP-Beschraenkung:
+ *      HTTP-Endpoint gebraucht wird, dann ueber eine eigene Location im
+ *      Loopback-Server 127.0.0.1:8081 des vHosts aus Anhang C, zusaetzlich
+ *      mit Quell-IP-Beschraenkung:
  *        location = /opcache-status {
  *            allow 127.0.0.1; deny all;
  *            include fastcgi_params;
