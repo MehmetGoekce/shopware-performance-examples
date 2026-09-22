@@ -38,7 +38,7 @@ Das Gate dafuer ist `tests/Shell/pool-template-drift.bats`.
 
 | Datei | Ziel auf dem Server | Geprueft mit |
 |---|---|---|
-| `config/nginx-shopware.conf` | `/etc/nginx/sites-available/shopware.conf` | `nginx -t` (nginx 1.27.5) + Header- und ACME-Abfrage am laufenden nginx; von Hand auf `ubuntu:24.04` (nginx 1.24, `listen 443 ssl http2`) mit dem Kapitel-9-Pool: Routing, Upload bis 128M (darueber 413), Status-Listener `127.0.0.1:8081` |
+| `config/nginx-shopware.conf` | `/etc/nginx/sites-available/shopware.conf` | `nginx -t` (nginx 1.27.5) + Header- und ACME-Abfrage am laufenden nginx; von Hand auf `ubuntu:24.04` (nginx 1.24, `listen 443 ssl http2`) mit dem Kapitel-9-Pool: Routing, Upload bis 128M (darueber 413), Status-Listener `127.0.0.1:8081`; dasselbe in CI mit `tests/Integration/pool-vhost-boot.sh` |
 | `config/mysql-shopware.cnf` | `/etc/mysql/mysql.conf.d/shopware.cnf` | `mysqld --validate-config` + Start von `mysql:8.0` auf frischem Datadir, `SHOW VARIABLES` und Groesse von `#innodb_redo` |
 | `config/supervisor-shopware.conf` | `/etc/supervisor/conf.d/shopware-worker.conf` | `supervisord -n`, alle drei Prozesse erreichen RUNNING |
 | `config/env.local.example` | `<shop>/.env.local` | im Testshop (Shopware 6.6.10.6) eingespielt, Shop antwortet mit 200, Keys in beiden Redis-Instanzen |

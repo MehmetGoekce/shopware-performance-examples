@@ -7,7 +7,7 @@ This directory contains all tests for the Shopware Performance Examples.
 | Directory | Framework | Description |
 |-----------|-----------|-------------|
 | `Unit/` | PHPUnit | PHP unit tests |
-| `Integration/` | PHPUnit | Shopware integration tests |
+| `Integration/` | PHPUnit; `pool-vhost-boot.sh` (Bash, CI-Job `php-fpm-pool`) | Shopware integration tests; Kapitel-9-Pool und Anhang-C-vHost zusammen gebootet (MEM-289) |
 | `JavaScript/` | Vitest | Node.js tests |
 | `E2E/` | Playwright | Browser tests |
 | `Shell/` | BATS | Shell script tests |

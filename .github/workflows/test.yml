@@ -444,6 +444,14 @@ jobs:
             echo "ok: --reinstall hilft nicht, cp + rm aus dem Buch laden OPcache wieder (FPM und CLI, ohne Warnung)"
           '
 
+      # MEM-289: Pool, 99-shopware.ini und der vHost aus Anhang C zusammen,
+      # mit echten Requests durch nginx 1.24 - Werte, Upload-Grenze, http2
+      # nach dem sed aus dem vHost-Kopf, Status auf 127.0.0.1:8081, ein
+      # Cache-Control - plus der Vorrang zweier [shopware]-Dateien (MEM-292).
+      # Als eigenes Skript, damit es lokal genauso laeuft (podman run ...).
+      - name: Boot pool and vHost together and assert real answers
+        run: docker run --rm -v "$PWD:/code:ro" ubuntu:24.04 bash /code/tests/Integration/pool-vhost-boot.sh
+
   shellcheck:
     name: ShellCheck
     runs-on: ubuntu-24.04
