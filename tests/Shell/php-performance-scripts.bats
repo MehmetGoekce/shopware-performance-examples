@@ -443,14 +443,23 @@ fliesstext() {
     [ "$output" -ge 1 ]
 }
 
-@test "die nginx-Vorlage enthaelt eine eigene Location fuer die Statusseite" {
-    # Ohne sie landet /fpm-status per try_files in der Anwendung.
-    run grep -c 'location = /fpm-status' "$CONFIG/nginx-php-fpm.conf"
-    [ "$output" -ge 1 ]
+@test "der vHost hat aktive Locations fuer Status und Ping auf dem Loopback" {
+    # Ohne sie landet /fpm-status per try_files in der Anwendung. MEM-289:
+    # Der alte Test griff eine auskommentierte Zeile in nginx-php-fpm.conf
+    # und waere auch ohne die Bloecke gruen geblieben. Seit MEM-290 liegt
+    # der vHost nur noch in Anhang C; gezaehlt werden nur aktive Zeilen.
+    local vhost="./chapters/anhang-c-konfigurationen/config/nginx-shopware.conf"
+    run grep -cE '^[[:space:]]*location = /fpm-status \{' "$vhost"
+    [ "$output" -eq 1 ]
+    run grep -cE '^[[:space:]]*location = /fpm-ping \{' "$vhost"
+    [ "$output" -eq 1 ]
+    run grep -cE '^[[:space:]]*listen 127\.0\.0\.1:8080;' "$vhost"
+    [ "$output" -eq 1 ]
 }
 
-@test "die nginx-Vorlage setzt kein internal im PHP-Location-Block" {
-    run grep -cE '^[[:space:]]*internal;' "$CONFIG/nginx-php-fpm.conf"
+@test "der vHost setzt kein internal im PHP-Location-Block" {
+    run grep -cE '^[[:space:]]*internal;' \
+        "./chapters/anhang-c-konfigurationen/config/nginx-shopware.conf"
     [ "$output" -eq 0 ]
 }
 

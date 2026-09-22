@@ -602,15 +602,6 @@ jobs:
           docker rm -f nginx-live >/dev/null
           exit $fail
 
-      - name: Validate the PHP-FPM pool
-        run: |
-          # php-fpm prueft beim -t auch, ob es slowlog und error_log anlegen
-          # kann - das Verzeichnis muss also existieren. Genau das steht auch
-          # als Installationsschritt in der Vorlage.
-          docker run --rm \
-            -v "$PWD/chapters/anhang-c-konfigurationen/config/php-fpm-pool.conf:/usr/local/etc/php-fpm.d/zz-shopware.conf:ro" \
-            php:8.3-fpm bash -c 'mkdir -p /var/log/php-fpm /run/php && php-fpm -t'
-
       - name: Counter-check the conf.d readability claim
         run: |
           # Gegenprobe zu MEM-280. Kapitel 22 und die Companion-Vorlage haben
@@ -656,11 +647,11 @@ jobs:
           exit $fail
           GATE
           # Ohne Pool-Mount: Die Zusicherung geht ueber Port 9000, also den
-          # [www]-Pool des Images. Der Anhang-C-Pool heisst [shopware] und
+          # [www]-Pool des Images. Der Shopware-Pool heisst [shopware] und
           # hoert auf einem Socket - er wuerde nie angesprochen, waere aber in
           # der Lage, den Schritt mit Exit 78 unter einer Ueberschrift zu
-          # toeten, die von conf.d spricht. Die Vorlage hat ihr eigenes Gate
-          # einen Schritt weiter oben.
+          # toeten, die von conf.d spricht. Die Pool-Vorlage (seit MEM-288
+          # nur noch die aus Kapitel 9) bootet im Job php-fpm-pool.
           docker run --rm \
             -v "$PWD/conf-d-gate.sh:/gate.sh:ro" \
             php:8.3-fpm bash /gate.sh

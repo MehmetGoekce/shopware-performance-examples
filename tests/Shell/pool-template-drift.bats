@@ -1,126 +1,119 @@
 #!/usr/bin/env bats
 
-# Regressionsgate zu MEM-285.
+# Regressionsgate zu MEM-285, MEM-288 und MEM-290: eine Vorlage je Zieldatei.
 #
-# Zwei Vorlagen zielen auf dieselbe Datei /etc/php/8.3/fpm/pool.d/shopware.conf:
-#   chapters/09-php-performance/config/shopware-fpm.conf
-#   chapters/anhang-c-konfigurationen/config/php-fpm-pool.conf
+# Bis September 2026 lagen fuer den FPM-Pool und fuer den nginx-vHost je zwei
+# Vorlagen im Companion (Kapitel 9 und Anhang C). Die Pools nannten dieselbe
+# Zieldatei und ueberschrieben sich lautlos, die vHosts beanspruchten beide
+# shop.example.com auf 443 - nginx ignoriert dann einen still. Die Regel aus
+# Anhang Cs README: kanonisch ist die Vorlage des Kapitels, das die Sache
+# erklaert, die anderen verweisen.
 #
-# Kapitel 9 versicherte im Kopfkommentar, beide seien wertgleich - sie waren es
-# in sieben wirksamen Zeilen nicht. An die Stelle der falschen Behauptung ist
-# eine praezise getreten ("Sieben wirksame Zeilen unterscheiden sich", mit
-# Aufzaehlung), und die veraltet beim naechsten Eingriff auf genau dieselbe
-# Weise - nur spaeter. Diese Datei haelt sie fest.
+#   Pool:  chapters/09-php-performance/config/shopware-fpm.conf
+#   vHost: chapters/anhang-c-konfigurationen/config/nginx-shopware.conf
 #
-# Wer eine Direktive in einer der beiden Vorlagen aendert, muss hier UND in
-# beiden Kopfkommentaren nachziehen. Das ist der Zweck: Drift soll wehtun.
+# Wer eine zweite Vorlage anlegt, muss hier eine Ausnahme mit Ticket eintragen.
+# Das ist der Zweck: Doppelung soll wehtun.
 
-CH9="./chapters/09-php-performance/config/shopware-fpm.conf"
-ANHC="./chapters/anhang-c-konfigurationen/config/php-fpm-pool.conf"
+POOL="./chapters/09-php-performance/config/shopware-fpm.conf"
+VHOST="./chapters/anhang-c-konfigurationen/config/nginx-shopware.conf"
+INI="./chapters/09-php-performance/config/99-shopware.ini"
 
-# Wirksame Zeilen = alles ausser Kommentar- und Leerzeilen, sortiert.
-wirksam() {
-    grep -vE '^[[:space:]]*;|^[[:space:]]*$' "$1" | sed 's/[[:space:]]*$//' | sort
-}
-
-# Kopfkommentar als Fliesstext: ';' weg, Zeilen zu einem Strom verbunden.
+# Kopfkommentar als Fliesstext: ';' bzw. '#' weg, Zeilen zu einem Strom verbunden.
 # Noetig, weil die Prosa umbrochen ist - ein zeilenweises grep trifft sie nie.
 fliesstext() {
-    grep '^[[:space:]]*;' "$1" \
-        | sed 's/^[[:space:]]*;[[:space:]]*//' \
+    grep -E '^[[:space:]]*[;#]' "$1" \
+        | sed -E 's/^[[:space:]]*[;#][[:space:]]*//' \
         | tr '\n' ' ' \
         | tr -s '[:space:]' ' '
 }
 
-@test "die Pool-Vorlagen unterscheiden sich in genau den sieben bekannten Zeilen" {
-    wirksam "$CH9"  > "$BATS_TEST_TMPDIR/ch9"
-    wirksam "$ANHC" > "$BATS_TEST_TMPDIR/anhc"
+# Alle Dateien unter chapters/, ohne installierte Abhaengigkeiten.
+dateien() {
+    find chapters -type f -not -path '*/node_modules/*' -not -path '*/vendor/*' | sort
+}
 
-    comm -23 "$BATS_TEST_TMPDIR/ch9" "$BATS_TEST_TMPDIR/anhc" > "$BATS_TEST_TMPDIR/nur_ch9"
-    comm -13 "$BATS_TEST_TMPDIR/ch9" "$BATS_TEST_TMPDIR/anhc" > "$BATS_TEST_TMPDIR/nur_anhc"
+@test "genau eine Companion-Datei definiert den Pool [shopware]" {
+    # find statt git ls-files: laeuft auch im bats-Image ohne git.
+    dateien | while read -r f; do
+        grep -lE '^[[:space:]]*\[shopware\][[:space:]]*$' "$f" 2>/dev/null || true
+    done > "$BATS_TEST_TMPDIR/pools"
+    cat "$BATS_TEST_TMPDIR/pools"
+    [ "$(wc -l < "$BATS_TEST_TMPDIR/pools")" -eq 1 ]
+    [ "$(cat "$BATS_TEST_TMPDIR/pools")" = "${POOL#./}" ]
+}
 
-    # Anzahl zuerst - sie ist die Zahl, die in beiden Kopfkommentaren steht.
-    [ "$(wc -l < "$BATS_TEST_TMPDIR/nur_ch9")"  -eq 1 ]
-    [ "$(wc -l < "$BATS_TEST_TMPDIR/nur_anhc")" -eq 6 ]
+@test "genau ein Companion-vHost beansprucht shop.example.com auf 443" {
+    # Aktive Zeilen, nicht Kommentare: Der kanonische vHost nennt den
+    # Konflikt im Kopf selbst.
+    # Bekannte Ausnahme: Kapitel 24 bringt HTTP/3 noch als eigenen server-Block
+    # mit - MEM-318. Mit dem Ticket faellt die Ausnahme weg.
+    dateien | grep -v '^chapters/24-ausblick/config/nginx-http3.conf$' \
+        | while read -r f; do
+            if grep -qE '^[[:space:]]*server_name[[:space:]]+shop\.example\.com;' "$f" \
+               && grep -qE '^[[:space:]]*listen[[:space:]]+(\[::\]:)?443' "$f"; then
+                echo "$f"
+            fi
+        done > "$BATS_TEST_TMPDIR/vhosts"
+    cat "$BATS_TEST_TMPDIR/vhosts"
+    [ "$(wc -l < "$BATS_TEST_TMPDIR/vhosts")" -eq 1 ]
+    [ "$(cat "$BATS_TEST_TMPDIR/vhosts")" = "${VHOST#./}" ]
+}
 
-    # Dann die Zeilen selbst, reihenfolgeunabhaengig: die Sortierung von
-    # env[TEMP]/env[TMP]/env[TMPDIR] haengt an der Locale, nicht an der Sache.
-    run grep -qxF 'listen.backlog = 65535' "$BATS_TEST_TMPDIR/nur_ch9"
+@test "die Ausnahme fuer Kapitel 24 ist noch noetig" {
+    # Schlaegt an, sobald MEM-318 erledigt ist - dann die Ausnahme oben
+    # entfernen, statt eine tote Zeile stehen zu lassen.
+    run grep -qE '^[[:space:]]*server_name[[:space:]]+shop\.example\.com;' \
+        ./chapters/24-ausblick/config/nginx-http3.conf
     [ "$status" -eq 0 ]
+}
 
-    for zeile in \
-        'env[PATH] = /usr/local/bin:/usr/bin:/bin' \
-        'env[TMP] = /tmp' \
-        'env[TMPDIR] = /tmp' \
-        'env[TEMP] = /tmp' \
-        'php_value[upload_max_filesize] = 128M' \
-        'php_value[post_max_size] = 128M'
+@test "Pool, conf.d und vHost erlauben dieselbe Upload-Groesse" {
+    # upload_max_filesize/post_max_size in PHP und client_max_body_size in
+    # nginx muessen zusammenpassen, sonst antwortet nginx mit 413 (MEM-287).
+    [ "$(sed -nE 's/^php_value\[upload_max_filesize\] = (.*)$/\1/p' "$POOL")" = "128M" ]
+    [ "$(sed -nE 's/^php_value\[post_max_size\] = (.*)$/\1/p' "$POOL")" = "128M" ]
+    [ "$(sed -nE 's/^upload_max_filesize = (.*)$/\1/p' "$INI")" = "128M" ]
+    [ "$(sed -nE 's/^post_max_size = (.*)$/\1/p' "$INI")" = "128M" ]
+    [ "$(sed -nE 's/^[[:space:]]*client_max_body_size (.*);$/\1/p' "$VHOST")" = "128M" ]
+}
+
+@test "der Pool-Kopf nennt den Vorrang je Direktivenart und die Pruefung" {
+    # MEM-292: Bei gleichem Poolnamen gewinnt nicht einheitlich die alphabetisch
+    # erste Datei. Einzelwerte ueberschreibt die spaetere Datei, Listen behaelt
+    # FPM aus der ersten. Bleibt stehen, weil Leser frueherer Auflagen noch
+    # eine zweite [shopware]-Datei liegen haben koennen.
+    fliesstext "$POOL" > "$BATS_TEST_TMPDIR/k"
+    for satz in \
+        'Einzelwerte - pm.*, listen, request_*, slowlog, user ...: die alphabetisch LETZTE Datei gewinnt' \
+        'Listen - php_value, php_flag, php_admin_value, php_admin_flag, env[...]: die alphabetisch ERSTE Datei gewinnt' \
+        "grep -l '^\\[shopware\\]' /etc/php/8.3/fpm/pool.d/*.conf" \
+        'test is successful'
     do
-        run grep -qxF "$zeile" "$BATS_TEST_TMPDIR/nur_anhc"
+        run grep -qF "$satz" "$BATS_TEST_TMPDIR/k"
+        [ "$status" -eq 0 ]
+    done
+
+    # Der alte, einheitliche Satz darf nicht zurueckkommen - auch nicht
+    # umgestellt. Die Vorrangzeilen selbst schreiben ERSTE/LETZTE gross.
+    run grep -qE 'gewinnt (immer |stets )?die alphabetisch (erste|letzte)|alphabetisch (erste|letzte) Datei gewinnt' "$BATS_TEST_TMPDIR/k"
+    [ "$status" -ne 0 ]
+}
+
+@test "der vHost-Kopf nennt die Pruefung auf den stillen server_name-Konflikt" {
+    fliesstext "$VHOST" > "$BATS_TEST_TMPDIR/k"
+    for satz in \
+        "sudo nginx -t 2>&1 | grep 'conflicting server name'" \
+        'duplicate upstream'
+    do
+        run grep -qF "$satz" "$BATS_TEST_TMPDIR/k"
         [ "$status" -eq 0 ]
     done
 }
 
-@test "beide Kopfkommentare nennen dieselbe Differenz, die wirklich besteht" {
-    # Faengt den Fall, dass jemand die Direktiven angleicht und die Kommentare
-    # stehenlaesst - oder umgekehrt.
-    for f in "$CH9" "$ANHC"; do
-        fliesstext "$f" > "$BATS_TEST_TMPDIR/k"
-
-        for satz in \
-            'Sieben wirksame Zeilen unterscheiden sich' \
-            'listen.backlog = 65535' \
-            'env[PATH], env[TMP], env[TMPDIR], env[TEMP]' \
-            'php_value[upload_max_filesize] = 128M' \
-            'php_value[post_max_size] = 128M'
-        do
-            run grep -qF "$satz" "$BATS_TEST_TMPDIR/k"
-            [ "$status" -eq 0 ]
-        done
-    done
-}
-
-@test "beide Vorlagen warnen vor der gemeinsamen Zieldatei" {
-    # Die Kollision selbst ist mit MEM-285 nicht behoben, nur bewarnt
-    # (strukturell: MEM-282). Verschwindet die Warnung, ist der Leser wieder
-    # ungeschuetzt.
-    for f in "$CH9" "$ANHC"; do
-        fliesstext "$f" > "$BATS_TEST_TMPDIR/k"
-        for satz in \
-            'Nehmen Sie eine von beiden' \
-            'test is successful'
-        do
-            run grep -qF "$satz" "$BATS_TEST_TMPDIR/k"
-            [ "$status" -eq 0 ]
-        done
-    done
-}
-
-@test "beide Vorlagen nennen den Vorrang je Direktivenart" {
-    # MEM-292: Bei gleichem Poolnamen gewinnt nicht einheitlich die alphabetisch
-    # erste Datei. Einzelwerte (pm.*, listen, slowlog ...) ueberschreibt die
-    # spaetere Datei, Listen (php_value, php_admin_value, env[...]) behaelt FPM
-    # aus der ersten. Gemessen mit beiden Vorlagen und vertauschten Dateinamen.
-    for f in "$CH9" "$ANHC"; do
-        fliesstext "$f" > "$BATS_TEST_TMPDIR/k"
-        for satz in \
-            'Einzelwerte - pm.*, listen, request_*, slowlog, user ...: die alphabetisch LETZTE Datei gewinnt' \
-            'Listen - php_value, php_flag, php_admin_value, php_admin_flag, env[...]: die alphabetisch ERSTE Datei gewinnt'
-        do
-            run grep -qF "$satz" "$BATS_TEST_TMPDIR/k"
-            [ "$status" -eq 0 ]
-        done
-
-        # Der alte, einheitliche Satz darf nicht zurueckkommen - auch nicht
-        # umgestellt. Die Vorrangzeilen selbst schreiben ERSTE/LETZTE gross.
-        run grep -qE 'gewinnt (immer |stets )?die alphabetisch (erste|letzte)|alphabetisch (erste|letzte) Datei gewinnt' "$BATS_TEST_TMPDIR/k"
-        [ "$status" -ne 0 ]
-    done
-}
-
-@test "die Kapitel-9-Vorlage behauptet keine Gleichheit mehr" {
+@test "die Pool-Vorlage behauptet keine Gleichheit mehr" {
     # Der Originalsatz, der MEM-285 ausgeloest hat.
-    run grep -qF 'es ist dieselbe Datei' "$CH9"
+    run grep -qF 'es ist dieselbe Datei' "$POOL"
     [ "$status" -ne 0 ]
 }
 
@@ -128,7 +121,7 @@ fliesstext() {
     # MEM-298: Ubuntus www.conf bringt pm.max_children = 5 mit, ab Werk sind
     # es 50 + 5, nicht 100 - und pm.max_children reserviert ohnehin keinen
     # Speicher. Der Rat zum Abschalten bleibt, die Begruendung ist eine andere.
-    for f in "$CH9" "$ANHC" "./chapters/09-php-performance/README.md"; do
+    for f in "$POOL" "./chapters/09-php-performance/README.md"; do
         # Kommentar- und Zitatmarken weg, damit umbrochene Saetze zusammenkommen.
         sed -E 's/^[[:space:]]*[;>][[:space:]]*//' "$f" | tr '\n' ' ' | tr -s '[:space:]' ' ' > "$BATS_TEST_TMPDIR/k"
         run grep -qiE 'doppelt|verdoppel|100 Worker' "$BATS_TEST_TMPDIR/k"
@@ -138,25 +131,23 @@ fliesstext() {
     done
 }
 
-@test "die Anhang-C-Vorlage begruendet den conf.d-Vorrang nicht mit der hoeheren Nummer" {
+@test "die Pool-Vorlage begruendet den conf.d-Vorrang nicht mit der hoeheren Nummer" {
     # MEM-298, Rest aus MEM-282: conf.d sortiert Zeichenketten, 100-b.ini
     # landet vor 99-a.ini.
-    fliesstext "$ANHC" > "$BATS_TEST_TMPDIR/k"
+    fliesstext "$POOL" > "$BATS_TEST_TMPDIR/k"
     run grep -qiE 'h(oe|ö)here[rn]? Nummer' "$BATS_TEST_TMPDIR/k"
     [ "$status" -ne 0 ]
 }
 
-@test "beide Vorlagen und das README nennen den Abschaltbefehl fuer www.conf" {
+@test "Vorlage und README nennen den Abschaltbefehl fuer www.conf" {
     # MEM-299: Buch und Vorlagen sagten "abschalten", aber nicht wie. Die CI
     # (Job php-fpm-pool) misst, dass der Befehl wirkt; hier steht, dass er da ist.
     # Auf die ganze Befehlszeile geankert: ein Befehl in Prosa oder mit
-    # Zusatz ("(optional)") zaehlt nicht. Vorlagen: als ;-Kommentar.
+    # Zusatz ("(optional)") zaehlt nicht. Vorlage: als ;-Kommentar.
     local cmd='sudo mv /etc/php/8.3/fpm/pool.d/www.conf /etc/php/8.3/fpm/pool.d/www.conf.disabled'
-    for f in "$CH9" "$ANHC"; do
-        sed -E 's/^;[[:space:]]+//' "$f" > "$BATS_TEST_TMPDIR/k"
-        run grep -qxF "$cmd" "$BATS_TEST_TMPDIR/k"
-        [ "$status" -eq 0 ]
-    done
+    sed -E 's/^;[[:space:]]+//' "$POOL" > "$BATS_TEST_TMPDIR/k"
+    run grep -qxF "$cmd" "$BATS_TEST_TMPDIR/k"
+    [ "$status" -eq 0 ]
     run grep -qxF "$cmd" "./chapters/09-php-performance/README.md"
     [ "$status" -eq 0 ]
 }
