@@ -2,10 +2,11 @@
  * Tests für chapters/03-core-web-vitals/lighthouserc.json und das
  * Workflow-Beispiel .github/workflows/lighthouse.yml
  *
- * Lighthouse CI meldet eine Zusicherung auf ein unbekanntes Audit nur
- * als Warnung – die Prüfung fällt dann still weg. Deshalb wird jede
- * Audit-ID gegen die Liste der Lighthouse-Version gehalten, die
- * @lhci/cli 0.15.1 mitbringt (12.6.1).
+ * Eine Zusicherung auf ein unbekanntes Audit meldet Lighthouse CI mit
+ * «is not a known audit» auf ihrer eigenen Stufe (Kapitel 3, F32): bei
+ * "error" bricht der Lauf ab, bei "warn" bleibt eine Warnung – gemessen
+ * wird in beiden Fällen nichts. Deshalb wird jede Audit-ID vorab gegen die
+ * Liste der Lighthouse-Version gehalten, die @lhci/cli 0.15.1 mitbringt (12.6.1).
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
