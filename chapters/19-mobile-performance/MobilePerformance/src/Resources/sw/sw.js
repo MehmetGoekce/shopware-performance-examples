@@ -4,8 +4,12 @@
  *
  * Bewusst klein gehalten:
  *   - Nur GET-Anfragen derselben Domain.
- *   - Dateien unter /theme/ und /bundles/ (Versionsparameter oder Hash in
- *     der URL): Cache First. Neue Theme-Versionen haben neue URLs.
+ *   - Dateien unter /theme/ und /bundles/ mit Versionsparameter (?<Zeitstempel>):
+ *     Cache First. theme:compile und Plugin-Updates aendern den Parameter.
+ *     Ohne Parameter (Schriften unter /theme/<id>/assets/font/, JS-Chunks,
+ *     Modul-Importe von Plugins) geht die Anfrage ins Netz und in den
+ *     HTTP-Cache des Browsers: Cache First behielte dort nach einem Update
+ *     die alte Datei.
  *   - Seitenaufrufe (navigate): immer aus dem Netz, nur ohne Verbindung
  *     die Offline-Seite. Keine HTML-Seite landet im Cache, also auch keine
  *     Preise, Warenkoerbe oder Kundendaten.
@@ -17,7 +21,7 @@
  *
  * @see https://github.com/MehmetGoekce/shopware-performance-examples
  */
-const CACHE = 'mobile-static-v1';
+const CACHE = 'mobile-static-v2';
 const MAX_ENTRIES = 100;
 const BASE = new URL(self.registration.scope).pathname;
 const STATIC_PREFIXES = [BASE + 'theme/', BASE + 'bundles/'];
@@ -62,7 +66,7 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    if (STATIC_PREFIXES.some((prefix) => url.pathname.startsWith(prefix))) {
+    if (url.search !== '' && STATIC_PREFIXES.some((prefix) => url.pathname.startsWith(prefix))) {
         event.respondWith(cacheFirst(request));
     }
 });

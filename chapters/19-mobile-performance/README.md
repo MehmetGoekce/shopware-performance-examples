@@ -40,7 +40,7 @@ Test-Shop, Demo-Daten, Chromium:
 |---------|----------|
 | Schriftgrösse der Formularfelder, ab Werk / mit Plugin | 14 px / 16 px |
 | Touch-Ziele unter 24 × 24 px (390 px Breite, Start, Kategorie, Produkt, Login) | nur Skip-Link, Breadcrumb- und Textlinks, Checkbox mit Label |
-| `/sw.js` | 200, `application/javascript`, `Cache-Control: no-cache` |
+| `/sw.js` | 200, `application/javascript`, `Cache-Control: no-cache, private` (Shopware ergänzt `private`, die Storefront-Route startet eine Session) |
 | Service Worker | Scope `/`, aktiv, Navigation Preload an |
 | Cache nach drei Seitenaufrufen | 28 Einträge, alle unter `/theme/` oder `/bundles/`, keine HTML-Seite |
 | Offline: Seitenaufruf / CSS | Offline-Seite / CSS aus dem Cache |

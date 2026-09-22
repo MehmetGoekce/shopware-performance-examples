@@ -20,9 +20,8 @@ test.describe('Kapitel 19 Snippets', () => {
         });
 
         expect(result.resolved).toBe(true);
-        if (browserName === 'webkit') {
-            expect(result.hasYield).toBe(false);
-        }
+        // Chromium (auch Pixel 5) hat scheduler.yield, WebKit nicht
+        expect(result.hasYield).toBe(browserName !== 'webkit');
     });
 
     test('applyInChunks: Ladezustand steht vor der ersten Arbeit, danach weg', async ({ page }) => {
