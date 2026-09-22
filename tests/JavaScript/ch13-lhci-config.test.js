@@ -71,6 +71,8 @@ describe('config/lighthouserc.cjs', () => {
 
     it('wertet den Median-Lauf, nicht den besten', () => {
         expect(rc.ci.assert.aggregationMethod).toBe('median-run');
+        // Ein Median aus einem Lauf ist keiner
+        expect(rc.ci.collect.numberOfRuns).toBeGreaterThanOrEqual(3);
     });
 
     it('kennt nur Presets, die es gibt', () => {
@@ -87,6 +89,7 @@ describe('config/lighthouserc.cjs', () => {
         expect(a['cumulative-layout-shift']).toEqual(['error', { maxNumericValue: 0.1 }]);
         expect(a['total-blocking-time']).toEqual(['error', { maxNumericValue: 300 }]);
         expect(a['resource-summary:script:size']).toEqual(['error', { maxNumericValue: 300000 }]);
+        expect(a['categories:performance']).toEqual(['error', { minScore: 0.85 }]);
     });
 });
 
@@ -124,6 +127,26 @@ describe('config/lighthouserc.matrix.cjs', () => {
         }
     });
 
+    it('jeder Eintrag trifft mindestens eine URL, auch mit Sprachpräfix', () => {
+        for (const base of ['https://staging.example.ch', 'https://shop.example.ch/de']) {
+            const m = load('config/lighthouserc.matrix.cjs', base);
+            for (const entry of m.ci.assert.assertMatrix) {
+                const hits = m.ci.collect.url.filter((u) => new RegExp(entry.matchingUrlPattern).test(u));
+                expect(hits.length, `${base}: ${entry.matchingUrlPattern}`).toBeGreaterThan(0);
+            }
+        }
+    });
+
+    it('leitet die Muster für Startseite und Produkt aus LHCI_BASE_URL ab (greifen nach Anpassung weiter)', () => {
+        const strict = matrix.filter((entry) => entry.assertions['first-contentful-paint']?.[0] === 'error'
+            || entry.assertions['cumulative-layout-shift']?.[1].maxNumericValue === 0.05);
+        expect(strict.length).toBe(2);
+        for (const entry of strict) {
+            expect(entry.matchingUrlPattern.startsWith('^https://staging\\.example\\.ch/')).toBe(true);
+            expect(entry.matchingUrlPattern.endsWith('$')).toBe(true);
+        }
+    });
+
     it('trifft mit dem Startseiten-Muster nur die Startseite', () => {
         const home = matrix.find((entry) => entry.assertions['first-contentful-paint']?.[0] === 'error');
         expect(urls.filter((url) => new RegExp(home.matchingUrlPattern).test(url)))
@@ -134,13 +157,15 @@ describe('config/lighthouserc.matrix.cjs', () => {
 describe('config/lighthouserc.auth.cjs + scripts/lhci-shopware-auth.cjs', () => {
     const rc = load('config/lighthouserc.auth.cjs', 'https://staging.example.ch');
 
-    it('verweist auf ein Skript, das es gibt (Pfad relativ zum Kapitelordner)', () => {
+    it('verweist auf ein Skript, das es gibt (relativ zum Arbeitsverzeichnis, hier Kapitelordner)', () => {
         expect(existsSync(resolve(chapter, rc.ci.collect.puppeteerScript))).toBe(true);
     });
 
-    it('übernimmt Budgets und Upload aus lighthouserc.cjs', () => {
+    it('übernimmt Budgets und Upload aus lighthouserc.cjs, ohne SEO (noindex)', () => {
         const base = load('config/lighthouserc.cjs');
-        expect(rc.ci.assert).toEqual(base.ci.assert);
+        const { 'categories:seo': seo, ...rest } = base.ci.assert.assertions;
+        expect(seo).toBeDefined();
+        expect(rc.ci.assert).toEqual({ ...base.ci.assert, assertions: rest });
         expect(rc.ci.upload).toEqual(base.ci.upload);
     });
 
@@ -187,6 +212,20 @@ describe('config/lighthouserc.auth.cjs + scripts/lhci-shopware-auth.cjs', () => 
             const { calls, browser } = browserStub({ afterGoto: 'https://staging.example.ch/account' });
             await script()(browser, context);
             expect(calls.map((c) => c[0])).toEqual(['goto', 'close']);
+        });
+
+        it('meldet sich an, wenn goto nicht im Kontobereich landet', async () => {
+            const { calls, browser } = browserStub({
+                afterGoto: 'https://staging.example.ch/',
+                afterSubmit: 'https://staging.example.ch/account',
+            });
+            await script()(browser, context);
+            expect(calls.filter((c) => c[0] === 'type').length).toBe(2);
+        });
+
+        it('bricht ab, wenn der Login woanders als im Konto endet', async () => {
+            const { browser } = browserStub({ afterSubmit: 'https://staging.example.ch/' });
+            await expect(script()(browser, context)).rejects.toThrow('Login fehlgeschlagen');
         });
 
         it('bricht ab, wenn Shopware auf der Login-Seite bleibt', async () => {
@@ -252,8 +291,35 @@ describe('Workflows, GitLab, Compose', () => {
         expect(files.pr).toMatch(/permissions:\n {2}contents: read\n {2}pull-requests: write\n/);
     });
 
-    it('kommentiert auch nach einer Regression', () => {
-        expect(files.pr).toMatch(/- name: Comment PR with results\n\s+if: always\(\)\n/);
+    it('kommentiert auch nach einer Regression, Fork-403 macht den Check nicht rot', () => {
+        expect(files.pr).toMatch(/- name: Comment PR with results\n\s+if: always\(\)\n\s+continue-on-error: true\n/);
+    });
+
+    it('zeigt im Kommentar nur den Median-Lauf je URL', () => {
+        expect(files.pr).toMatch(/\.filter\(\(run\) => run\.isRepresentativeRun\)/);
+    });
+
+    it('lädt .lighthouseci/ wirklich hoch (versteckter Ordner) und auch nach Fehlern', () => {
+        for (const text of [files.pr, files.staging]) {
+            expect(text).toMatch(/- name: Upload reports\n\s+if: always\(\)\n\s+uses: actions\/upload-artifact@v7\n\s+with:\n\s+name: \S+\n\s+path: \.lighthouseci\/\n(\s+#.*\n)?\s+include-hidden-files: true\n/);
+        }
+    });
+
+    it('LHCI-Server: Upload auch nach Fehlern, Branch gesetzt, URL nicht in run:', () => {
+        const step = files.staging.split('- name: Upload to LHCI server')[1].split('- name:')[0];
+        expect(step).toMatch(/if: always\(\) && vars\.LHCI_SERVER_URL != ''/);
+        expect(step).toMatch(/run: lhci upload --target=lhci\n/);
+        expect(step).toMatch(/LHCI_SERVER_BASE_URL: \$\{\{ vars\.LHCI_SERVER_URL \}\}/);
+        expect(step).toMatch(/LHCI_BUILD_CONTEXT__CURRENT_BRANCH: /);
+        expect(step).toMatch(/LHCI_BASIC_AUTH__PASSWORD: \$\{\{ secrets\.LHCI_PASSWORD \}\}/);
+    });
+
+    it('Slack meldet bei Fehlern', () => {
+        expect(files.staging).toMatch(/- name: Notify Slack on failure\n\s+if: failure\(\)\n/);
+    });
+
+    it('PR-Workflow liest die Variable LHCI_BASE_URL', () => {
+        expect(files.pr).toMatch(/LHCI_BASE_URL: \$\{\{ vars\.LHCI_BASE_URL \}\}/);
     });
 
     it('misst nach dem Deployment die URL der Umgebung, nicht den Log-Link', () => {
@@ -272,5 +338,7 @@ describe('Workflows, GitLab, Compose', () => {
         expect(compose).toMatch(/image: patrickhulce\/lhci-server:0\.15\.1\n/);
         expect(compose).toMatch(/LHCI_BASIC_AUTH__PASSWORD: \$\{LHCI_PASSWORD:\?/);
         expect(compose).not.toMatch(/^version:/m);
+        // Nur lokal lauschen; von aussen über einen Reverse-Proxy mit TLS
+        expect(compose).toMatch(/- "127\.0\.0\.1:9001:9001"/);
     });
 });

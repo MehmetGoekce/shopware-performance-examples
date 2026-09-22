@@ -1,8 +1,9 @@
 # Lighthouse CI für Pull Requests — Kapitel 13
 #
 # Misst die Staging- oder Preview-URL aus der Repository-Variable
-# LHCI_BASE_URL, nicht den Code im Runner. Der Stand des Pull Requests
-# muss dort deployt sein.
+# LHCI_BASE_URL, nicht den Code im Runner. Der Workflow deployt nichts:
+# Liegt der Stand des Pull Requests dort nicht, misst er den alten Stand.
+# Deployt ein eigener Job, diesen Job per "needs:" dahinter hängen.
 #
 # Einrichten:
 #   1. lighthouserc.cjs aus config/ ins Repository-Root kopieren
@@ -50,10 +51,15 @@ jobs:
         with:
           name: lighthouse-results
           path: .lighthouseci/
+          # Ordner mit Punkt: ohne diese Zeile bleibt das Artefakt leer
+          include-hidden-files: true
 
       # Auch nach einer Regression kommentieren (dann ist er am wichtigsten)
+      # Bei Pull Requests aus Forks ist das Token lesend (403): das
+      # Kommentieren darf den Check dann nicht rot machen
       - name: Comment PR with results
         if: always()
+        continue-on-error: true
         uses: actions/github-script@v9
         with:
           script: |

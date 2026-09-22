@@ -5,13 +5,19 @@
  * context ist { url, options } — Cookies muss niemand übergeben:
  * Lighthouse misst im selben Browser und ist damit eingeloggt.
  *
- * Voraussetzung:  npm install --save-dev puppeteer
- *                 (@lhci/cli bringt Puppeteer nicht mit)
+ * Voraussetzung:  Chrome auffindbar (sonst CHROME_PATH); puppeteer-core
+ *                 bringt @lhci/cli über Lighthouse mit
  * Zugangsdaten:   SHOPWARE_TEST_EMAIL, SHOPWARE_TEST_PASSWORD
  *                 (eigenes Testkonto auf Staging, nie ein echtes Kundenkonto)
  *
  * Getestet mit @lhci/cli 0.15.1 gegen Shopware 6.6.10.6.
  */
+
+// Eingeloggt heisst: Shopware zeigt einen Kontobereich, nicht die Login-Seite
+const isAccount = (url) => {
+  const path = new URL(url).pathname;
+  return path.startsWith('/account') && !path.startsWith('/account/login');
+};
 
 module.exports = async (browser, context) => {
   const email = process.env.SHOPWARE_TEST_EMAIL;
@@ -26,7 +32,7 @@ module.exports = async (browser, context) => {
   // Login-Seite aufrufen. LHCI ruft das Skript vor jeder URL auf; ab der
   // zweiten ist der Browser eingeloggt, und Shopware leitet auf /account weiter.
   await page.goto(`${origin}/account/login`, { waitUntil: 'networkidle2' });
-  if (!new URL(page.url()).pathname.startsWith('/account/login')) {
+  if (isAccount(page.url())) {
     await page.close();
     return;
   }
@@ -42,8 +48,8 @@ module.exports = async (browser, context) => {
   ]);
 
   // Nach falschen Zugangsdaten bleibt Shopware auf /account/login
-  if (new URL(page.url()).pathname.startsWith('/account/login')) {
-    throw new Error(`Login fehlgeschlagen für ${email}`);
+  if (!isAccount(page.url())) {
+    throw new Error(`Login fehlgeschlagen für ${email} (${page.url()})`);
   }
 
   await page.close();

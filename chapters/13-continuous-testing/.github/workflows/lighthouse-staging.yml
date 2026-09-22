@@ -2,6 +2,8 @@
 #
 # Läuft auf "deployment_status" und misst die URL der Umgebung
 # (environment_url; target_url ist nur der Link zum Deploy-Log).
+# Deployments, die ein Workflow mit dem GITHUB_TOKEN anlegt, lösen
+# "deployment_status" nicht aus — dann per "needs:" hinter den Deploy-Job.
 #
 # Einrichten:
 #   1. lighthouserc.cjs aus config/ ins Repository-Root kopieren
@@ -28,6 +30,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          # LHCI sucht für den Build-Vergleich den Vorfahren-Commit
+          fetch-depth: 20
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -48,13 +53,18 @@ jobs:
         with:
           name: lighthouse-staging
           path: .lighthouseci/
+          # Ordner mit Punkt: ohne diese Zeile bleibt das Artefakt leer
+          include-hidden-files: true
 
       # Verlauf auf dem LHCI-Server, auch für gescheiterte Läufe
       - name: Upload to LHCI server
         if: always() && vars.LHCI_SERVER_URL != ''
-        run: lhci upload --target=lhci --serverBaseUrl=${{ vars.LHCI_SERVER_URL }}
+        run: lhci upload --target=lhci
         env:
+          LHCI_SERVER_BASE_URL: ${{ vars.LHCI_SERVER_URL }}
           LHCI_TOKEN: ${{ secrets.LHCI_TOKEN }}
+          # Deployments auf einen Commit: kein Branch im Checkout
+          LHCI_BUILD_CONTEXT__CURRENT_BRANCH: ${{ github.event.deployment.environment }}
           LHCI_BASIC_AUTH__USERNAME: ci
           LHCI_BASIC_AUTH__PASSWORD: ${{ secrets.LHCI_PASSWORD }}
 

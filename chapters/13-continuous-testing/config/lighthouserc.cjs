@@ -48,6 +48,8 @@ module.exports = {
 
       assertions: {
         // === CORE WEB VITALS (error = Build schlägt fehl) ===
+        // Die Schwellen "gut" fangen nur grobe Regressionen: Der Demo-Shop lag
+        // bei LCP 0,5-0,8 s. Für feine Grenzen: eigene Baseline plus Marge.
         'largest-contentful-paint': ['error', { maxNumericValue: 2500 }],
         'cumulative-layout-shift': ['error', { maxNumericValue: 0.1 }],
         // INP misst Lighthouse im Navigationsmodus nicht; TBT ist der Labor-Ersatz
@@ -66,7 +68,7 @@ module.exports = {
 
         // === ANZAHL REQUESTS ===
         // Shopware 6.6 ab Werk (Demo-Daten): 16 Skripte auf der Startseite,
-        // 25 auf Kategorie und Produkt — bei 15 warnt es dort schon.
+        // 25 auf Kategorie und Produkt — eine Grenze von 15 warnt überall.
         'resource-summary:script:count': ['warn', { maxNumericValue: 30 }],
         'resource-summary:third-party:count': ['warn', { maxNumericValue: 10 }],
 

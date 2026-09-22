@@ -60,26 +60,39 @@ mit 400.
   (Startseite) bis 25 (Kategorie, Produkt) Skripte.
 - `upload.target: 'filesystem'` schreibt `.lighthouseci/manifest.json`; daraus
   baut der Workflow den PR-Kommentar.
-- `budget.json` geht nur **statt** der Assertions (`--budgetsFile`), nicht
-  zusätzlich, und macht jede Grenze zu `error`.
+- `budget.json` geht nur **statt** der Assertions, nicht zusätzlich, und macht
+  jede Grenze zu `error`. Liegt `lighthouserc.cjs` im Arbeitsverzeichnis,
+  liest `lhci assert` sie mit, daher:
+  `lhci assert --no-lighthouserc --budgetsFile=config/budget.json`
+- `lhci assert` ohne gesammelte Läufe endet mit Exit 0 — nur nach `collect`
+  bzw. als Teil von `autorun` als Gate verwenden.
+- Die Grenzen sind die Core-Web-Vitals-Schwellen «gut». Der Demo-Shop lag weit
+  darunter (LCP 0,5-0,8 s); für feinere Grenzen die eigene Baseline plus Marge.
 
 ## Seiten hinter dem Login
 
 ```bash
-npm install --save-dev puppeteer
 SHOPWARE_TEST_EMAIL=… SHOPWARE_TEST_PASSWORD=… \
 LHCI_BASE_URL=https://staging.ihr-shop.ch lhci autorun --config=config/lighthouserc.auth.cjs
 ```
 
+Ein eigenes Paket `puppeteer` ist nicht nötig: `@lhci/cli` bringt über
+Lighthouse `puppeteer-core` mit. Chrome muss aber auffindbar sein, sonst
+`CHROME_PATH` setzen. `puppeteerScript` gilt relativ zum Arbeitsverzeichnis,
+also aus diesem Ordner aufrufen (oder den Pfad anpassen).
+
 Ein eigenes Testkonto auf Staging verwenden. Das Skript läuft vor jeder URL; ab
-der zweiten ist der Browser schon eingeloggt und es tippt nichts mehr.
+der zweiten ist der Browser schon eingeloggt und es tippt nichts mehr. Es gilt
+als eingeloggt, wenn Shopware einen Kontobereich zeigt, nicht die Login-Seite.
 
 ## CI
 
 **GitHub:** Workflow nach `.github/workflows/` kopieren, `lighthouserc.cjs` ins
 Repository-Root, Variable `LHCI_BASE_URL` setzen und den Job `lighthouse` als
-Required Check eintragen. Der Stand des Pull Requests muss unter der URL
-deployt sein.
+Required Check eintragen. Der Workflow deployt nichts: Liegt der Stand des Pull
+Requests nicht unter der URL, misst er den alten. Deployt ein eigener Job, den
+Lighthouse-Job per `needs:` dahinter hängen. `deployment_status` löst nicht aus,
+wenn das Deployment von einem Workflow mit `GITHUB_TOKEN` angelegt wurde.
 
 **GitLab:** `gitlab/gitlab-ci.yml` als `.gitlab-ci.yml` übernehmen, CI/CD-Variable
 `LHCI_BASE_URL`.
@@ -92,7 +105,9 @@ LHCI_PASSWORD=… docker compose up -d
 docker compose exec lhci-server npx lhci wizard   # Server-URL: http://localhost:9001
 ```
 
-Der Wizard gibt den Build-Token aus; ihn als Secret `LHCI_TOKEN` hinterlegen.
+Der Wizard gibt einen Build-Token aus (Secret `LHCI_TOKEN`) und einen
+Admin-Token, mit dem sich Projektdaten löschen lassen — den getrennt sicher
+ablegen, nicht in die CI.
 Für den Zugriff aus der CI gehört ein Reverse-Proxy mit TLS vor den Port.
 
 ## Lasttests
@@ -102,7 +117,8 @@ k6 run -e BASE_URL=https://staging.ihr-shop.ch scripts/loadtest-k6.js
 locust -f scripts/locustfile.py --host=https://staging.ihr-shop.ch
 ```
 
-k6 endet mit Exit 99, wenn eine Schwelle reisst; Locust hat keine Schwellen.
+k6 endet mit Exit 99, wenn eine Schwelle reisst. Locust endet bei
+fehlgeschlagenen Requests mit Exit 1, hat aber keine Latenz-Schwellen.
 Nie gegen Production.
 
 ## Lizenz

@@ -14,13 +14,18 @@ const base = require('./lighthouserc.cjs');
 
 const BASE_URL = (process.env.LHCI_BASE_URL || 'http://localhost').replace(/\/+$/, '');
 
+// An Ihren Shop anpassen; die Muster unten leiten sich daraus ab
+const PRODUCT = '/Main-product/SWDEMO10001';
 const PATHS = [
   '/',                         // Startseite
   '/Clothing/',                // Kategorie
-  '/Main-product/SWDEMO10001', // Produktdetail
+  PRODUCT,                     // Produktdetail
   '/search?search=shirt',      // Suche (noindex, nicht im HTTP-Cache)
   '/checkout/cart',            // Warenkorb (noindex)
 ];
+
+// URL als Regex-Muster (Punkte, Fragezeichen usw. maskiert)
+const exact = (path) => '^' + (BASE_URL + path).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$';
 
 // Gemeinsame Grenzen aus lighthouserc.cjs, ohne SEO (Suche und Warenkorb
 // sind noindex und kämen nie über 0,54)
@@ -43,7 +48,7 @@ module.exports = {
         },
         {
           // Startseite: strenger (erster Eindruck)
-          matchingUrlPattern: '^https?://[^/]+/$',
+          matchingUrlPattern: exact('/'),
           aggregationMethod: 'median-run',
           assertions: {
             'largest-contentful-paint': ['error', { maxNumericValue: 2000 }],
@@ -52,7 +57,7 @@ module.exports = {
         },
         {
           // Produktdetail: Bildergalerie darf nichts verschieben
-          matchingUrlPattern: '/SWDEMO\\d+',
+          matchingUrlPattern: exact(PRODUCT),
           aggregationMethod: 'median-run',
           assertions: {
             'cumulative-layout-shift': ['error', { maxNumericValue: 0.05 }],
