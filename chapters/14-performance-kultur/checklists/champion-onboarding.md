@@ -22,7 +22,7 @@ ersten 4 Wochen deiner neuen Rolle.
 ### Tag 3-4: Tool-Zugänge
 
 - [ ] **Monitoring-Tools**
-  - [ ] RUM-Dashboard Zugang erhalten
+  - [ ] Zugang zur RUM-Auswertung (`bin/console rum:report` aus Kapitel 12 oder Managed-RUM-Dashboard)
   - [ ] Lighthouse CI Zugang erhalten
   - [ ] Alerting-Kanäle abonniert
 
@@ -66,13 +66,13 @@ ersten 4 Wochen deiner neuen Rolle.
   - [ ] Report interpretieren
   - [ ] Opportunities und Diagnostics verstehen
 
-### RUM-Dashboard
+### RUM-Auswertung
 
 - [ ] **Walkthrough mit Mentor**
-  - [ ] Core Web Vitals Panel verstehen
+  - [ ] `rum:report` lesen: Samples, p50/p75/p90, Bewertung am p75
   - [ ] Percentile-Konzept (p50, p75, p90)
-  - [ ] Segmentierung (Gerät, Seite, Region)
-  - [ ] Trend-Analyse
+  - [ ] Segmentierung: `--by=route` (Seitentyp), `--by=device`, `--by=country` (nur hinter Cloudflare)
+  - [ ] Error Budget: `php scripts/error-budget.php <shopware-verzeichnis>`
 
 - [ ] **Alert-Konfiguration**
   - [ ] Bestehende Alerts verstehen
@@ -108,7 +108,7 @@ ersten 4 Wochen deiner neuen Rolle.
 ### Performance-Issue finden
 
 - [ ] **Proaktive Analyse**
-  - [ ] Dashboard auf Auffälligkeiten prüfen
+  - [ ] `rum:report --hours=168 --by=route` auf Auffälligkeiten prüfen
   - [ ] Langsamste Seiten identifizieren
   - [ ] Ein konkretes Issue dokumentieren
 
@@ -173,7 +173,7 @@ ersten 4 Wochen deiner neuen Rolle.
 ### Self-Assessment
 
 - [ ] Ich verstehe Core Web Vitals und kann sie erklären
-- [ ] Ich kann das RUM-Dashboard interpretieren
+- [ ] Ich kann die RUM-Auswertung (`rum:report`, Error Budget) interpretieren
 - [ ] Ich kann Performance-Code-Reviews durchführen
 - [ ] Ich weiß, wen ich bei Fragen kontaktieren kann
 - [ ] Ich fühle mich bereit, als Champion zu agieren

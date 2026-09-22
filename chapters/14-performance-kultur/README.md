@@ -26,9 +26,10 @@ Dieses Kapitel behandelt die organisatorischen Aspekte von Performance:
 │   ├── champion-onboarding.md       # Champion Einarbeitung
 │   └── new-hire-performance.md      # Onboarding neue Mitarbeiter
 ├── src/
-│   ├── PerformanceBudgetService.php # Budget-Tracking
+│   ├── PerformanceBudgetService.php # Error Budget aus den RUM-Logs (Kapitel 12)
 │   └── CultureMetricsService.php    # Kultur-Metriken
 └── scripts/
+    ├── error-budget.php             # Error Budget je Core Web Vital
     ├── generate-report.sh           # Performance-Report Generator
     └── pr-stats.sh                  # PR-Statistiken
 ```
@@ -53,7 +54,7 @@ Kopiere die Checklist in dein GitHub/GitLab PR-Template:
 # Channel: #performance
 # Integrations:
 # - Lighthouse CI Alerts
-# - RUM Dashboard Alerts
+# - RUM-Alerts (rum:check-alerts aus Kapitel 12, Webhook)
 # - Weekly Digest Bot
 ```
 
@@ -83,6 +84,48 @@ Das `error-budget-policy.yaml` definiert:
 - Eskalationsstufen
 - Release-Policies
 
+### Error Budget ausrechnen
+
+Das SLO lautet wie bei Google "p75 <= Schwelle" (LCP 2500 ms, INP 200 ms,
+CLS 0.1). Daraus folgt das Budget: Hoechstens 25 % der Seitenaufrufe duerfen
+ueber der Schwelle liegen. `scripts/error-budget.php` rechnet das aus den
+RUM-Logs von Kapitel 12 aus. Voraussetzung: Plugin `RumMonitoring` ist
+installiert und hat Daten gesammelt.
+
+```bash
+cd chapters/14-performance-kultur
+php scripts/error-budget.php /var/www/html                  # letzte 28 Tage
+php scripts/error-budget.php /var/www/html --days=7 --min-samples=200
+```
+
+Als Benutzer des Webservers ausfuehren (liest `var/log/rum-*.log`). Nur PHP
+noetig, kein Shopware-Kernel. Exit-Codes: `0` kein SLO verletzt, `1` mindestens
+eine Metrik rot, `2` Aufruf- oder Pfadfehler, `3` zu wenig Daten (unter
+`--min-samples`, Vorgabe 100 wie bei `rum:check-alerts`).
+
+Ausgabe im Testshop (Dockware 6.6.10.6, 390 kuenstliche Beacons, davon
+10 INP-Doppelmeldungen, die einmal zaehlen):
+
+```text
+Error Budget seit 2026-08-25 16:30 UTC (28 Tage, SLO p75 <= Schwelle, Budget 25 % der Seitenaufrufe)
+
+Metrik   Seitenaufrufe ueber Schwelle  verbraucht   uebrig  Stufe
+LCP                200             30      60.0 %   40.0 %  yellow
+INP                130             40     123.1 %  -23.1 %  red
+CLS                 50             34           -        -  zu wenig Daten (< 100)
+
+Gesamt: red
+```
+
+INP liegt bei 31 % der Seitenaufrufe ueber 200 ms, `rum:report` meldet fuer
+dieselben Daten ein p75 von 415 ms ("needs-improvement"). Stufe rot heisst
+dasselbe: Das p75 ist nicht mehr gut.
+
+`scripts/generate-report.sh weekly|monthly` baut daraus einen Markdown-Report
+(`rum:report` gesamt und je Route, Error Budget) und laesst Top-Issues und
+Erfolge als Platzhalter stehen. Umgebung: `SHOPWARE_DIR`, `OUTPUT_DIR`,
+optional `SLACK_WEBHOOK`.
+
 ## Metriken
 
 ### Performance-Kultur Score
@@ -97,7 +140,7 @@ Score = (PRs mit Review × 0.3) +
 ### Tracking
 
 - PRs mit Performance-Review: `pr-stats.sh`
-- Error Budget: `PerformanceBudgetService.php`
+- Error Budget: `scripts/error-budget.php` (rechnet mit `src/PerformanceBudgetService.php`)
 - Incident MTTR: Aus Incident-Tracker
 - Developer Satisfaction: Quarterly Survey
 

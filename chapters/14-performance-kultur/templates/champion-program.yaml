@@ -135,7 +135,7 @@ onboarding:
     title: "Tools & Monitoring"
     tasks:
       - "Chrome DevTools Performance Tab Mastery"
-      - "RUM-Dashboard Walkthrough"
+      - "RUM-Auswertung Walkthrough (rum:report, Error Budget)"
       - "Lighthouse CI verstehen"
       - "Alert-Konfiguration kennenlernen"
 

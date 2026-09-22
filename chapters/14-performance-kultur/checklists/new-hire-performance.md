@@ -51,9 +51,9 @@ vertraut zu machen.
 
 ### Interne Tools
 
-- [ ] **RUM-Dashboard Zugang**
-  - Login funktioniert
-  - Startseite verstehen
+- [ ] **RUM-Auswertung**
+  - `bin/console rum:report` (Kapitel 12) oder Login beim Managed-RUM-Anbieter
+  - Spalten verstehen: Samples, p50/p75/p90, Bewertung
   - Wissen: Hier sehen wir echte User-Daten
 
 - [ ] **CI-Pipeline**

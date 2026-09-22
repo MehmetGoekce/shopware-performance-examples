@@ -42,15 +42,22 @@ slos:
 
 # Error Budget Berechnung
 error_budget:
-  calculation_period: "30 Tage (rolling)"
+  calculation_period: "28 Tage (rolling, wie der Chrome UX Report)"
 
   # Wie wird das Budget berechnet?
   formula: |
     Für jeden SLO:
-    - Total Samples = Alle RUM-Messungen im Zeitraum
-    - Violations = Samples die SLO nicht erfüllen
+    - Total Samples = Seitenaufrufe im Zeitraum (je Seitenaufruf die letzte Meldung)
+    - Violations = Seitenaufrufe über der Schwelle
     - Error Rate = Violations / Total Samples
     - Budget Used = Error Rate / (1 - SLO Target)
+
+    Core Web Vitals: "p75 <= Schwelle" heisst SLO Target 75 %,
+    also dürfen 25 % der Seitenaufrufe über der Schwelle liegen.
+    - Bei 10 % über 2500 ms LCP: Budget 40 % verbraucht
+    - Bei 25 %: Budget 100 % verbraucht, p75 gerade noch "gut"
+    - Darüber: SLO verletzt
+    Rechnung: src/PerformanceBudgetService.php, Aufruf: scripts/error-budget.php
 
     Beispiel für 99.9% Availability:
     - Erlaubte Fehler: 0.1% = 1 von 1000 Requests
@@ -79,7 +86,7 @@ policy_levels:
         - "Weekly Dashboard Review"
 
   yellow:
-    condition: "Budget Remaining 20-50%"
+    condition: "Budget Remaining 20-50 %"
     actions:
       development:
         - "Vorsichtige Feature-Entwicklung"
@@ -98,7 +105,7 @@ policy_levels:
       - "Slack-Update in #performance"
 
   orange:
-    condition: "Budget Remaining 0-20%"
+    condition: "Budget Remaining 0 bis unter 20 % (p75 noch gut)"
     actions:
       development:
         - "Performance-Fokus hat Priorität"
@@ -117,7 +124,7 @@ policy_levels:
       - "Daily Standup: Performance-Status"
 
   red:
-    condition: "Budget Exhausted (≤ 0%)"
+    condition: "Budget überzogen (unter 0 %, p75 nicht mehr gut)"
     actions:
       development:
         - "Feature Freeze"
@@ -156,8 +163,8 @@ exceptions:
 # Reporting
 reporting:
   dashboard:
-    location: "Grafana / Interne Tools"
-    refresh: "Stündlich"
+    location: "php scripts/error-budget.php <shopware-verzeichnis> + bin/console rum:report (Kapitel 12), oder das Dashboard Ihres Managed-RUM-Anbieters"
+    refresh: "Täglich (cron)"
     access: "Gesamtes Engineering Team"
 
   weekly_report:

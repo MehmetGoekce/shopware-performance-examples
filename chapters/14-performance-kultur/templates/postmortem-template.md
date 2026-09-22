@@ -180,9 +180,9 @@ Die Ursache war [Root Cause]. Der Incident dauerte [Dauer] und betraf ca. [X] Nu
 
 ### Logs & Screenshots
 
-<!-- Links zu relevanten Logs, Grafana-Dashboards, Screenshots -->
+<!-- Links zu relevanten Logs, RUM-Auswertung (rum:report-Ausgabe), Screenshots -->
 
-- [RUM Dashboard zum Zeitpunkt](link)
+- [RUM-Auswertung zum Zeitpunkt](link)
 - [Error Logs](link)
 - [Deployment Logs](link)
 
