@@ -1,0 +1,96 @@
+# Ablage im Shop-Repository: .github/workflows/maintenance.yml — Kapitel 15
+#
+# Woechentlicher Wartungslauf:
+#   - composer audit: bekannte Sicherheitsluecken in composer.lock
+#   - Lighthouse-Baseline gegen die Staging-URL (wie Kapitel 13), Berichte
+#     90 Tage als Artefakt
+#   - Scheitert einer der beiden Jobs, legt der dritte ein Issue an
+#
+# Einrichten:
+#   1. lighthouserc.cjs aus Kapitel 13 (chapters/13-continuous-testing/config/)
+#      ins Repository-Root kopieren
+#   2. Settings > Secrets and variables > Actions > Variables: LHCI_BASE_URL
+#   3. Labels "maintenance" und "performance" anlegen
+#
+# Datenbank-Wartung gehoert nicht hierher: Ein Runner mit SSH-Zugang zur
+# Produktion ist ein Risiko. Wartungsbefehle laufen auf dem Server, die
+# Scheduled Tasks als Dienst (Kapitel 22).
+#
+# Getestet: actionlint, "composer audit --locked" (Composer 2.8), Issue-Skript
+# mit einem Stub fuer github/context. Die LHCI-Schritte sind die aus Kapitel 13.
+
+name: Performance Maintenance
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'  # montags 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: composer:v2
+          coverage: none
+
+      # Liest nur composer.lock, installiert nichts. Exit 1 bei Advisories
+      - name: Composer Audit
+        run: composer audit --locked
+
+  lighthouse-baseline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      # Feste Version, kein "npx lhci" (fremdes npm-Paket, Kapitel 13)
+      - name: Install Lighthouse CI
+        run: npm install -g @lhci/cli@0.15.1
+
+      - name: Run Lighthouse CI
+        run: lhci autorun
+        env:
+          LHCI_BASE_URL: ${{ vars.LHCI_BASE_URL }}
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lighthouse-baseline
+          path: .lighthouseci/
+          # Ordner mit Punkt: ohne diese Zeile bleibt das Artefakt leer
+          include-hidden-files: true
+          retention-days: 90
+
+  create-issue:
+    needs: [dependency-audit, lighthouse-baseline]
+    if: failure()
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Create Issue
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: 'Wöchentliche Wartung: Probleme gefunden',
+              body: `Der Wartungslauf ist gescheitert (Audit oder Lighthouse-Baseline): ${run}`,
+              labels: ['maintenance', 'performance'],
+            });

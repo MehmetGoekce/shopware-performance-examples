@@ -1,0 +1,23 @@
+# Ablage im Shop-Repository: .github/workflows/labeler.yml — Kapitel 14
+#
+# Setzt die Labels aus .github/labeler.yml an Pull Requests.
+# pull_request_target, damit das Token auch bei Pull Requests aus Forks
+# Labels setzen darf. Das ist hier sicher, weil der Job keinen Code aus dem
+# Pull Request auscheckt oder ausfuehrt: Die Action liest nur die Liste der
+# geaenderten Dateien und die Konfiguration aus dem Basis-Branch.
+#
+# @see https://github.com/actions/labeler/tree/v7.0.0#create-workflow
+
+name: Pull Request Labeler
+
+on:
+  pull_request_target:
+
+jobs:
+  labeler:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/labeler@v7

@@ -1,0 +1,23 @@
+# Ablage im Shop-Repository: .github/labeler.yml — Kapitel 14
+#
+# Konfiguration fuer actions/labeler (Format ab v5: changed-files /
+# any-glob-to-any-file). Die Pfade folgen einem Shopware-Projekt: eigener
+# Code liegt in custom/plugins/<Name>/, nicht in src/ wie im Shopware-Core.
+# Die Labels muessen im Repository angelegt sein.
+#
+# @see https://github.com/actions/labeler/tree/v7.0.0#readme
+
+performance-critical:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'custom/plugins/*/src/Resources/app/storefront/**/*.js'
+          - 'custom/plugins/*/src/Resources/app/storefront/**/*.scss'
+          - 'custom/plugins/*/src/Resources/views/**/*.twig'
+
+performance-review-needed:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'composer.json'
+          - 'composer.lock'
+          - '**/package.json'
+          - '**/webpack.config.js'
