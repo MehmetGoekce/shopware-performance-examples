@@ -2,6 +2,8 @@
 
 # BATS tests for the chapter 6 HTTP cache scripts
 
+bats_require_minimum_version 1.5.0
+
 DIR="./chapters/06-http-cache/scripts"
 
 setup() {
@@ -196,7 +198,8 @@ XML
 
 @test "make cache-warmup passes URL, PARALLEL and LIMIT to the chapter 6 script and nothing else" {
     command -v make >/dev/null || skip "make fehlt im Image"
-    run env -u URL -u PARALLEL -u LIMIT make -n cache-warmup URL=http://other.test PARALLEL=3 LIMIT=7
+    # Nur stdout: ohne TERM (GitHub Actions) schreibt tput im Makefile nach stderr.
+    run --separate-stderr env -u URL -u PARALLEL -u LIMIT make -n cache-warmup URL=http://other.test PARALLEL=3 LIMIT=7
     [ "$status" -eq 0 ]
     recipe="$(grep -v '^if \[' <<< "$output")"
     [ "$recipe" = './chapters/06-http-cache/scripts/cache-warmup.sh "http://other.test" --sitemap --parallel 3 --limit 7' ]
