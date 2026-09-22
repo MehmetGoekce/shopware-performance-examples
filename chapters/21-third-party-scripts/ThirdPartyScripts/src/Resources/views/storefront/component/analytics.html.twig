@@ -1,0 +1,26 @@
+{#
+ # Shopwares Google-Analytics-Anbindung an einen serverseitigen Tag Manager schicken
+ # Kapitel 21: Third-Party Scripts & Tag Management
+ #
+ # Ablage im eigenen Theme/Plugin:
+ #   src/Resources/views/storefront/component/analytics.html.twig
+ #
+ # Shopware ruft nach der Einwilligung gtag('config', <ID>, window.gtagConfig)
+ # auf. server_container_url in diesem Objekt schickt die GA4-Daten an den
+ # eigenen Tagging-Server statt direkt an Google. gtag.js selbst laedt
+ # weiterhin im Browser, und nur nach Einwilligung.
+ #
+ # Den Tagging-Server (GTM-Server-Container) betreiben Sie selbst.
+ #
+ # @see https://developers.google.com/tag-platform/tag-manager/server-side/send-data
+ #}
+{% sw_extends '@Storefront/storefront/component/analytics.html.twig' %}
+
+{% block component_head_analytics_gtag_config %}
+    {{ parent() }}
+
+    {% set serverContainerUrl = config('ThirdPartyScripts.config.serverContainerUrl') %}
+    {% if serverContainerUrl %}
+        window.gtagConfig.server_container_url = {{ serverContainerUrl|json_encode|raw }};
+    {% endif %}
+{% endblock %}

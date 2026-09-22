@@ -1,0 +1,28 @@
+{#
+ # Fremdes Widget nur auf den Seiten laden, die es brauchen
+ # Kapitel 21: Third-Party Scripts & Tag Management
+ #
+ # Ablage im eigenen Theme/Plugin:
+ #   src/Resources/views/storefront/base.html.twig
+ #
+ # activeRoute ist in jedem Storefront-Template gesetzt (Routenname des
+ # Requests). Die Route steckt in der URL, die Seite darf also im
+ # HTTP-Cache liegen.
+ #
+ # Setzt das Widget Cookies oder schickt es Daten an den Anbieter, gehoert
+ # es zusaetzlich hinter die Einwilligung (siehe meta.html.twig).
+ #
+ # @see https://github.com/MehmetGoekce/shopware-performance-examples
+ #}
+{% sw_extends '@Storefront/storefront/base.html.twig' %}
+
+{% block base_body_script %}
+    {{ parent() }}
+
+    {# Eigene Widget-URL eintragen #}
+    {% set productWidgetUrl = 'https://reviews-widget.example.com/widget.js' %}
+
+    {% if activeRoute == 'frontend.detail.page' %}
+        <script src="{{ productWidgetUrl }}" defer></script>
+    {% endif %}
+{% endblock %}

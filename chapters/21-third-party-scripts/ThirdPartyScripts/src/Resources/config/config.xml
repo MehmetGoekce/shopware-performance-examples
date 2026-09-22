@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="https://raw.githubusercontent.com/shopware/shopware/trunk/src/Core/System/SystemConfig/Schema/config.xsd">
+    <card>
+        <title>Google Tag Manager</title>
+        <title lang="de-DE">Google Tag Manager</title>
+
+        <input-field type="text">
+            <name>gtmId</name>
+            <label>Container-ID (GTM-XXXXXXX). Leer: nichts wird geladen.</label>
+            <label lang="de-DE">Container-ID (GTM-XXXXXXX). Leer: nichts wird geladen.</label>
+        </input-field>
+
+        <input-field type="int">
+            <name>gtmDelay</name>
+            <label>Wiederkehrende Besucher mit Einwilligung: spätestens nach so vielen Millisekunden laden, sonst bei der ersten Interaktion</label>
+            <label lang="de-DE">Wiederkehrende Besucher mit Einwilligung: spätestens nach so vielen Millisekunden laden, sonst bei der ersten Interaktion</label>
+            <defaultValue>5000</defaultValue>
+        </input-field>
+
+        <input-field type="bool">
+            <name>usePartytown</name>
+            <label>GTM im Web Worker ausführen (Partytown)</label>
+            <label lang="de-DE">GTM im Web Worker ausführen (Partytown)</label>
+            <defaultValue>false</defaultValue>
+        </input-field>
+    </card>
+
+    <card>
+        <title>Server-Side Tagging</title>
+        <title lang="de-DE">Server-Side Tagging</title>
+
+        <input-field type="url">
+            <name>serverContainerUrl</name>
+            <label>URL des Tagging-Servers (https://metrics.example.com). Leer: Shopwares Google Analytics sendet direkt an Google.</label>
+            <label lang="de-DE">URL des Tagging-Servers (https://metrics.example.com). Leer: Shopwares Google Analytics sendet direkt an Google.</label>
+        </input-field>
+    </card>
+</config>

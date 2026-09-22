@@ -1,0 +1,8 @@
+{
+    "thirdPartyScripts": {
+        "cookie": {
+            "gtm": "Google Tag Manager",
+            "gtmDescription": "Loads Google Tag Manager and the services configured in it."
+        }
+    }
+}

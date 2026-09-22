@@ -1,0 +1,23 @@
+{
+  "name": "memotech/third-party-scripts",
+  "description": "Kapitel 21: Google Tag Manager erst nach Einwilligung laden (Shopware-Cookie-Consent), optional im Web Worker per Partytown",
+  "type": "shopware-platform-plugin",
+  "license": "MIT",
+  "version": "1.0.0",
+  "require": {
+    "shopware/core": "~6.6.0 || ~6.7.0",
+    "shopware/storefront": "~6.6.0 || ~6.7.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "ThirdPartyScripts\\": "src/"
+    }
+  },
+  "extra": {
+    "shopware-plugin-class": "ThirdPartyScripts\\ThirdPartyScripts",
+    "label": {
+      "de-DE": "Third-Party Scripts (Kapitel 21)",
+      "en-GB": "Third-Party Scripts (chapter 21)"
+    }
+  }
+}

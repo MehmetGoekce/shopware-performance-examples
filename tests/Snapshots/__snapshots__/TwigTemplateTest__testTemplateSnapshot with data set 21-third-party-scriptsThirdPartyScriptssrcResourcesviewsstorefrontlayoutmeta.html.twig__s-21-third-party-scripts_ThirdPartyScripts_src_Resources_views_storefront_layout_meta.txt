@@ -1,0 +1,109 @@
+{#
+ # Google Tag Manager erst nach Einwilligung laden
+ # Kapitel 21: Third-Party Scripts & Tag Management
+ #
+ # Ablage im eigenen Theme/Plugin:
+ #   src/Resources/views/storefront/layout/meta.html.twig
+ #
+ # Block layout_head_javascript_tracking ist Shopwares Platz fuer Tracking
+ # im <head>. parent() behaelt die eingebaute Google-Analytics-Anbindung
+ # samt Consent-Mode-Vorgabe (alles «denied», solange keine Einwilligung).
+ #
+ # Ablauf im Browser – die Seite selbst ist fuer alle Besucher gleich und
+ # darf deshalb im HTTP-Cache liegen:
+ #   - Kein Cookie gtm-enabled=1: nichts laden. Stimmt der Besucher im
+ #     Banner zu, meldet Shopware das per CookieConfiguration_Update, und
+ #     GTM laedt sofort (der Klick war die Interaktion).
+ #   - Cookie schon da (wiederkehrender Besucher): GTM laedt bei der ersten
+ #     Interaktion, spaetestens nach gtmDelay Millisekunden.
+ # Den Cookie legt GtmCookieProvider als Eintrag im Banner an.
+ #
+ # Widerruf: Shopware loescht nur gtm-enabled. Ein schon geladener GTM
+ # laeuft bis zum naechsten Seitenaufruf weiter, Cookies der Tags bleiben.
+ #
+ # Partytown (usePartytown): Die Bibliothek liegt unter
+ # Resources/public/partytown und wird per bin/console assets:install nach
+ # public/bundles/thirdpartyscripts/partytown/ kopiert. Sie muss von
+ # derselben Domain kommen wie die Seite (Service Worker).
+ #
+ # @see https://github.com/MehmetGoekce/shopware-performance-examples
+ #}
+{% sw_extends '@Storefront/storefront/layout/meta.html.twig' %}
+
+{% block layout_head_javascript_tracking %}
+    {{ parent() }}
+
+    {% set gtmId = config('ThirdPartyScripts.config.gtmId') %}
+    {% if gtmId %}
+        {% set usePartytown = config('ThirdPartyScripts.config.usePartytown') %}
+
+        {% if usePartytown %}
+            {# lib muss ein Pfad sein, der mit / beginnt – asset() liefert eine
+               absolute URL, damit startet Partytown nicht (nur eine Warnung in
+               der Konsole). Ohne debug: false laedt es aus lib/debug/. #}
+            {% set partytownLib = app.request.basePath ~ '/bundles/thirdpartyscripts/partytown/' %}
+            <script>
+                partytown = {
+                    lib: {{ partytownLib|json_encode|raw }},
+                    debug: false,
+                    forward: ['dataLayer.push']
+                };
+            </script>
+            <script src="{{ partytownLib }}partytown.js"></script>
+        {% endif %}
+
+        <script>
+        (function () {
+            var gtmId = {{ gtmId|json_encode|raw }};
+            var delay = {{ (config('ThirdPartyScripts.config.gtmDelay') ?: 5000)|json_encode|raw }};
+            var usePartytown = {{ usePartytown ? 'true' : 'false' }};
+            var events = ['scroll', 'pointerdown', 'keydown', 'touchstart'];
+            var loaded = false;
+
+            function hasConsent() {
+                return document.cookie.split(';').some(function (item) {
+                    return item.trim() === 'gtm-enabled=1';
+                });
+            }
+
+            function loadGtm() {
+                if (loaded || !hasConsent()) {
+                    return;
+                }
+                loaded = true;
+
+                window.dataLayer = window.dataLayer || [];
+                window.dataLayer.push({ 'gtm.start': new Date().getTime(), event: 'gtm.js' });
+
+                var script = document.createElement('script');
+                script.src = 'https://www.googletagmanager.com/gtm.js?id=' + encodeURIComponent(gtmId);
+                if (usePartytown) {
+                    script.type = 'text/partytown';
+                    document.head.appendChild(script);
+                    window.dispatchEvent(new CustomEvent('ptupdate'));
+                } else {
+                    script.async = true;
+                    document.head.appendChild(script);
+                }
+            }
+
+            if (hasConsent()) {
+                events.forEach(function (name) {
+                    window.addEventListener(name, loadGtm, { once: true, passive: true });
+                });
+                window.setTimeout(loadGtm, delay);
+            }
+
+            // document.$emitter legt das Storefront-JavaScript an (defer),
+            // es existiert erst bei DOMContentLoaded.
+            document.addEventListener('DOMContentLoaded', function () {
+                document.$emitter.subscribe('CookieConfiguration_Update', function (event) {
+                    if (event.detail['gtm-enabled'] === true) {
+                        loadGtm();
+                    }
+                });
+            });
+        })();
+        </script>
+    {% endif %}
+{% endblock %}

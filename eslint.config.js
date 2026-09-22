@@ -186,6 +186,8 @@ export default [
             '**/*.min.js',
             // Fremdcode, unveraendert aus web-vitals 6.2.2 (Kapitel 12)
             '**/web-vitals.attribution.js',
+            // Fremdcode, unveraendert aus @qwik.dev/partytown 0.14.4 (Kapitel 21)
+            'chapters/21-third-party-scripts/ThirdPartyScripts/src/Resources/public/partytown/**',
         ]
     }
 ];

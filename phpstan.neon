@@ -37,6 +37,9 @@ parameters:
         # Theme-Plugin-Klasse (Shopware Plugin + ThemeInterface)
         - chapters/16-shopware-themes/PerformanceTheme/src/PerformanceTheme.php
 
+        # Plugin-Klasse (Shopware Plugin)
+        - chapters/21-third-party-scripts/ThirdPartyScripts/src/ThirdPartyScripts.php
+
     reportUnmatchedIgnoredErrors: false
 
     ignoreErrors:
