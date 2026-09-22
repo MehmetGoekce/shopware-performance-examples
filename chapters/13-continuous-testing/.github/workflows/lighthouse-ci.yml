@@ -1,23 +1,25 @@
-# Lighthouse CI GitHub Actions Workflow
+# Lighthouse CI für Pull Requests — Kapitel 13
 #
-# Führt Performance-Tests bei jedem Push/PR aus.
+# Misst die Staging- oder Preview-URL aus der Repository-Variable
+# LHCI_BASE_URL, nicht den Code im Runner. Der Stand des Pull Requests
+# muss dort deployt sein.
 #
-# Setup:
-#   1. Repository Settings > Secrets > LHCI_GITHUB_APP_TOKEN hinzufügen
-#   2. Optional: LHCI_TOKEN für LHCI Server
+# Einrichten:
+#   1. lighthouserc.cjs aus config/ ins Repository-Root kopieren
+#   2. Settings > Secrets and variables > Actions > Variables: LHCI_BASE_URL
+#   3. Settings > Branches: Job "lighthouse" als Required Check setzen
 #
-# Dokumentation:
-#   https://github.com/GoogleChrome/lighthouse-ci/blob/main/docs/getting-started.md
+# Getestet: Schritte lokal mit @lhci/cli 0.15.1 gegen Shopware 6.6.10.6.
 
 name: Lighthouse CI
 
 on:
-  push:
-    branches: [main, develop]
   pull_request:
     branches: [main]
-  # Manueller Trigger
-  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
 
 jobs:
   lighthouse:
@@ -25,101 +27,60 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: '22'
 
-      - name: Install Dependencies
-        run: npm ci
-
-      # Optional: Shopware Build
-      # - name: Build Shopware Storefront
-      #   run: |
-      #     bin/console theme:compile
-      #     bin/console assets:install
-
+      # Feste Version, kein "npx lhci": ohne installiertes @lhci/cli
+      # lädt npx das fremde Paket "lhci", das immer mit Exit 0 endet
       - name: Install Lighthouse CI
-        run: npm install -g @lhci/cli@0.13.x
+        run: npm install -g @lhci/cli@0.15.1
 
       - name: Run Lighthouse CI
         run: lhci autorun
         env:
-          LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
-          # Optional: LHCI Server Token
-          # LHCI_TOKEN: ${{ secrets.LHCI_TOKEN }}
+          LHCI_BASE_URL: ${{ vars.LHCI_BASE_URL }}
 
-      # Ergebnisse als Artifact speichern
-      - name: Upload Lighthouse Results
-        uses: actions/upload-artifact@v4
+      - name: Upload reports
         if: always()
+        uses: actions/upload-artifact@v7
         with:
           name: lighthouse-results
           path: .lighthouseci/
-          retention-days: 30
 
-      # Optional: PR-Kommentar mit Ergebnissen
-      - name: Comment PR with Results
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
+      # Auch nach einer Regression kommentieren (dann ist er am wichtigsten)
+      - name: Comment PR with results
+        if: always()
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
             const path = '.lighthouseci/manifest.json';
-
             if (!fs.existsSync(path)) {
-              console.log('No manifest found');
+              core.warning('Kein manifest.json: Lighthouse CI brach vor dem Upload ab');
               return;
             }
 
-            const manifest = JSON.parse(fs.readFileSync(path, 'utf8'));
-            const results = manifest.map(entry => {
-              const summary = entry.summary;
-              return `| ${entry.url} | ${Math.round(summary.performance * 100)} | ${Math.round(summary.accessibility * 100)} | ${Math.round(summary.seo * 100)} |`;
-            });
+            // Ein Eintrag je Lauf; nur den Median-Lauf je URL zeigen
+            const runs = JSON.parse(fs.readFileSync(path, 'utf8'))
+              .filter((run) => run.isRepresentativeRun);
+            const pct = (score) => Math.round(score * 100);
 
-            const comment = `## Lighthouse CI Results
+            let body = '## Lighthouse CI\n\n';
+            body += '| URL | Performance | Accessibility | Best Practices | SEO |\n';
+            body += '|-----|-------------|---------------|----------------|-----|\n';
+            for (const run of runs) {
+              const s = run.summary;
+              body += `| ${run.url} | ${pct(s.performance)} | ${pct(s.accessibility)} `
+                + `| ${pct(s['best-practices'])} | ${pct(s.seo)} |\n`;
+            }
 
-            | URL | Performance | Accessibility | SEO |
-            |-----|-------------|---------------|-----|
-            ${results.join('\n')}
-
-            [Full Report](${manifest[0]?.htmlPath || 'N/A'})
-            `;
-
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
+            await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: comment
+              issue_number: context.issue.number,
+              body,
             });
-
-  # Separater Job für Staging-Umgebung
-  lighthouse-staging:
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/develop'
-    needs: lighthouse
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install Lighthouse CI
-        run: npm install -g @lhci/cli@0.13.x
-
-      - name: Test Staging Environment
-        run: |
-          lhci autorun \
-            --collect.url="https://staging.ihr-shop.de/" \
-            --collect.url="https://staging.ihr-shop.de/kategorie/test/" \
-            --collect.numberOfRuns=5
-        env:
-          LHCI_TOKEN: ${{ secrets.LHCI_TOKEN }}

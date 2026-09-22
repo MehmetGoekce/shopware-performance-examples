@@ -1,0 +1,73 @@
+# Lighthouse CI nach jedem erfolgreichen Deployment — Kapitel 13
+#
+# Läuft auf "deployment_status" und misst die URL der Umgebung
+# (environment_url; target_url ist nur der Link zum Deploy-Log).
+#
+# Einrichten:
+#   1. lighthouserc.cjs aus config/ ins Repository-Root kopieren
+#   2. Secret SLACK_WEBHOOK_URL: Incoming-Webhook-URL aus Slack
+#   3. Optional LHCI-Server (docker/docker-compose.yml): Variable
+#      LHCI_SERVER_URL, Secrets LHCI_TOKEN (Build-Token aus dem Wizard)
+#      und LHCI_PASSWORD
+#
+# Getestet: Schritte lokal mit @lhci/cli 0.15.1 gegen Shopware 6.6.10.6.
+
+name: Lighthouse CI (Staging)
+
+on:
+  deployment_status:
+
+permissions:
+  contents: read
+
+jobs:
+  lighthouse:
+    if: github.event.deployment_status.state == 'success'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Install Lighthouse CI
+        run: npm install -g @lhci/cli@0.15.1
+
+      - name: Run Lighthouse CI
+        run: lhci autorun
+        env:
+          LHCI_BASE_URL: ${{ github.event.deployment_status.environment_url }}
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lighthouse-staging
+          path: .lighthouseci/
+
+      # Verlauf auf dem LHCI-Server, auch für gescheiterte Läufe
+      - name: Upload to LHCI server
+        if: always() && vars.LHCI_SERVER_URL != ''
+        run: lhci upload --target=lhci --serverBaseUrl=${{ vars.LHCI_SERVER_URL }}
+        env:
+          LHCI_TOKEN: ${{ secrets.LHCI_TOKEN }}
+          LHCI_BASIC_AUTH__USERNAME: ci
+          LHCI_BASIC_AUTH__PASSWORD: ${{ secrets.LHCI_PASSWORD }}
+
+      - name: Notify Slack on failure
+        if: failure()
+        uses: slackapi/slack-github-action@v4
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            text: "Lighthouse CI auf Staging fehlgeschlagen"
+            blocks:
+              - type: section
+                text:
+                  type: mrkdwn
+                  text: "*Lighthouse CI auf Staging fehlgeschlagen* (Budget überschritten oder Lauf abgebrochen)\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Lauf ansehen>"

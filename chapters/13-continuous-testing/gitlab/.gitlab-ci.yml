@@ -1,0 +1,28 @@
+# Lighthouse CI in GitLab — Kapitel 13
+#
+# Misst die Staging- oder Review-URL aus der CI/CD-Variable LHCI_BASE_URL
+# (Settings > CI/CD > Variables). lighthouserc.cjs liegt im Repository-Root.
+#
+# Getestet: before_script und script wörtlich in node:22-bookworm-slim
+# gegen Shopware 6.6.10.6, @lhci/cli 0.15.1.
+
+lighthouse:
+  stage: test
+  image: node:22-bookworm-slim
+  variables:
+    CHROME_PATH: /usr/bin/chromium
+  before_script:
+    # Das Node-Image bringt kein Chrome mit
+    - apt-get update -qq && apt-get install -y -qq chromium > /dev/null
+    - npm install -g @lhci/cli@0.15.1
+  script:
+    # Der Job läuft als root; Chrome startet dort nur ohne Sandbox
+    - lhci autorun --collect.settings.chromeFlags="--no-sandbox"
+  artifacts:
+    when: always
+    paths:
+      - .lighthouseci/
+    expire_in: 1 week
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
