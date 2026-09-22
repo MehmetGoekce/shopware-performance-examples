@@ -2,48 +2,40 @@
 #
 # Performance Report Generator
 #
-# Generiert einen Performance-Report für Stakeholder.
-# Kann wöchentlich oder monatlich per Cron ausgeführt werden.
+# Baut einen Markdown-Report aus den RUM-Logs von Kapitel 12:
+# Perzentile aus `bin/console rum:report`, Error Budget aus error-budget.php.
+# Abschnitte, die kein Werkzeug liefert (Top-Issues, Erfolge), bleiben als
+# Platzhalter fuer den Champion stehen - der Report erfindet keine Zahlen.
 #
-# Verwendung:
-#   ./generate-report.sh weekly
-#   ./generate-report.sh monthly
+# Usage: ./generate-report.sh [weekly|monthly]
 #
-# Voraussetzungen:
-#   - jq (JSON parsing)
-#   - curl (API calls)
-#   - Zugang zu RUM/Monitoring APIs
+# Umgebung:
+#   SHOPWARE_DIR   Shopware-Verzeichnis (Vorgabe: /var/www/html)
+#   OUTPUT_DIR     Zielordner (Vorgabe: ../reports neben diesem Skript)
+#   SLACK_WEBHOOK  optional: Kurzfassung an einen Slack-Webhook schicken
+#   CONSOLE, PHP, CURL  Befehle (Vorgabe: $SHOPWARE_DIR/bin/console, php, curl)
+#
+# Voraussetzung: Plugin RumMonitoring (Kapitel 12) ist installiert.
+# Ausfuehren als Benutzer des Webservers (liest var/log/rum-*.log).
+#
+# Exit-Codes: 0 = Report geschrieben, 1 = Aufruffehler, 2 = Werkzeug gescheitert
 
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPORT_TYPE="${1:-weekly}"
-OUTPUT_DIR="${SCRIPT_DIR}/../reports"
+SHOPWARE_DIR="${SHOPWARE_DIR:-/var/www/html}"
+OUTPUT_DIR="${OUTPUT_DIR:-${SCRIPT_DIR}/../reports}"
+CONSOLE="${CONSOLE:-${SHOPWARE_DIR}/bin/console}"
+PHP="${PHP:-php}"
+CURL="${CURL:-curl}"
 TIMESTAMP=$(date +%Y%m%d)
 
-# Farben
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m'
-
-echo "================================================"
-echo "  Performance Report Generator"
-echo "================================================"
-echo ""
-echo "Report-Typ: ${REPORT_TYPE}"
-echo "Datum: $(date)"
-echo ""
-
-# Output-Verzeichnis
-mkdir -p "${OUTPUT_DIR}"
-
-# Konfiguration (anpassen!)
-RUM_API_URL="${RUM_API_URL:-http://localhost:8080/api/rum}"
-LIGHTHOUSE_API_URL="${LIGHTHOUSE_API_URL:-http://localhost:9001/api}"
-
-# Zeitraum
 case "${REPORT_TYPE}" in
+    -h|--help)
+        echo "Usage: $0 [weekly|monthly]"
+        exit 0
+        ;;
     weekly)
         DAYS=7
         PERIOD="Letzte 7 Tage"
@@ -53,165 +45,97 @@ case "${REPORT_TYPE}" in
         PERIOD="Letzte 30 Tage"
         ;;
     *)
-        echo "Unbekannter Report-Typ: ${REPORT_TYPE}"
-        echo "Verwendung: $0 [weekly|monthly]"
+        echo "Unbekannter Report-Typ: ${REPORT_TYPE}" >&2
+        echo "Usage: $0 [weekly|monthly]" >&2
         exit 1
         ;;
 esac
 
-# Report-Datei
+HOURS=$((DAYS * 24))
+mkdir -p "${OUTPUT_DIR}"
 REPORT_FILE="${OUTPUT_DIR}/performance-report-${REPORT_TYPE}-${TIMESTAMP}.md"
 
-# Header
-cat > "${REPORT_FILE}" << EOF
+# Erst in Variablen lesen, dann schreiben: ein gescheitertes Werkzeug
+# hinterlaesst keinen halben Report
+if ! CWV=$("${CONSOLE}" rum:report --hours="${HOURS}" 2>&1); then
+    echo "rum:report gescheitert:" >&2
+    echo "${CWV}" >&2
+    exit 2
+fi
+
+if ! BY_ROUTE=$("${CONSOLE}" rum:report --hours="${HOURS}" --by=route 2>&1); then
+    echo "rum:report --by=route gescheitert:" >&2
+    echo "${BY_ROUTE}" >&2
+    exit 2
+fi
+
+# error-budget.php: 0 = ok, 1 = SLO verletzt, 3 = zu wenig Daten, 2 = Fehler
+BUDGET_RC=0
+BUDGET=$("${PHP}" "${SCRIPT_DIR}/error-budget.php" "${SHOPWARE_DIR}" 2>&1) || BUDGET_RC=$?
+
+case "${BUDGET_RC}" in
+    0) BUDGET_NOTE="Kein SLO verletzt." ;;
+    1) BUDGET_NOTE="**Mindestens ein SLO ist verletzt (p75 nicht mehr gut):** Stufe rot laut Error-Budget-Policy." ;;
+    3) BUDGET_NOTE="Zu wenig Seitenaufrufe fuer eine Bewertung." ;;
+    *)
+        echo "error-budget.php gescheitert (Exit ${BUDGET_RC}):" >&2
+        echo "${BUDGET}" >&2
+        exit 2
+        ;;
+esac
+
+OVERALL=$(grep '^Gesamt: ' <<< "${BUDGET}" | head -n 1 || true)
+
+cat > "${REPORT_FILE}.part" << EOF
 # Performance Report
 
 **Zeitraum**: ${PERIOD}
 **Erstellt**: $(date '+%Y-%m-%d %H:%M')
-**Typ**: ${REPORT_TYPE^}
+**Typ**: ${REPORT_TYPE}
 
----
+## Core Web Vitals (Feld-Daten, ${PERIOD})
 
-## Executive Summary
+\`\`\`text
+${CWV}
+\`\`\`
 
-EOF
+## Je Seitentyp
 
-# Core Web Vitals (Simulation - in Realität aus API)
-echo "Sammle Core Web Vitals..."
+\`\`\`text
+${BY_ROUTE}
+\`\`\`
 
-# Simulierte Daten (ersetzen mit echten API-Calls)
-LCP_P75=2340
-LCP_PREV=2580
-INP_P75=185
-INP_PREV=195
-CLS_P75=0.08
-CLS_PREV=0.09
+## Error Budget (28 Tage)
 
-# Status berechnen
-get_status() {
-    local metric=$1
-    local value=$2
+\`\`\`text
+${BUDGET}
+\`\`\`
 
-    case ${metric} in
-        LCP)
-            if [[ "${value}" -le 2500 ]]; then echo "good"
-            elif [[ "${value}" -le 4000 ]]; then echo "needs-improvement"
-            else echo "poor"
-            fi
-            ;;
-        INP)
-            if [[ "${value}" -le 200 ]]; then echo "good"
-            elif [[ "${value}" -le 500 ]]; then echo "needs-improvement"
-            else echo "poor"
-            fi
-            ;;
-    esac
-}
+${BUDGET_NOTE}
 
-LCP_STATUS=$(get_status LCP ${LCP_P75})
-INP_STATUS=$(get_status INP ${INP_P75})
-
-# Trend berechnen
-get_trend() {
-    local current=$1
-    local previous=$2
-
-    if [[ "${current}" -lt "${previous}" ]]; then
-        echo "↓ verbessert"
-    elif [[ "${current}" -gt "${previous}" ]]; then
-        echo "↑ verschlechtert"
-    else
-        echo "→ stabil"
-    fi
-}
-
-LCP_TREND=$(get_trend ${LCP_P75} ${LCP_PREV})
-INP_TREND=$(get_trend ${INP_P75} ${INP_PREV})
-
-# Core Web Vitals Tabelle
-cat >> "${REPORT_FILE}" << EOF
-## Core Web Vitals (p75)
-
-| Metrik | Aktuell | Vorperiode | Trend | Status |
-|--------|---------|------------|-------|--------|
-| LCP | ${LCP_P75}ms | ${LCP_PREV}ms | ${LCP_TREND} | ${LCP_STATUS} |
-| INP | ${INP_P75}ms | ${INP_PREV}ms | ${INP_TREND} | ${INP_STATUS} |
-| CLS | ${CLS_P75} | ${CLS_PREV} | → stabil | good |
-
-EOF
-
-# Error Budget Status
-echo "Berechne Error Budget..."
-
-cat >> "${REPORT_FILE}" << EOF
-## Error Budget Status
-
-| Metrik | Verbraucht | Verbleibend | Policy |
-|--------|------------|-------------|--------|
-| Gesamt | 35% | 65% | **Green** |
-
-**Empfehlung**: Normale Entwicklung möglich.
-
-EOF
-
-# Top Issues
-cat >> "${REPORT_FILE}" << EOF
 ## Top Performance Issues
 
-1. **Checkout LCP erhöht** (2.8s → Ziel: 2.5s)
-   - Ursache: Synchrones Laden von Payment-Icons
-   - Status: In Bearbeitung (PR #456)
+<!-- vom Champion ausfuellen: Seite, Metrik, Ursache, Ticket -->
 
-2. **Produktseite CLS auf Mobile** (0.15)
-   - Ursache: Bilder ohne dimensions
-   - Status: Geplant für nächsten Sprint
-
-3. **Suche langsam bei > 50 Ergebnissen**
-   - Ursache: Fehlende Pagination
-   - Status: Backlog
-
-EOF
-
-# Erfolge
-cat >> "${REPORT_FILE}" << EOF
 ## Erfolge diese Periode
 
-- **LCP um 10% verbessert** auf Startseite
-- **3 Performance-PRs** gemerged
-- **0 Performance-Incidents**
+<!-- vom Champion ausfuellen: gemergte Performance-PRs mit Vorher/Nachher aus rum:report -->
 
+## Naechste Schritte
+
+<!-- vom Champion ausfuellen -->
 EOF
+mv "${REPORT_FILE}.part" "${REPORT_FILE}"
 
-# Nächste Schritte
-cat >> "${REPORT_FILE}" << EOF
-## Nächste Schritte
+echo "Report erstellt: ${REPORT_FILE}"
 
-1. Checkout-Optimierung abschließen
-2. Image-Dimensions auf allen Produktseiten
-3. Performance-Budget für JavaScript verschärfen
-
----
-
-*Report generiert von: Performance Champion*
-*Tool: generate-report.sh v1.0*
-EOF
-
-echo ""
-echo -e "${GREEN}Report erstellt: ${REPORT_FILE}${NC}"
-echo ""
-
-# Optional: Report per Slack/Email senden
-if [[ -n "${SLACK_WEBHOOK}" ]]; then
-    echo "Sende Report an Slack..."
-
-    SUMMARY="Performance Report (${REPORT_TYPE}): LCP ${LCP_P75}ms (${LCP_STATUS}), INP ${INP_P75}ms (${INP_STATUS})"
-
-    curl -s -X POST "${SLACK_WEBHOOK}" \
+if [[ -n "${SLACK_WEBHOOK:-}" ]]; then
+    SUMMARY="Performance Report (${REPORT_TYPE}): Error Budget ${OVERALL#Gesamt: }"
+    if ! "${CURL}" -sS -f -X POST "${SLACK_WEBHOOK}" \
         -H 'Content-type: application/json' \
-        -d "{\"text\": \"${SUMMARY}\n\nVollständiger Report: [Link zum Report]\"}" > /dev/null
-
+        -d "{\"text\": \"${SUMMARY}\"}" > /dev/null; then
+        echo "Slack-Versand gescheitert, Report liegt trotzdem unter ${REPORT_FILE}" >&2
+        exit 2
+    fi
     echo "Slack-Nachricht gesendet."
 fi
-
-echo ""
-echo "Done."
