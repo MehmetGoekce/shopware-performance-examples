@@ -189,12 +189,26 @@ XML
 
 @test "make cache-warmup without URL prints usage and fails" {
     command -v make >/dev/null || skip "make fehlt im Image"
-    run make -s cache-warmup
+    run env -u URL -u PARALLEL -u LIMIT make -s cache-warmup
     [ "$status" -ne 0 ]
     [[ "$output" == *"Usage: make cache-warmup URL="* ]]
 }
 
-@test "make cache-warmup runs the chapter 6 sitemap warmer, not a cache clear" {
+@test "make cache-warmup passes URL, PARALLEL and LIMIT to the chapter 6 script and nothing else" {
+    command -v make >/dev/null || skip "make fehlt im Image"
+    run env -u URL -u PARALLEL -u LIMIT make -n cache-warmup URL=http://other.test PARALLEL=3 LIMIT=7
+    [ "$status" -eq 0 ]
+    recipe="$(grep -v '^if \[' <<< "$output")"
+    [ "$recipe" = './chapters/06-http-cache/scripts/cache-warmup.sh "http://other.test" --sitemap --parallel 3 --limit 7' ]
+}
+
+@test "make cache-warmup defaults to the script defaults (parallel 2, limit 100)" {
+    command -v make >/dev/null || skip "make fehlt im Image"
+    run env -u URL -u PARALLEL -u LIMIT make -n cache-warmup URL=http://other.test
+    [[ "$output" == *'cache-warmup.sh "http://other.test" --sitemap --parallel 2 --limit 100'* ]]
+}
+
+@test "make cache-warmup warms sitemap URLs through the real script" {
     command -v make >/dev/null || skip "make fehlt im Image"
     make_curl_stub
     cat > "$FIXTURES/shop.test_sitemap.xml" <<'XML'
@@ -203,9 +217,8 @@ XML
 XML
     printf '<urlset><url><loc>http://shop.test/p1</loc></url><url><loc>http://shop.test/p2</loc></url><url><loc>http://shop.test/p3</loc></url></urlset>' \
         | gzip -c > "$FIXTURES/shop.test_sitemap_a.xml.gz"
-    CURL_CMD="$TMP/curl" run make -s cache-warmup URL=http://shop.test PARALLEL=1 LIMIT=2
+    CURL_CMD="$TMP/curl" run env -u PARALLEL -u LIMIT make -s cache-warmup URL=http://shop.test PARALLEL=1 LIMIT=2
     [ "$status" -eq 0 ]
     [[ "$output" == *"URLs: 2"* ]]
     [[ "$output" == *"http://shop.test/p1"* ]]
-    [[ "$output" != *"cache:clear"* ]]
 }

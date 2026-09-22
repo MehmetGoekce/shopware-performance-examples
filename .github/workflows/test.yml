@@ -726,5 +726,9 @@ jobs:
       - name: PHP vorhanden
         run: php --version
 
+      # http-cache-scripts.bats prueft make cache-warmup und ueberspringt ohne make.
+      - name: make vorhanden
+        run: make --version
+
       - name: Run BATS Tests
         run: bats tests/Shell/

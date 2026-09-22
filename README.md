@@ -130,7 +130,7 @@ docker-compose -f docker-compose.redis.yml logs -f sentinel1
 | `make start` | Container starten |
 | `make stop` | Container stoppen |
 | `make benchmark` | Performance-Tests |
-| `make cache-warmup URL=https://ihr-shop.ch` | HTTP-Cache aus der Sitemap vorwärmen (Kapitel 6, `chapters/06-http-cache/scripts/cache-warmup.sh`) |
+| `make cache-warmup URL=https://ihr-shop.ch` | HTTP-Cache aus der Sitemap vorwärmen (Kapitel 6, `chapters/06-http-cache/scripts/cache-warmup.sh`; vorher `bin/console sitemap:generate`, optional `PARALLEL=4 LIMIT=500`) |
 | `make redis-failover` | Redis Failover simulieren |
 | `make analyze-queries` | Langsame Queries finden |
 
