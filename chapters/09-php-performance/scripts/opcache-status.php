@@ -91,7 +91,7 @@ $scriptsUsed = $status['opcache_statistics']['num_cached_scripts'];
 
 // Das WIRKSAME Maximum, nicht das eingetragene. PHP rundet
 // opcache.max_accelerated_files auf die naechste Zahl einer festen Reihe auf
-// (... 16229, 32531, 65407, 130987), und opcache_get_configuration() meldet
+// (... 32531, 65407, 130987, 262237, ...), und opcache_get_configuration() meldet
 // weiterhin stur den Eingabewert. Aus 50000 werden 65407 - wer gegen 50000
 // rechnet, meldet eine Auslastung, die es nicht gibt.
 $scriptsMax     = $status['opcache_statistics']['max_cached_keys'];

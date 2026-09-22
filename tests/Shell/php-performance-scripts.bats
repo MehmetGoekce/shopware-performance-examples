@@ -252,6 +252,32 @@ STUB
     [ "$output" -eq 1 ]
 }
 
+@test "die OPcache-Vorlage nennt die gemessene Dateizahl und laesst die Reihe offen" {
+    # MEM-286: Dieselbe Dateizahl stand an fuenf Stellen verschieden da
+    # (14177, 14.200, 14400, 14.400). Gemessen in dockware/dev:6.6.10.6 mit den
+    # beiden Demo-Plugins: 14177, davon 14160 unter vendor/ (ohne var/).
+    # MEM-294: Die Reihe endet nicht bei 130987 - gemessen 262237 und 524521.
+    tr '\n' ' ' < "$CONFIG/99-shopware-opcache.ini" | sed 's/ *; */ /g' > "$BATS_TEST_TMPDIR/k"
+    run grep -qF '14177 PHP-Dateien, davon 14160 unter vendor/' "$BATS_TEST_TMPDIR/k"
+    [ "$status" -eq 0 ]
+    run grep -qF '130987, 262237, 524521 und so fort' "$BATS_TEST_TMPDIR/k"
+    [ "$status" -eq 0 ]
+    run grep -qE '14\.?(200|400)' "$CONFIG/99-shopware-opcache.ini"
+    [ "$status" -ne 0 ]
+}
+
+@test "die OPcache-Vorlage begruendet log_verbosity_level nicht mit der JIT-Warnung" {
+    # MEM-284: Die JIT-Warnung (pcov/Xdebug) erscheint bei 0, 1 und 2 gleich.
+    # Stufe 2 zeigt OPcaches eigene Warnungen, u. a. zu ungueltigen Werten.
+    tr '\n' ' ' < "$CONFIG/99-shopware-opcache.ini" | sed 's/ *; */ /g' > "$BATS_TEST_TMPDIR/k"
+    run grep -qF 'darunter die Meldung, dass JIT' "$BATS_TEST_TMPDIR/k"
+    [ "$status" -ne 0 ]
+    run grep -qF 'must be set between 1 and 50' "$BATS_TEST_TMPDIR/k"
+    [ "$status" -eq 0 ]
+    run grep -cE '^opcache\.log_verbosity_level=2$' "$CONFIG/99-shopware-opcache.ini"
+    [ "$output" -eq 1 ]
+}
+
 @test "die OPcache-Vorlage laesst enable_cli aus" {
     run grep -cE '^opcache\.enable_cli=0$' "$CONFIG/99-shopware-opcache.ini"
     [ "$output" -eq 1 ]
