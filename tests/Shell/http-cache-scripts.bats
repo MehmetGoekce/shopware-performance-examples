@@ -133,34 +133,78 @@ STUB
     make_curl_stub
     printf 'HTTP/1.1 200 OK\r\nCache-Control: no-cache, private\r\nAge: 0\r\nTTFB=0.120\n' > "$FIXTURES/first.headers"
     printf 'HTTP/1.1 200 OK\r\nCache-Control: no-cache, private\r\nAge: 0\r\nTTFB=0.110\n' > "$FIXTURES/second.headers"
-    CURL_CMD="$TMP/curl" CACHE_DEBUG_WAIT=0 run "$DIR/cache-debug.sh" http://shop.test /
+    CURL_CMD="$TMP/curl" CACHE_DEBUG_WAIT=1 run "$DIR/cache-debug.sh" http://shop.test /
     [ "$status" -eq 0 ]
     [[ "$output" != *"aus dem Cache"* ]]
-    [[ "$output" == *"Nicht gecacht"* ]]
+    [[ "$output" == *"Kein Treffer erkennbar"* ]]
 }
 
-@test "cache-debug.sh reports the built-in cache for Age > 0" {
+@test "cache-debug.sh reports the built-in cache when Age grows by the pause" {
     make_curl_stub
     printf 'HTTP/1.1 200 OK\r\nCache-Control: no-cache, private\r\nAge: 0\r\nTTFB=0.130\n' > "$FIXTURES/first.headers"
     printf 'HTTP/1.1 200 OK\r\nCache-Control: no-cache, private\r\nAge: 2\r\nTTFB=0.010\n' > "$FIXTURES/second.headers"
-    CURL_CMD="$TMP/curl" CACHE_DEBUG_WAIT=0 run "$DIR/cache-debug.sh" http://shop.test /
+    CURL_CMD="$TMP/curl" CACHE_DEBUG_WAIT=1 run "$DIR/cache-debug.sh" http://shop.test /
     [ "$status" -eq 0 ]
     [[ "$output" == *"Eingebauter Shopware-Cache: 2. Aufruf aus dem Cache"* ]]
+}
+
+# MEM-302: Symfony setzt beim Speichern Age = Sekunden seit Date, Shopware
+# erzeugt die Response vor dem Twig-Rendern. Zwei langsame MISS tragen je Age 3.
+@test "cache-debug.sh does not count the Age of two slow misses as a hit" {
+    make_curl_stub
+    printf 'HTTP/1.1 200 OK\r\nCache-Control: no-cache, private\r\nAge: 3\r\nTTFB=3.100\n' > "$FIXTURES/first.headers"
+    printf 'HTTP/1.1 200 OK\r\nCache-Control: no-cache, private\r\nAge: 3\r\nTTFB=3.050\n' > "$FIXTURES/second.headers"
+    CURL_CMD="$TMP/curl" CACHE_DEBUG_WAIT=1 run "$DIR/cache-debug.sh" http://shop.test /
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"aus dem Cache"* ]]
+    [[ "$output" == *"Kein Treffer erkennbar"* ]]
+}
+
+# Grenze: Age waechst genau um die Pause -> Treffer, um eins weniger -> keiner
+# (zweiter Abruf ein MISS ueber eine Sekundengrenze, Age 0 -> 1).
+@test "cache-debug.sh counts Age growth equal to the pause, not one less" {
+    make_curl_stub
+    printf 'HTTP/1.1 200 OK\r\nCache-Control: no-cache, private\r\nAge: 0\r\nTTFB=0.100\n' > "$FIXTURES/first.headers"
+    printf 'HTTP/1.1 200 OK\r\nCache-Control: no-cache, private\r\nAge: 2\r\nTTFB=0.010\n' > "$FIXTURES/second.headers"
+    CURL_CMD="$TMP/curl" CACHE_DEBUG_WAIT=2 run "$DIR/cache-debug.sh" http://shop.test /
+    [[ "$output" == *"aus dem Cache"* ]]
+    rm -f "$FIXTURES/count"
+    printf 'HTTP/1.1 200 OK\r\nCache-Control: no-cache, private\r\nAge: 1\r\nTTFB=0.390\n' > "$FIXTURES/second.headers"
+    CURL_CMD="$TMP/curl" CACHE_DEBUG_WAIT=2 run "$DIR/cache-debug.sh" http://shop.test /
+    [[ "$output" != *"aus dem Cache"* ]]
+    [[ "$output" == *"Kein Treffer erkennbar"* ]]
+}
+
+@test "cache-debug.sh needs both Age values for a hit" {
+    make_curl_stub
+    printf 'HTTP/1.1 200 OK\r\nCache-Control: no-cache, private\r\nTTFB=0.300\n' > "$FIXTURES/first.headers"
+    printf 'HTTP/1.1 200 OK\r\nCache-Control: no-cache, private\r\nAge: 5\r\nTTFB=0.010\n' > "$FIXTURES/second.headers"
+    CURL_CMD="$TMP/curl" CACHE_DEBUG_WAIT=1 run "$DIR/cache-debug.sh" http://shop.test /
+    [[ "$output" != *"aus dem Cache"* ]]
+}
+
+@test "cache-debug.sh rejects a pause below one second" {
+    for w in 0 x 1.5 -1; do
+        CACHE_DEBUG_WAIT="$w" run "$DIR/cache-debug.sh" http://shop.test /
+        [ "$status" -eq 1 ]
+        [[ "$output" == *"CACHE_DEBUG_WAIT"* ]]
+    done
 }
 
 @test "cache-debug.sh does not trust a faster second call without Age" {
     make_curl_stub
     printf 'HTTP/1.1 200 OK\r\nCache-Control: no-cache, private\r\nTTFB=0.300\n' > "$FIXTURES/first.headers"
     printf 'HTTP/1.1 200 OK\r\nCache-Control: no-cache, private\r\nTTFB=0.050\n' > "$FIXTURES/second.headers"
-    CURL_CMD="$TMP/curl" CACHE_DEBUG_WAIT=0 run "$DIR/cache-debug.sh" http://shop.test /
-    [[ "$output" == *"kein Age > 0"* ]]
+    CURL_CMD="$TMP/curl" CACHE_DEBUG_WAIT=1 run "$DIR/cache-debug.sh" http://shop.test /
+    [[ "$output" == *"aber ohne Age"* ]]
+    [[ "$output" != *"aus dem Cache"* ]]
 }
 
 @test "cache-debug.sh reports a Varnish HIT" {
     make_curl_stub
     printf 'HTTP/1.1 200 OK\r\nCache-Control: no-store\r\nX-Cache: MISS\r\nTTFB=0.080\n' > "$FIXTURES/first.headers"
     printf 'HTTP/1.1 200 OK\r\nCache-Control: no-store\r\nX-Cache: HIT\r\nAge: 2\r\nTTFB=0.001\n' > "$FIXTURES/second.headers"
-    CURL_CMD="$TMP/curl" CACHE_DEBUG_WAIT=0 run "$DIR/cache-debug.sh" http://shop.test /
+    CURL_CMD="$TMP/curl" CACHE_DEBUG_WAIT=1 run "$DIR/cache-debug.sh" http://shop.test /
     [[ "$output" == *"Varnish: 2. Aufruf aus dem Cache"* ]]
 }
 

@@ -7,13 +7,20 @@
 #   1. Varnish mit config/varnish.vcl  -> Header "X-Cache: HIT/MISS"
 #   2. Anderer Reverse Proxy / CDN     -> "Cache-Control: public, s-maxage=..." vom Backend
 #   3. Eingebauter Shopware-Cache      -> Browser sieht immer "no-cache, private";
-#                                         Treffer nur an Age > 0 (und TTFB) erkennbar.
-#                                         Age: 0 schickt Symfony auch beim MISS, der
-#                                         gerade gespeichert wurde (z. B. immer in APP_ENV=dev).
+#                                         Treffer nur daran erkennbar, dass Age
+#                                         zwischen den Aufrufen um mindestens die
+#                                         Pause wächst. Age > 0 allein reicht nicht:
+#                                         Symfony setzt beim Speichern Age = Sekunden
+#                                         seit dem Date-Header, und Shopware erzeugt
+#                                         die Response vor dem Twig-Rendern. Ein MISS
+#                                         trägt so Age 1 über eine Sekundengrenze und
+#                                         mehr bei langsamem Rendern.
 #
 # Umgebungsvariablen:
-#   CACHE_DEBUG_WAIT  Pause zwischen den Aufrufen in Sekunden (Default: 2,
-#                     damit Age bei einem Treffer mindestens 1 ist)
+#   CACHE_DEBUG_WAIT  Pause zwischen den Aufrufen in ganzen Sekunden (Default: 2,
+#                     mindestens 1). Bei einem Treffer wächst Age um mindestens
+#                     diesen Wert, bei zwei MISS nur, wenn der zweite so viel
+#                     langsamer rendert.
 #   CURL_CMD          curl-Befehl (Default: curl, für Tests austauschbar)
 #
 # Verwendung (im Ordner chapters/06-http-cache):
@@ -40,7 +47,7 @@ show_usage() {
     echo "Ohne Pfade wird nur / geprüft."
     echo ""
     echo "Umgebungsvariablen:"
-    echo "  CACHE_DEBUG_WAIT  Pause zwischen den Aufrufen in Sekunden (Default: 2)"
+    echo "  CACHE_DEBUG_WAIT  Pause zwischen den Aufrufen in ganzen Sekunden (Default: 2, mindestens 1)"
     echo "  CURL_CMD          curl-Befehl (Default: curl)"
     echo ""
     echo "Beispiele:"
@@ -76,10 +83,11 @@ analyze_url() {
     sleep "${CACHE_DEBUG_WAIT}"
     second=$(fetch "${url}")
 
-    local status cache_control x_cache age set_cookie ttfb1 ttfb2
+    local status cache_control x_cache age1 age set_cookie ttfb1 ttfb2
     status=$(echo "${second}" | grep -i "^HTTP" | tail -1 | awk '{print $2}')
     cache_control=$(header_value "${second}" "cache-control")
     x_cache=$(header_value "${second}" "x-cache")
+    age1=$(header_value "${first}" "age")
     age=$(header_value "${second}" "age")
     set_cookie=$(echo "${first}" | grep -ci "^set-cookie:" || true)
     ttfb1=$(echo "${first}" | sed -n 's/^TTFB=//p')
@@ -88,7 +96,7 @@ analyze_url() {
     echo "HTTP Status:    ${status}"
     echo "Cache-Control:  ${cache_control:-(nicht gesetzt)}"
     [[ -n "${x_cache}" ]] && echo "X-Cache:        ${x_cache}"
-    [[ -n "${age}" ]] && echo "Age:            ${age}s"
+    [[ -n "${age1}${age}" ]] && echo "Age:            1. Aufruf ${age1:--}, 2. Aufruf ${age:--} (Pause ${CACHE_DEBUG_WAIT} s)"
     awk -v a="${ttfb1}" -v b="${ttfb2}" 'BEGIN { printf "TTFB:           1. Aufruf %.0f ms, 2. Aufruf %.0f ms\n", a * 1000, b * 1000 }'
     [[ "${set_cookie}" -gt 0 ]] && echo "Set-Cookie:     ${set_cookie}x beim 1. Aufruf"
 
@@ -104,10 +112,13 @@ analyze_url() {
     elif [[ "${cache_control}" == *public* && "${cache_control}" == *s-maxage* ]]; then
         echo -e "${GREEN}Backend liefert cachebar für Reverse Proxy/CDN${NC} (Cache-Status beim Proxy prüfen)"
     elif [[ "${cache_control}" == *private* ]]; then
-        if [[ "${age}" =~ ^[0-9]+$ && "${age}" -gt 0 ]]; then
-            echo -e "${GREEN}Eingebauter Shopware-Cache: 2. Aufruf aus dem Cache${NC} (Age ${age}s)"
+        if [[ "${age1}" =~ ^[0-9]+$ && "${age}" =~ ^[0-9]+$ ]] \
+            && [[ $((age - age1)) -ge "${CACHE_DEBUG_WAIT}" ]]; then
+            echo -e "${GREEN}Eingebauter Shopware-Cache: 2. Aufruf aus dem Cache${NC} (Age um $((age - age1)) s gewachsen)"
+        elif [[ "${age}" =~ ^[0-9]+$ ]]; then
+            echo -e "${YELLOW}Kein Treffer erkennbar: Age nicht um die Pause gewachsen${NC} (zwei MISS? Route mit _httpCache? APP_ENV=prod?)"
         elif awk -v a="${ttfb1}" -v b="${ttfb2}" 'BEGIN { exit !(b * 3 < a) }'; then
-            echo -e "${YELLOW}2. Aufruf deutlich schneller, aber kein Age > 0${NC} (Warmlaufen statt Cache? APP_ENV=prod?)"
+            echo -e "${YELLOW}2. Aufruf deutlich schneller, aber ohne Age${NC} (Warmlaufen statt Cache? APP_ENV=prod?)"
         else
             echo -e "${YELLOW}Nicht gecacht oder nicht erkennbar${NC} (Route mit _httpCache? APP_ENV=prod?)"
         fi
@@ -127,6 +138,11 @@ case $1 in
         exit 0
         ;;
 esac
+
+if ! [[ "${CACHE_DEBUG_WAIT}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Fehler: CACHE_DEBUG_WAIT muss eine ganze Zahl ab 1 sein: ${CACHE_DEBUG_WAIT}" >&2
+    exit 1
+fi
 
 BASE_URL="${1%/}"
 shift

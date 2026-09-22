@@ -44,7 +44,8 @@ Beides beim Übernehmen in ein eigenes Plugin anpassen; die Twig-Templates selbs
 - **`stale_while_revalidate`/`stale_if_error`** sind ab Werk nicht gesetzt. Sie wirken im eingebauten Cache;
   Varnish kennt `stale-if-error` nicht, und `config/varnish.vcl` setzt Grace selbst.
 - **Ohne Reverse Proxy** sieht der Browser immer `Cache-Control: no-cache, private`. Der eingebaute
-  Cache arbeitet trotzdem, erkennbar nur an `Age` und an der Antwortzeit.
+  Cache arbeitet trotzdem, erkennbar nur an `Age`, das zwischen zwei Aufrufen um die Pause wächst
+  (`Age` > 0 allein zeigt auch ein langsamer MISS), und an der Antwortzeit.
 
 ## Schnellstart: eingebauter Cache
 
