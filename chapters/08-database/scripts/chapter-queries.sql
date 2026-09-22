@@ -10,6 +10,10 @@
 -- Verwendung - mit einem administrativen Zugang und der Shop-Datenbank; den
 -- Namen nennt DATABASE_URL in der .env:
 --   mysql -u root -p shopware < chapter-queries.sql
+-- Auf einer Paketinstallation unter Debian/Ubuntu meldet sich root ueber den
+-- Unix-Socket an statt mit Passwort; der Aufruf oben endet dort fuer jeden
+-- anderen Systembenutzer mit ERROR 1698. Dort:
+--   sudo mysql shopware < chapter-queries.sql
 -- Ein Benutzer, der nur Rechte auf die Shop-Datenbank hat, bricht bei
 -- mysql.innodb_index_stats mit ERROR 1142 ab (performance_schema und sys ebenso).
 -- Ohne gewaehlte Datenbank liefern die ersten Abfragen still NULL, dann bricht

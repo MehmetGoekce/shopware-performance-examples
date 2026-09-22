@@ -18,6 +18,11 @@ declare(strict_types=1);
  * das Paar im selben Shop gegeneinander laufen kann.
  *
  * Was gemessen ist (Kapitel 8):
+ * - new Criteria() ohne Limit: eine einzige Query ohne LIMIT ueber alle
+ *   Produkte, mit den eigenen und den uebersetzten Feldern. Associations
+ *   kommen nur mit, wenn die Definition autoload setzt: in 6.6 allein tax,
+ *   ab 6.7 keine (ProductDefinition). Nicht "alle Relationen" - teuer ist
+ *   das fehlende Limit.
  * - addFields() liefert PartialEntity: get('feld') geht, jeder Getter, den erst
  *   ProductEntity mitbringt (getProductNumber, getName, getCover), wirft
  *   "Error: Call to undefined method" - zur Laufzeit, nicht beim Deployment.
@@ -59,7 +64,7 @@ class DalExamples
 
     public function alleFelderLaden(Context $context): EntitySearchResult
     {
-        // SCHLECHT: Laedt alle Felder und Relationen
+        // SCHLECHT: Kein Limit - laedt jedes Produkt mit allen Feldern
         $criteria = new Criteria();
         $products = $this->productRepository->search($criteria, $context);
 
