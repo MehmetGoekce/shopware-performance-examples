@@ -23,7 +23,8 @@ POOL="./chapters/09-php-performance/config/shopware-fpm.conf"
     [ "$status" -ne 0 ]
     run grep -qe '-o rss,args -C php-fpm8.3' "$POOL"
     [ "$status" -eq 0 ]
-    run grep -q "grep 'pool'" "$POOL"
+    # Review MEM-290: "grep 'pool'" zaehlte die www.conf-Worker mit.
+    run grep -q "grep 'pool shopware'" "$POOL"
     [ "$status" -eq 0 ]
 }
 
@@ -31,6 +32,6 @@ POOL="./chapters/09-php-performance/config/shopware-fpm.conf"
     # Der Einzeiler oben teilt bei n=0 durch null und meldet dann "-nan MB".
     # Das Skript aus Kapitel 9 faengt das ab und erkennt zusaetzlich den
     # versionierten Prozessnamen.
-    run grep -q 'scripts/php-fpm-memory.sh' "$POOL"
+    run grep -q 'chapters/09-php-performance/scripts/php-fpm-memory.sh' "$POOL"
     [ "$status" -eq 0 ]
 }

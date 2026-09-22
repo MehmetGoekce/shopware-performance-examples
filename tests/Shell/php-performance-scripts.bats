@@ -474,12 +474,43 @@ fliesstext() {
     # Der alte Test griff eine auskommentierte Zeile in nginx-php-fpm.conf
     # und waere auch ohne die Bloecke gruen geblieben. Seit MEM-290 liegt
     # der vHost nur noch in Anhang C; gezaehlt werden nur aktive Zeilen.
+    # Review MEM-290: gezaehlt wird im Loopback-Server, nicht in der ganzen
+    # Datei - sonst bliebe der Test gruen, wenn die Status-Location in den
+    # oeffentlichen 443-Server rutscht. Port 8081, weil Kapitel 6 Varnish
+    # das Backend auf 127.0.0.1:8080 suchen laesst.
     local vhost="./chapters/anhang-c-konfigurationen/config/nginx-shopware.conf"
-    run grep -cE '^[[:space:]]*location = /fpm-status \{' "$vhost"
+    grep -v '^[[:space:]]*#' "$vhost" | awk '
+        /^server \{/ { inb=1; blk="" }
+        inb { blk = blk $0 "\n" }
+        /^\}/ && inb { inb=0; if (blk ~ /listen 127\.0\.0\.1:8081;/) print blk > "/dev/stderr"; else print blk }
+    ' > "$BATS_TEST_TMPDIR/andere" 2> "$BATS_TEST_TMPDIR/loopback"
+    run grep -cE '^[[:space:]]*location = /fpm-status \{' "$BATS_TEST_TMPDIR/loopback"
     [ "$output" -eq 1 ]
-    run grep -cE '^[[:space:]]*location = /fpm-ping \{' "$vhost"
+    run grep -cE '^[[:space:]]*location = /fpm-ping \{' "$BATS_TEST_TMPDIR/loopback"
     [ "$output" -eq 1 ]
-    run grep -cE '^[[:space:]]*listen 127\.0\.0\.1:8080;' "$vhost"
+    run grep -cE 'fastcgi_pass php-fpm-shopware;' "$BATS_TEST_TMPDIR/loopback"
+    [ "$output" -eq 2 ]
+    # Nirgends sonst: keine Status-Location in einem oeffentlichen Server.
+    run grep -cE 'location = /fpm-(status|ping)' "$BATS_TEST_TMPDIR/andere"
+    [ "$output" -eq 0 ]
+    run grep -cE '127\.0\.0\.1:8080' "$vhost"
+    [ "$output" -le 1 ]
+}
+
+@test "der vHost haelt keine Keepalive-Verbindungen zu FPM" {
+    # Review MEM-290, nachgestellt: keepalive + fastcgi_keep_conn binden
+    # FPM-Worker an offene Leerlaufverbindungen; mit 4 Kindern und 4
+    # nginx-Workern warteten Requests 30 bis 90 s, ohne unter 1 s.
+    local vhost="./chapters/anhang-c-konfigurationen/config/nginx-shopware.conf"
+    run grep -cE '^[[:space:]]*(keepalive[[:space:]]|fastcgi_keep_conn[[:space:]]+on)' "$vhost"
+    [ "$output" -eq 0 ]
+}
+
+@test "vHost und Pool staffeln die Timeouts 300 < 330 < 360" {
+    local vhost="./chapters/anhang-c-konfigurationen/config/nginx-shopware.conf"
+    run grep -cE '^[[:space:]]*fastcgi_read_timeout 360s;' "$vhost"
+    [ "$output" -eq 1 ]
+    run grep -cE '^request_terminate_timeout = 330$' "$CONFIG/shopware-fpm.conf"
     [ "$output" -eq 1 ]
 }
 

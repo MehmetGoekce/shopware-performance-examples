@@ -28,15 +28,19 @@ fliesstext() {
         | tr -s '[:space:]' ' '
 }
 
-# Alle Dateien unter chapters/, ohne installierte Abhaengigkeiten.
+# Alle Dateien des Repos ausser installierten Abhaengigkeiten, .git und
+# tests/ (die Tests nennen die Muster selbst). Review MEM-290: nur chapters/
+# liess eine zweite Vorlage unter templates/ durch.
 dateien() {
-    find chapters -type f -not -path '*/node_modules/*' -not -path '*/vendor/*' | sort
+    find . -type f -not -path '*/node_modules/*' -not -path '*/vendor/*' \
+        -not -path './.git/*' -not -path './tests/*' | sed 's|^\./||' | sort
 }
 
 @test "genau eine Companion-Datei definiert den Pool [shopware]" {
     # find statt git ls-files: laeuft auch im bats-Image ohne git.
     dateien | while read -r f; do
-        grep -lE '^[[:space:]]*\[shopware\][[:space:]]*$' "$f" 2>/dev/null || true
+        # FPM akzeptiert auch "[shopware] ; Kommentar" (gemessen mit -tt).
+        grep -lE '^[[:space:]]*\[shopware\][[:space:]]*(;.*)?$' "$f" 2>/dev/null || true
     done > "$BATS_TEST_TMPDIR/pools"
     cat "$BATS_TEST_TMPDIR/pools"
     [ "$(wc -l < "$BATS_TEST_TMPDIR/pools")" -eq 1 ]
@@ -50,14 +54,26 @@ dateien() {
     # mit - MEM-318. Mit dem Ticket faellt die Ausnahme weg.
     dateien | grep -v '^chapters/24-ausblick/config/nginx-http3.conf$' \
         | while read -r f; do
-            if grep -qE '^[[:space:]]*server_name[[:space:]]+shop\.example\.com;' "$f" \
-               && grep -qE '^[[:space:]]*listen[[:space:]]+(\[::\]:)?443' "$f"; then
+            # server_name mit weiteren Namen und listen *:443 zaehlen mit.
+            if grep -qE '^[[:space:]]*server_name[[:space:]][^;]*\bshop\.example\.com\b' "$f" \
+               && grep -qE '^[[:space:]]*listen[[:space:]]+([^;]*:)?443\b' "$f"; then
                 echo "$f"
             fi
         done > "$BATS_TEST_TMPDIR/vhosts"
     cat "$BATS_TEST_TMPDIR/vhosts"
     [ "$(wc -l < "$BATS_TEST_TMPDIR/vhosts")" -eq 1 ]
     [ "$(cat "$BATS_TEST_TMPDIR/vhosts")" = "${VHOST#./}" ]
+}
+
+@test "Pool und vHost nennen denselben Socket" {
+    # Review MEM-290: Kein Test verband die beiden Pfade; ein Upstream auf
+    # den www.conf-Socket blieb gruen und haette nach dem Abschalten von
+    # www.conf 502 geliefert.
+    local pool_sock vhost_sock
+    pool_sock=$(sed -nE 's/^listen = (.*)$/\1/p' "$POOL")
+    vhost_sock=$(sed -nE 's/^[[:space:]]*server unix:([^;]*);.*/\1/p' "$VHOST")
+    [ -n "$pool_sock" ]
+    [ "$pool_sock" = "$vhost_sock" ]
 }
 
 @test "die Ausnahme fuer Kapitel 24 ist noch noetig" {
@@ -103,7 +119,7 @@ dateien() {
 @test "der vHost-Kopf nennt die Pruefung auf den stillen server_name-Konflikt" {
     fliesstext "$VHOST" > "$BATS_TEST_TMPDIR/k"
     for satz in \
-        "sudo nginx -t 2>&1 | grep 'conflicting server name'" \
+        "sudo nginx -t 2>&1 | grep -E 'emerg|conflicting server name'" \
         'duplicate upstream'
     do
         run grep -qF "$satz" "$BATS_TEST_TMPDIR/k"
