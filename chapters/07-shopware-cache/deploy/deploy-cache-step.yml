@@ -1,0 +1,40 @@
+# Cache leeren und aufwärmen nach dem Deployment
+# Kapitel 7: Shopwares Application Cache meistern
+#
+# Auszug: ein Schritt für den Deploy-Job in .github/workflows/deploy.yml,
+# nach dem Schritt, der den Code auf den Server bringt.
+#
+# Voraussetzungen:
+#   - Das Warmup-Skript aus Kapitel 6 (chapters/06-http-cache/scripts/
+#     cache-warmup.sh) liegt im Shop-Repo unter scripts/cache-warmup.sh,
+#     ausführbar, und wird mit dem Code ausgerollt.
+#   - cache:clear:all gibt es ab Shopware 6.6.8.0. Davor:
+#     bin/console cache:pool:clear cache.object cache.http
+#   - Secret SERVER (user@host) und ein SSH-Schlüssel im Job.
+#
+# Reihenfolge:
+#   - Das Skript wird VOR dem Leeren geprüft. Fehlt es, bricht set -e ab,
+#     solange die Caches noch voll sind.
+#   - cache:clear baut den Container neu, leert mit Redis aber weder Object-
+#     noch HTTP-Cache. Das macht cache:clear:all.
+#   - Ohne sitemap:generate liest das Skript die Sitemap, die gerade auf dem
+#     Server liegt. Gibt es noch keine, wärmt es nur die Startseite (Exit 0).
+#
+# @see https://github.com/MehmetGoekce/shopware-performance-examples
+
+- name: Clear and warm cache
+  run: |
+    ssh ${{ secrets.SERVER }} << 'EOF'
+      set -e
+      cd /var/www/shop
+      # Warmup-Skript aus Kapitel 6, mit dem Code ausgerollt
+      test -x scripts/cache-warmup.sh
+      # Container neu bauen
+      bin/console cache:clear
+      # Mit Redis: Object- und HTTP-Cache leeren (ab 6.6.8.0)
+      bin/console cache:clear:all
+      # Sitemap aktualisieren, das Skript liest ihre URLs
+      bin/console sitemap:generate
+      # Seiten aus der Sitemap aufrufen
+      ./scripts/cache-warmup.sh https://ihr-shop.ch --sitemap --parallel 4 --limit 500
+    EOF

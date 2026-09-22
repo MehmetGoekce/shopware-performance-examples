@@ -15,6 +15,8 @@ Getestet mit Shopware 6.6.10.6 (Dockware), Redis 7.4 und PHP 8.3 mit `redis`-Ext
 │       ├── redis-cache.conf      # Instanz für Caches: volatile-lru, ohne Persistenz
 │       ├── redis-session.conf    # Instanz für Sessions: allkeys-lru, mit Persistenz
 │       └── redis-critical.conf   # Instanz für Warenkörbe: volatile-lru, mit Persistenz
+├── deploy/
+│   └── deploy-cache-step.yml     # GitHub-Actions-Schritt: leeren, Sitemap, Warmup (Kapitel 7.6)
 ├── scripts/
 │   ├── cache-hit-rate.sh         # Trefferquote einer Redis-Instanz
 │   └── redis-diagnostics.sh      # Policy, Persistenz, Keys ohne TTL, OOM je Rolle
@@ -26,7 +28,7 @@ Getestet mit Shopware 6.6.10.6 (Dockware), Redis 7.4 und PHP 8.3 mit `redis`-Ext
         └── ProductUpdateService.php  # Invalidierung nach direkten SQL-Updates
 ```
 
-Cache-Warmup nach dem Deployment: [`06-http-cache/scripts/cache-warmup.sh`](../06-http-cache/scripts/cache-warmup.sh) (liest den Sitemap-Index samt `.xml.gz`-Teilen).
+Cache-Warmup nach dem Deployment: [`06-http-cache/scripts/cache-warmup.sh`](../06-http-cache/scripts/cache-warmup.sh) (liest den Sitemap-Index samt `.xml.gz`-Teilen). `deploy/deploy-cache-step.yml` erwartet es im Shop-Repo unter `scripts/cache-warmup.sh`, ausführbar und mit dem Code ausgerollt, und prüft das, bevor es die Caches leert.
 
 ## Schnellstart
 
@@ -64,9 +66,11 @@ Nummernkreise nicht ohne Übernahme der Zählerstände auf Redis umstellen (sieh
 
 ```bash
 bin/console cache:clear        # Container, Twig - NICHT Object-/HTTP-Cache in Redis
-bin/console cache:clear:all    # zusätzlich alle Shopware-Pools
+bin/console cache:clear:all    # Object- und HTTP-Cache, verwirft gesammelte Tags (ab 6.6.8.0)
 bin/console cache:clear:http   # nur HTTP-Cache (ab 6.6.10.0)
 ```
+
+Vor 6.6.8.0 statt `cache:clear:all`: `bin/console cache:pool:clear cache.object cache.http`.
 
 ## Prüfen
 
@@ -79,7 +83,7 @@ bin/console cache:clear:http   # nur HTTP-Cache (ab 6.6.10.0)
 redis-cli -n 0 --scan | head -20
 ```
 
-Tests (aus dem Repo-Root ausführen): `bats tests/Shell/redis-cache-scripts.bats`
+Tests (aus dem Repo-Root ausführen): `bats tests/Shell/redis-cache-scripts.bats tests/Shell/deploy-cache-step.bats`
 
 ## Weiterführende Ressourcen
 
