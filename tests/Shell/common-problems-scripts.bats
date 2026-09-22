@@ -606,11 +606,66 @@ STUB
     [[ "$output" != *"brauchbar konfiguriert"* ]]
 }
 
+# Stub fuer cgi-fcgi: gibt RT_LINE aus und merkt sich die Probe-Datei, damit
+# der Test pruefen kann, dass das Skript sie wieder loescht. Review MEM-293:
+# Ohne diesen Stub lief kein Test durch den Socket-Zweig, und eine Probe,
+# die nur "=== false" prueft, blieb gruen.
+cgi_stub() {
+    cat > "$stub_dir/cgi-fcgi" <<'STUB'
+#!/usr/bin/env bash
+echo "$SCRIPT_FILENAME" > "$BATS_TEST_TMPDIR/probe-pfad"
+[ -f "$SCRIPT_FILENAME" ] && echo ja > "$BATS_TEST_TMPDIR/probe-da"
+printf 'Content-type: text/html\r\n\r\n%s\n' "$RT_LINE"
+STUB
+    chmod +x "$stub_dir/cgi-fcgi"
+    : > "$BATS_TEST_TMPDIR/sock"
+}
+
 @test "check-opcache.sh meldet die Laufzeitmessung als uebersprungen, wenn der Socket fehlt" {
     fpm_stub
-    FPM_SOCKET="$BATS_TEST_TMPDIR/gibt-es-nicht.sock" PHP_FPM_BINARY="$stub_dir/php-fpm8.3" \
-        run bash "$DIR/check-opcache.sh"
+    cgi_stub
+    PATH="$stub_dir:$PATH" FPM_SOCKET="$BATS_TEST_TMPDIR/gibt-es-nicht.sock" \
+        PHP_FPM_BINARY="$stub_dir/php-fpm8.3" run bash "$DIR/check-opcache.sh"
     [ "$status" -eq 0 ]
     [[ "$output" == *"3. Laufzeit (echter Request)"* ]]
-    [[ "$output" == *"uebersprungen"* ]]
+    [[ "$output" == *"gibt-es-nicht.sock fehlt"* ]]
+}
+
+@test "check-opcache.sh wertet opcache_enabled im Request aus und raeumt die Probe weg" {
+    fpm_stub
+    cgi_stub
+    PATH="$stub_dir:$PATH" FPM_SOCKET="$BATS_TEST_TMPDIR/sock" RT_LINE="RT OPCACHE=0 JIT=0 KEYS=0" \
+        PHP_FPM_BINARY="$stub_dir/php-fpm8.3" run bash "$DIR/check-opcache.sh"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"OPcache im Request:      AUS"* ]]
+    [[ "$output" == *"opcache_enabled = false"* ]]
+    [ -s "$BATS_TEST_TMPDIR/probe-pfad" ]
+    [ -f "$BATS_TEST_TMPDIR/probe-da" ]
+    [ ! -e "$(cat "$BATS_TEST_TMPDIR/probe-pfad")" ]
+}
+
+@test "check-opcache.sh zeigt JIT und wirksames max_cached_keys aus dem Request" {
+    fpm_stub
+    cgi_stub
+    PATH="$stub_dir:$PATH" FPM_SOCKET="$BATS_TEST_TMPDIR/sock" RT_LINE="RT OPCACHE=1 JIT=1 KEYS=65407" \
+        PHP_FPM_BINARY="$stub_dir/php-fpm8.3" run bash "$DIR/check-opcache.sh"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"JIT im Request:          an"* ]]
+    [[ "$output" == *"max_cached_keys (wirksam): 65407"* ]]
+}
+
+@test "die Probe prueft opcache_enabled, nicht nur ein false aus opcache_get_status" {
+    # Gemessen: php_admin_value[opcache.enable] = 0 im Pool liefert ein Array
+    # mit opcache_enabled = false. Der Stub oben sieht den PHP-Code nicht.
+    run grep -c "!empty(\$s\['opcache_enabled'\])" "$DIR/check-opcache.sh"
+    [ "$output" -eq 1 ]
+}
+
+@test "check-opcache.sh und die OPcache-Vorlage nennen dieselbe interned-Schwelle" {
+    local tpl="./chapters/09-php-performance/config/99-shopware-opcache.ini"
+    local wert schwelle
+    wert=$(sed -nE 's/^opcache\.interned_strings_buffer=([0-9]+)$/\1/p' "$tpl")
+    schwelle=$(sed -nE 's/.*"\$\{INTERNED\}" -lt ([0-9]+) .*/\1/p' "$DIR/check-opcache.sh")
+    [ -n "$wert" ]
+    [ "$wert" = "$schwelle" ]
 }
