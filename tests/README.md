@@ -112,14 +112,13 @@ Die folgenden API-Änderungen wurden dokumentiert (temporär ignoriert):
 **Status:** 247 tests (166 PHP + 81 JavaScript)
 
 #### PHP Unit Tests (166 tests)
-- [x] `StatisticalAnalyzer.php` - 15 tests (Welch's t-test, Bayesian, Sample Size)
-- [x] `FeatureFlagService.php` - 17 tests (11 pass, 6 skipped due to readonly)
+- ~~`StatisticalAnalyzer.php`, `FeatureFlagService.php`~~ - entfernt mit MEM-276 (Kapitel-20-Companion neu); jetzt `tests/Unit/AbTestingTest.php` (Welch, t-Verteilung, Stichprobengroesse und SRM gegen SciPy-Referenzwerte, Zuweisung, Log-Auswertung)
 - [x] `ThemePerformanceAnalyzer.php` - 28 tests (with Shopware stubs)
 - [x] Existing tests - 31 tests
 - [x] Twig Snapshot Tests - 75 tests (15 templates x 5 test types)
 
 #### JavaScript Unit Tests (81 tests)
-- [x] `analyze-experiment.test.js` - 22 tests (statistical analysis, CLI parsing)
+- ~~`analyze-experiment.test.js`~~ - entfernt mit MEM-276 (Skript geloescht, baute die Logik nach)
 - [x] `coverage-analysis.test.js` - 27 tests (render-blocking, bundle analysis)
 - ~~`network-aware-images.test.js`~~ - entfernt mit MEM-276 (baute die Logik nach, statt die Datei zu laden); Kapitel-19-Snippets jetzt in `tests/JavaScript/mobile-snippets.test.js` und `tests/E2E/mobile-snippets.spec.ts`
 - [x] `config-validation.test.js` - 9 tests (existing)
