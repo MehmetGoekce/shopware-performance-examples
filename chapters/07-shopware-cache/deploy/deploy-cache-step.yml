@@ -10,7 +10,13 @@
 #     ausführbar, und wird mit dem Code ausgerollt.
 #   - cache:clear:all gibt es ab Shopware 6.6.8.0. Davor:
 #     bin/console cache:pool:clear cache.object cache.http
-#   - Secret SERVER (user@host) und ein SSH-Schlüssel im Job.
+#   - Secret SERVER (user@host), SSH-Schlüssel und known_hosts im Job.
+#     Ohne known_hosts-Eintrag bricht ssh mit Exit 255 ab, bevor etwas
+#     geleert ist.
+#   - Der SSH-Benutzer ist der Benutzer, unter dem PHP-FPM läuft. Sonst
+#     gehören die Dateien, die cache:clear neu anlegt, dem falschen Benutzer.
+#   - Mit opcache.validate_timestamps=0 (Kapitel 9) läuft der FPM-Reload
+#     vor diesem Schritt, sonst wärmt das Skript Seiten aus dem alten Code.
 #
 # Reihenfolge:
 #   - Das Skript wird VOR dem Leeren geprüft. Fehlt es, bricht set -e ab,
@@ -19,12 +25,19 @@
 #     noch HTTP-Cache. Das macht cache:clear:all.
 #   - Ohne sitemap:generate liest das Skript die Sitemap, die gerade auf dem
 #     Server liegt. Gibt es noch keine, wärmt es nur die Startseite (Exit 0).
+#   - --force: Die Sperre eines abgebrochenen sitemap:generate liegt in
+#     cache.system und übersteht mit Redis cache:clear und cache:clear:all
+#     (TTL 100 Tage). Bis 6.6.10.3 meldet der Befehl dann nur "ERROR" mit
+#     Exit 0, und das Skript wärmt die alte Sitemap; ab 6.6.10.4 endet er mit
+#     Exit 1, nachdem die Caches geleert sind.
+#   - Das Warmup-Skript endet auch bei Fehlerseiten (000, 5xx) mit Exit 0.
+#     Seine Ausgabe im Log lesen.
 #
 # @see https://github.com/MehmetGoekce/shopware-performance-examples
 
 - name: Clear and warm cache
   run: |
-    ssh ${{ secrets.SERVER }} << 'EOF'
+    ssh -T ${{ secrets.SERVER }} << 'EOF'
       set -e
       cd /var/www/shop
       # Warmup-Skript aus Kapitel 6, mit dem Code ausgerollt
@@ -34,7 +47,7 @@
       # Mit Redis: Object- und HTTP-Cache leeren (ab 6.6.8.0)
       bin/console cache:clear:all
       # Sitemap aktualisieren, das Skript liest ihre URLs
-      bin/console sitemap:generate
+      bin/console sitemap:generate --force
       # Seiten aus der Sitemap aufrufen
       ./scripts/cache-warmup.sh https://ihr-shop.ch --sitemap --parallel 4 --limit 500
     EOF

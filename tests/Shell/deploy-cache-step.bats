@@ -29,7 +29,7 @@ STUB
     export LOG
 
     # Heredoc-Rumpf zwischen "<< 'EOF'" und der Zeile "EOF"
-    awk '/<< '\''EOF'\''$/ {on=1; next} on && /^[[:space:]]*EOF$/ {exit} on' "$YML" > "$TMP/body.sh"
+    awk '/<< *'\''EOF'\''$/ {on=1; next} on && /^[[:space:]]*EOF$/ {exit} on' "$YML" > "$TMP/body.sh"
     [ "$(grep -c '^[[:space:]]*cd /var/www/shop$' "$TMP/body.sh")" -eq 1 ]
     sed -i "s#cd /var/www/shop#cd $SHOP#" "$TMP/body.sh"
 }
@@ -38,11 +38,14 @@ teardown() {
     rm -rf "$TMP"
 }
 
-@test "deploy step: heredoc terminator has the indent of the ssh line" {
-    ssh_indent=$(grep -E "^ *ssh .*<< 'EOF'$" "$YML" | sed -E 's/^( *).*/\1/' | wc -c)
-    eof_indent=$(grep -E '^ *EOF$' "$YML" | sed -E 's/^( *).*/\1/' | wc -c)
-    [ "$ssh_indent" -gt 1 ]
-    [ "$ssh_indent" -eq "$eof_indent" ]
+@test "deploy step: ssh opens the run block, EOF closes it at the same indent" {
+    # YAML entfernt die Einrueckung der ersten Blockzeile. Nur wenn ssh diese
+    # Zeile ist und EOF genauso tief steht, landet EOF in Spalte 0.
+    first=$(awk '/^ *run: [|]$/ {getline; print; exit}' "$YML")
+    last=$(awk 'NF {l=$0} END {print l}' "$YML")
+    [[ "$first" =~ ^(\ +)ssh\ .*\<\<\ *\'EOF\'$ ]]
+    indent="${BASH_REMATCH[1]}"
+    [ "$last" = "${indent}EOF" ]
 }
 
 @test "deploy step: clears, generates the sitemap, then warms in this order" {
@@ -50,7 +53,7 @@ teardown() {
     [ "$status" -eq 0 ]
     expected="console cache:clear
 console cache:clear:all
-console sitemap:generate
+console sitemap:generate --force
 warmup https://ihr-shop.ch --sitemap --parallel 4 --limit 500"
     [ "$(cat "$LOG")" = "$expected" ]
 }
@@ -69,8 +72,12 @@ warmup https://ihr-shop.ch --sitemap --parallel 4 --limit 500"
     [ ! -s "$LOG" ]
 }
 
-@test "deploy step: a failing console command stops the step" {
-    FAIL_CMD="cache:clear:all" run sh "$TMP/body.sh"
-    [ "$status" -ne 0 ]
-    [ "$(tail -n 1 "$LOG")" = "console cache:clear:all" ]
+@test "deploy step: each failing console command stops the step" {
+    for cmd in cache:clear cache:clear:all sitemap:generate; do
+        : > "$LOG"
+        FAIL_CMD="$cmd" run sh "$TMP/body.sh"
+        [ "$status" -ne 0 ]
+        [[ "$(tail -n 1 "$LOG")" == "console $cmd"* ]]
+        [ "$(grep -c '^warmup' "$LOG")" -eq 0 ]
+    done
 }

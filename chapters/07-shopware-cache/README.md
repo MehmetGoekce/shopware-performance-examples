@@ -66,7 +66,7 @@ Nummernkreise nicht ohne Übernahme der Zählerstände auf Redis umstellen (sieh
 
 ```bash
 bin/console cache:clear        # Container, Twig - NICHT Object-/HTTP-Cache in Redis
-bin/console cache:clear:all    # Object- und HTTP-Cache, verwirft gesammelte Tags (ab 6.6.8.0)
+bin/console cache:clear:all    # Object- und HTTP-Cache, arbeitet gesammelte Tags ab (ab 6.6.8.0)
 bin/console cache:clear:http   # nur HTTP-Cache (ab 6.6.10.0)
 ```
 

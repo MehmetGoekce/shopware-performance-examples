@@ -27,7 +27,7 @@
 #
 # Achtung bei Redis: "bin/console cache:clear" leert Object- und HTTP-Cache
 # NICHT (die liegen nicht mehr unter var/cache/). Dafür:
-#   bin/console cache:clear:all    # alle Shopware-Pools
+#   bin/console cache:clear:all    # Object- und HTTP-Cache (ab 6.6.8.0)
 #   bin/console cache:clear:http   # nur HTTP-Cache (ab 6.6.10.0)
 #
 # @see https://developer.shopware.com/docs/guides/hosting/performance/caches.html
