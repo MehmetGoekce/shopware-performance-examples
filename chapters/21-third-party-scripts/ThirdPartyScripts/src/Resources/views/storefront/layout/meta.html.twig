@@ -38,9 +38,9 @@
         {% set usePartytown = config('ThirdPartyScripts.config.usePartytown') %}
 
         {% if usePartytown %}
-            {# lib muss ein Pfad sein, der mit / beginnt – asset() liefert eine
-               absolute URL, damit startet Partytown nicht (nur eine Warnung in
-               der Konsole). Ohne debug: false laedt es aus lib/debug/. #}
+            {# lib muss ein Pfad sein, der mit / beginnt: asset() liefert eine #}
+            {# absolute URL, damit startet Partytown nicht (nur eine Warnung in #}
+            {# der Konsole). Ohne debug: false laedt es aus lib/debug/. #}
             {% set partytownLib = app.request.basePath ~ '/bundles/thirdpartyscripts/partytown/' %}
             <script>
                 partytown = {
