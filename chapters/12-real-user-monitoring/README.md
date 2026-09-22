@@ -27,7 +27,8 @@ je Metrik ein sendBeacon         eine JSON-Zeile pro Metrik         (cron, optio
 | `RumMonitoring/src/Resources/public/web-vitals.attribution.js` | web-vitals 6.2.2, byte-gleich mit `dist/` im npm-Paket (Apache-2.0, Lizenz in `web-vitals.LICENSE.txt`) |
 | `RumMonitoring/src/Controller/RumController.php` | `POST /api/rum`, prueft den Beacon und schreibt eine Log-Zeile |
 | `RumMonitoring/src/Rum/RumPayload.php` | Validierung: nur bekannte Metriken, kein Query-String, keine IP, kein User-Agent |
-| `RumMonitoring/src/Rum/RumStatistics.php` | p50/p75/p90 (Nearest-Rank) und Bewertung nach Googles Schwellen |
+| `RumMonitoring/src/Rum/RumStatistics.php` | p50/p75/p90 (Nearest-Rank) und Bewertung nach Googles Schwellen, je Seitenaufruf (`id`) nur der letzte Wert |
+| `RumMonitoring/src/Rum/RumAlertState.php` | merkt sich die letzte Bewertung, damit `rum:check-alerts` nur Wechsel meldet |
 | `RumMonitoring/src/Rum/RumLogReader.php` | liest `rum-*.log` im Zeitfenster zeilenweise |
 | `RumMonitoring/src/Command/RumReportCommand.php` | `rum:report` |
 | `RumMonitoring/src/Command/RumCheckAlertsCommand.php` | `rum:check-alerts` |
@@ -45,14 +46,21 @@ bin/console cache:clear
 ```
 
 Danach im Browser eine Seite oeffnen, klicken, den Tab wechseln. Im Netzwerk-Tab
-stehen bis zu fuenf `POST /api/rum` mit Status 204, in `var/log/` liegt
-`rum-<datum>.log`.
+stehen `POST /api/rum` mit Status 204 - fuenf in Chromium, in Firefox und
+WebKit ohne CLS, bei weiteren Tab-Wechseln oder nach einer Rueckkehr ueber den
+Zurueck-Button auch mehr. In `var/log/` liegt `rum-<datum>.log`.
+
+web-vitals meldet CLS und INP bei jedem Wechsel in den Hintergrund erneut, wenn
+sich der Wert geaendert hat. Jede Meldung traegt die `id` des Seitenaufrufs;
+`rum:report` und `rum:check-alerts` zaehlen je `id` nur den letzten Wert, damit
+p75 wirklich "p75 der Seitenaufrufe" ist.
 
 **Stichprobe:** Administration > Erweiterungen > Meine Erweiterungen > RUM Monitoring >
 Konfigurieren, oder `bin/console system:config:set RumMonitoring.config.sampleRate 0.1 --json`
 (ohne `--json` wird der Wert als Text gespeichert). `1` misst jeden
-Seitenaufruf, `0.1` jeden zehnten, `0` schaltet das Skript ab. Gewuerfelt wird
-einmal je Seitenaufruf, damit die Metriken eines Aufrufs zusammenbleiben.
+Seitenaufruf, `0.1` etwa jeden zehnten (Zufallsstichprobe), `0` schaltet das
+Skript ab. Gewuerfelt wird einmal je Seitenaufruf, damit die Metriken eines
+Aufrufs zusammenbleiben.
 
 ## Auswertung
 
@@ -66,36 +74,48 @@ bin/console rum:report --by=country       # nur hinter Cloudflare (Header CF-IPC
 Beispiel mit vier LCP- und vier INP-Werten aus dem Test:
 
 ```
-+--------+------+---------+-------+-------+-------+-------------------+
-| Metrik | alle | Samples | p50   | p75   | p90   | p75-Bewertung     |
-+--------+------+---------+-------+-------+-------+-------------------+
-| INP    | *    | 4       | 210   | 220   | 600   | needs-improvement |
-| LCP    | *    | 4       | 2000  | 2500  | 3000  | good              |
-+--------+------+---------+-------+-------+-------+-------------------+
+RUM seit 2026-09-21 14:19 UTC (Werte in ms, CLS ohne Einheit)
++--------+------+---------+------+------+------+-------------------+
+| Metrik | alle | Samples | p50  | p75  | p90  | p75-Bewertung     |
++--------+------+---------+------+------+------+-------------------+
+| INP    | *    | 4       | 210  | 220  | 600  | needs-improvement |
+| LCP    | *    | 4       | 2000 | 2500 | 3000 | good              |
++--------+------+---------+------+------+------+-------------------+
 ```
 
-p75 wie bei Google: der Wert, unter oder auf dem 75 % der Seitenaufrufe liegen.
-Genau auf der Schwelle gilt als "good" (LCP 2500 ms, INP 200 ms, CLS 0.1).
+Bewertet wird wie bei Google am p75, ein Wert genau auf der Schwelle gilt als
+"good" (LCP 2500 ms, INP 200 ms, CLS 0.1). Das Perzentil rechnet das Plugin als
+Nearest Rank: der kleinste Wert, unter oder auf dem 75 % der Seitenaufrufe liegen.
 
 ## Alerts
 
 ```bash
 # /etc/cron.d/rum-alerts
-*/15 * * * * www-data cd /var/www/shop && bin/console rum:check-alerts
+MAILTO=ops@example.com
+*/15 * * * * www-data cd /var/www/shop && bin/console rum:check-alerts --expect-data
 ```
 
 `rum:check-alerts` prueft LCP, INP und CLS der letzten Stunde, sobald mindestens
-100 Samples vorliegen (`--hours`, `--min-samples`). Jede Metrik, deren p75 nicht
-"good" ist, wird gemeldet:
+100 Samples vorliegen (`--hours`, `--min-samples`). Gemeldet wird jeder
+**Wechsel** der p75-Bewertung: wird eine Metrik schlechter, meldet der Befehl
+`[WARNUNG]` bzw. `[KRITISCH]`, wird sie wieder gut, `[OK]`. Bleibt sie schlecht,
+kommt keine neue Meldung - der Stand liegt in `var/rum-alert-state.json`.
+`--repeat` meldet stattdessen bei jedem Lauf alles, was nicht "good" ist.
 
-- ohne `RUM_ALERT_WEBHOOK`: als Ausgabe - cron verschickt sie per Mail
+- ohne `RUM_ALERT_WEBHOOK`: als Ausgabe - cron verschickt sie per Mail an
+  `MAILTO` (ohne die Zeile an den Besitzer der Crontab). Das braucht einen
+  Mailer auf dem Server (z. B. postfix oder msmtp).
 - mit `RUM_ALERT_WEBHOOK=https://hooks.slack.com/services/...` in der `.env`:
   als `{"text": "..."}` per POST (Format der Slack Incoming Webhooks). Antwortet
-  der Webhook nicht mit 2xx, gibt der Befehl Meldung und Fehler aus und endet mit
-  Exit 1.
+  der Webhook nicht mit 2xx, gibt der Befehl Meldung und Fehler aus (die
+  Webhook-URL maskiert), endet mit Exit 1 und meldet beim naechsten Lauf erneut.
 
-Solange alles gut ist, bleibt der Befehl still - sonst kaeme alle 15 Minuten eine
-Mail. `-v` zeigt die Messwerte.
+Ohne Wechsel bleibt der Befehl still - sonst kaeme alle 15 Minuten eine Mail.
+Still ist er aber auch, wenn gar keine Daten ankommen (Proxy sperrt `/api/rum`,
+Skript fehlt, Stichprobe 0). `--expect-data` meldet deshalb einmal
+`[KEINE DATEN]`, wenn im Zeitfenster kein Wert liegt, und `[OK]`, wenn wieder
+welche kommen. Nachts ohne Besucher ist das ein Fehlalarm - dann `--hours`
+groesser waehlen. `-v` zeigt die Messwerte.
 
 ## Was man wissen muss
 
@@ -105,6 +125,18 @@ Mail. `-v` zeigt die Messwerte.
   Session. Eine Storefront-Route (`/rum`) ginge auch, startet aber fuer jeden
   Beacon ohne Cookie eine neue Session. Wer `/api` am Proxy auf Admin-IPs
   beschraenkt, muss `POST /api/rum` freigeben.
+- **Die Route ist oeffentlich.** Browser schicken beim Beacon
+  `Sec-Fetch-Site: same-origin`; der Controller lehnt jeden anderen Wert mit 403
+  ab, damit fremde Websites nicht die Browser ihrer Besucher an Ihr `/api/rum`
+  schicken koennen (Shopware antwortet auf `/api` mit
+  `Access-Control-Allow-Origin: *`). Ein Skript ohne diesen Header haelt das
+  nicht auf: Es kann gueltige, erfundene Werte schicken und das Log fuellen.
+  Deshalb am Proxy ein Rate-Limit fuer `POST /api/rum` setzen und den
+  Plattenplatz von `var/log/` beobachten - `max_files: 30` begrenzt die Zahl der
+  Dateien, nicht ihre Groesse.
+- **`CF-IPCountry`** kann jeder Client selbst setzen, wenn der Server auch ohne
+  Cloudflare erreichbar ist. `--by=country` ist nur verlaesslich, wenn der Origin
+  ausschliesslich Cloudflare annimmt.
 - **CLS nur in Chromium.** Firefox und WebKit melden FCP, TTFB, LCP und INP,
   aber kein CLS (web-vitals-README "Browser Support", im Test bestaetigt).
 - **Assets von einem CDN-Host:** `rum.js` ist ein Modul-Skript, und Modul-Skripte
@@ -113,10 +145,19 @@ Mail. `-v` zeigt die Messwerte.
 - **Datenschutz:** Geloggt werden Metrik, Wert, Route, Pfad ohne Query-String,
   CSS-Selektor des verursachenden Elements, Geraeteklasse und - nur hinter
   Cloudflare - das Land. Keine IP, kein User-Agent; rum.js setzt keine Cookies.
-  Ob Sie dafuer eine Einwilligung brauchen, klaeren Sie mit Ihrer
-  Datenschutzberatung.
+  Das Access-Log des Webservers erfasst die Beacons aber wie jeden Request:
+  IP, User-Agent und den `Referer` mit vollem Query-String. Wer das nicht will,
+  nimmt `/api/rum` dort aus. Ob Sie fuer die Messung eine Einwilligung brauchen,
+  klaeren Sie mit Ihrer Datenschutzberatung.
 - **Log-Dateien:** `rotating_file` schreibt `rum-YYYY-MM-DD.log`, nie `rum.log`.
-  Nach 30 Tagen loescht Monolog die aelteste Datei.
+  Monolog behaelt hoechstens 30 Tagesdateien; an Tagen ohne Beacon entsteht keine.
+- **Mehrere App-Server** schreiben je ein eigenes `var/log/`. `rum:report` sieht
+  dann nur den lokalen Anteil - Logs zentral sammeln oder ein gemeinsames
+  Log-Verzeichnis nutzen.
+- **Grosse Shops:** `rum:check-alerts` liest bei jedem Lauf die Datei des Tages,
+  `rum:report` haelt alle Werte des Zeitfensters im Speicher. Bei sehr viel
+  Traffic die Stichprobe senken, fuer Wochen- und Monatsberichte einen
+  Log-Sammler nutzen.
 
 ## web-vitals aktualisieren
 
@@ -124,6 +165,9 @@ Mail. `-v` zeigt die Messwerte.
 npm pack web-vitals@<version>
 tar xzf web-vitals-<version>.tgz
 cp package/dist/web-vitals.attribution.js RumMonitoring/src/Resources/public/
+# im Shop: der Browser laedt die Kopie unter public/bundles/rummonitoring/
+bin/console assets:install
+bin/console cache:clear
 ```
 
 Vorher `docs/upgrading-to-v<major>.md` im web-vitals-Repo lesen: v4 hat
@@ -133,9 +177,13 @@ in `target` und `onFID()` entfernt. `rum-payload.js` liest die Felder von v5/v6.
 ## Tests
 
 ```bash
-vendor/bin/phpunit --filter RumMonitoringTest          # Validierung, Perzentile, Log-Leser
-npx vitest run tests/JavaScript/rum-payload.test.js    # Beacon-Aufbau, Attribution, Stichprobe
+vendor/bin/phpunit --no-coverage --filter RumMonitoringTest   # Validierung, Perzentile, id, Alert-Zustand, Log-Leser
+npx vitest run tests/JavaScript/rum-payload.test.js           # Beacon-Aufbau, Attribution, Stichprobe
 ```
+
+Route, Herkunftspruefung, Monolog-Kanal, Twig, Asset-Installation und beide
+Commands (inklusive Webhook-Stub) sind in Dockware 6.6.10.6 und 6.7.2.2 mit
+Chromium, Firefox und WebKit getestet, nicht per Unit-Test.
 
 ## Weiterfuehrende Ressourcen
 
