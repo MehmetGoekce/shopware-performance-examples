@@ -51,13 +51,17 @@ final class RumStatistics
     }
 
     /**
-     * @param iterable<array<string, mixed>> $records Log-Kontexte aus RumLogReader
+     * Meldungen mit derselben id (ein Seitenaufruf, mehrfach gemeldet) zaehlen
+     * einmal, mit ihrem letzten Wert. Zeilen ohne id zaehlen einzeln.
+     *
+     * @param iterable<array<string, mixed>> $records Log-Kontexte aus RumLogReader, in Log-Reihenfolge
      *
      * @return array<string, array{metric: string, group: string, samples: int, p50: float, p75: float, p90: float, rating: string}>
      */
     public static function aggregate(iterable $records, ?string $groupBy = null): array
     {
-        $values = [];
+        $latest = [];
+        $n = 0;
         foreach ($records as $record) {
             $metric = $record['metric'] ?? null;
             if (!\is_string($metric) || !isset(self::THRESHOLDS[$metric]) || !is_numeric($record['value'] ?? null)) {
@@ -65,7 +69,13 @@ final class RumStatistics
             }
 
             $group = $groupBy === null ? '*' : (string) ($record[$groupBy] ?? 'unbekannt');
-            $values[$metric . "\0" . $group][] = (float) $record['value'];
+            $id = \is_string($record['id'] ?? null) ? $record['id'] : '#' . $n++;
+            $latest[$metric . "\0" . $id] = [$metric . "\0" . $group, (float) $record['value']];
+        }
+
+        $values = [];
+        foreach ($latest as [$key, $value]) {
+            $values[$key][] = $value;
         }
 
         ksort($values);

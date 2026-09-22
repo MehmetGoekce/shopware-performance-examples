@@ -1,5 +1,5 @@
 /**
- * Baut aus einer web-vitals-Metrik den Beacon fuer POST /rum.
+ * Baut aus einer web-vitals-Metrik den Beacon fuer POST /api/rum.
  *
  * Eigene Datei ohne Browser-Globals, damit die Tests (Vitest) sie ohne DOM laden.
  * Die Attributions-Felder gelten fuer web-vitals 5 und 6; in 4 hiess das
@@ -37,6 +37,8 @@ export function attributionTarget(metric) {
 export function buildPayload(metric, route, path, viewportWidth) {
     return {
         name: metric.name,
+        // Gleiche id = derselbe Seitenaufruf; CLS und INP kommen oft mehrfach
+        id: metric.id,
         value: metric.value,
         rating: metric.rating,
         navigationType: metric.navigationType,

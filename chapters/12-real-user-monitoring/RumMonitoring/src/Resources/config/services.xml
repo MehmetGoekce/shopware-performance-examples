@@ -23,6 +23,7 @@
             <argument type="service" id="RumMonitoring\Rum\RumLogReader"/>
             <argument type="service" id="http_client"/>
             <argument>%env(default::RUM_ALERT_WEBHOOK)%</argument>
+            <argument>%kernel.project_dir%/var/rum-alert-state.json</argument>
             <tag name="console.command"/>
         </service>
     </services>

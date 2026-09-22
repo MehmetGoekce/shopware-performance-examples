@@ -29,6 +29,14 @@ class RumController
     #[Route(path: '/api/rum', name: 'api.rum.collect', methods: ['POST'])]
     public function collect(Request $request): Response
     {
+        // Browser schicken bei sendBeacon Sec-Fetch-Site: same-origin (Chromium, Firefox,
+        // WebKit gemessen). Ein Beacon von einer fremden Website wird abgelehnt; Skripte
+        // ohne den Header (curl) haelt das nicht auf - dafuer braucht es ein Rate-Limit.
+        $site = $request->headers->get('Sec-Fetch-Site');
+        if ($site !== null && $site !== 'same-origin') {
+            return new Response('', Response::HTTP_FORBIDDEN);
+        }
+
         $record = RumPayload::fromJson(
             $request->getContent(),
             $request->headers->get('CF-IPCountry')

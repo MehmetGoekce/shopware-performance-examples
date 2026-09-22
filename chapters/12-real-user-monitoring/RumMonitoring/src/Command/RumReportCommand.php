@@ -51,7 +51,7 @@ class RumReportCommand extends Command
         $rows = RumStatistics::aggregate($this->reader->read($since), $by);
 
         if ($rows === []) {
-            $output->writeln(sprintf('Keine RUM-Daten seit %s.', $since->format('Y-m-d H:i')));
+            $output->writeln(sprintf('Keine RUM-Daten seit %s.', $since->format('Y-m-d H:i T')));
 
             return Command::SUCCESS;
         }
@@ -70,7 +70,7 @@ class RumReportCommand extends Command
             ];
         }
 
-        $output->writeln(sprintf('RUM seit %s (Werte in ms, CLS ohne Einheit)', $since->format('Y-m-d H:i')));
+        $output->writeln(sprintf('RUM seit %s (Werte in ms, CLS ohne Einheit)', $since->format('Y-m-d H:i T')));
         (new Table($output))
             ->setHeaders(['Metrik', $by ?? 'alle', 'Samples', 'p50', 'p75', 'p90', 'p75-Bewertung'])
             ->setRows($table)

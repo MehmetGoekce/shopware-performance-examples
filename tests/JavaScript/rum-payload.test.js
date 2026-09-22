@@ -50,6 +50,7 @@ describe('buildPayload', () => {
 
         expect(payload).toEqual({
             name: 'LCP',
+            id: 'v6-123',
             value: 1234.5,
             rating: 'needs-improvement',
             navigationType: 'navigate',
@@ -80,5 +81,6 @@ describe('isSampled', () => {
     it('sampelt nicht bei fehlender oder kaputter Rate', () => {
         expect(isSampled(undefined, 0)).toBe(false);
         expect(isSampled('abc', 0)).toBe(false);
+        expect(isSampled('Infinity', 0.5)).toBe(false);
     });
 });

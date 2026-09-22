@@ -2,7 +2,7 @@
 #
 # rotating_file haengt das Datum an den Namen: aus rum.log wird
 # var/log/rum-2026-09-22.log. rum:report und rum:check-alerts lesen deshalb
-# rum-*.log, nicht rum.log. Nach 30 Tagen loescht Monolog die aelteste Datei.
+# rum-*.log, nicht rum.log. Monolog behaelt hoechstens 30 Tagesdateien.
 monolog:
     channels: ['rum']
 

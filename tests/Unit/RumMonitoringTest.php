@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Memotech\ShopwarePerformance\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
+use RumMonitoring\Rum\RumAlertState;
 use RumMonitoring\Rum\RumLogReader;
 use RumMonitoring\Rum\RumPayload;
 use RumMonitoring\Rum\RumStatistics;
@@ -12,11 +13,12 @@ use RumMonitoring\Rum\RumStatistics;
 require_once __DIR__ . '/../../chapters/12-real-user-monitoring/RumMonitoring/src/Rum/RumPayload.php';
 require_once __DIR__ . '/../../chapters/12-real-user-monitoring/RumMonitoring/src/Rum/RumStatistics.php';
 require_once __DIR__ . '/../../chapters/12-real-user-monitoring/RumMonitoring/src/Rum/RumLogReader.php';
+require_once __DIR__ . '/../../chapters/12-real-user-monitoring/RumMonitoring/src/Rum/RumAlertState.php';
 
 /**
  * Tests fuer die reine Logik des Kapitel-12-Plugins (ohne Shopware).
  * Route, Monolog-Kanal, Twig und Commands sind im Dockware-Shop getestet
- * (reviews/ch12-rum-factcheck-2026-09.md, T9-T16).
+ * (Shopware 6.6.10.6 und 6.7.2.2), siehe README "Tests".
  */
 class RumMonitoringTest extends TestCase
 {
@@ -50,6 +52,7 @@ class RumMonitoringTest extends TestCase
 
         self::assertSame([
             'metric' => 'LCP',
+            'id' => null,
             'value' => 1234.6,
             'rating' => 'good',
             'navigation_type' => 'navigate',
@@ -67,6 +70,8 @@ class RumMonitoringTest extends TestCase
         self::assertNull(RumPayload::fromJson('{"name":"LCP","value":"1200"}'));
         self::assertNull(RumPayload::fromJson('{"name":"LCP","value":-1}'));
         self::assertNull(RumPayload::fromJson('{"name":"LCP","value":60001}'));
+        self::assertNull(RumPayload::fromJson('{"name":"CLS","value":10.01}'));
+        self::assertNotNull(RumPayload::fromJson('{"name":"CLS","value":10}'));
         self::assertNull(RumPayload::fromJson('kein json'));
         self::assertNull(RumPayload::fromJson(''));
         self::assertNull(RumPayload::fromJson('{"name":"LCP","value":1,"target":"' . str_repeat('x', 2048) . '"}'));
@@ -85,6 +90,25 @@ class RumMonitoringTest extends TestCase
         self::assertNull($record['country']);
     }
 
+    public function testPayloadKeepsWebVitalsIdAndCutsLongFields(): void
+    {
+        $record = RumPayload::fromJson(json_encode([
+            'name' => 'INP',
+            'value' => 12,
+            'id' => 'v6-1790086663326-7444028414027',
+            'target' => str_repeat('a', 300),
+            'path' => '/' . str_repeat('b', 300),
+        ], \JSON_THROW_ON_ERROR));
+
+        self::assertNotNull($record);
+        self::assertSame('v6-1790086663326-7444028414027', $record['id']);
+        self::assertSame(200, mb_strlen((string) $record['target']));
+        self::assertSame(200, mb_strlen((string) $record['path']));
+        $bad = RumPayload::fromJson('{"name":"INP","value":1,"id":"<script>"}');
+        self::assertNotNull($bad);
+        self::assertNull($bad['id']);
+    }
+
     public function testPercentileIsNearestRank(): void
     {
         $values = [1000.0, 2000.0, 2500.0, 3000.0];
@@ -93,6 +117,9 @@ class RumMonitoringTest extends TestCase
         self::assertSame(2500.0, RumStatistics::percentile($values, 75));
         self::assertSame(3000.0, RumStatistics::percentile($values, 90));
         self::assertSame(7.0, RumStatistics::percentile([7.0], 75));
+
+        // n = 7: ceil(5.25) = 6. Wert, round() gaebe den 5.
+        self::assertSame(6.0, RumStatistics::percentile([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0], 75));
 
         $hundred = array_map('floatval', range(1, 100));
         self::assertSame(75.0, RumStatistics::percentile($hundred, 75));
@@ -112,6 +139,9 @@ class RumMonitoringTest extends TestCase
         self::assertSame('poor', RumStatistics::rating('LCP', 4000.1));
         self::assertSame('good', RumStatistics::rating('CLS', 0.1));
         self::assertSame('poor', RumStatistics::rating('INP', 501));
+        self::assertSame('good', RumStatistics::rating('TTFB', 800));
+        self::assertSame('needs-improvement', RumStatistics::rating('TTFB', 801));
+        self::assertSame('good', RumStatistics::rating('FCP', 1800));
     }
 
     public function testAggregateGroupsAndSkipsUnknownRecords(): void
@@ -129,6 +159,52 @@ class RumMonitoringTest extends TestCase
         self::assertSame(2, $detail['samples']);
         self::assertSame(300.0, $detail['p75']);
         self::assertSame('needs-improvement', $detail['rating']);
+    }
+
+    public function testAggregateCountsEachPageViewOnceWithItsLastValue(): void
+    {
+        $rows = RumStatistics::aggregate([
+            ['metric' => 'INP', 'value' => 8, 'id' => 'v6-1-1'],
+            ['metric' => 'INP', 'value' => 400, 'id' => 'v6-1-1'],
+            ['metric' => 'INP', 'value' => 50, 'id' => 'v6-1-2'],
+            ['metric' => 'INP', 'value' => 60],
+            ['metric' => 'INP', 'value' => 70],
+        ]);
+
+        $inp = $rows["INP\0*"];
+        self::assertSame(4, $inp['samples']);
+        self::assertSame(70.0, $inp['p75']);
+        self::assertSame(400.0, $inp['p90']);
+    }
+
+    public function testAlertStateReportsOnlyChanges(): void
+    {
+        self::assertSame([], RumAlertState::changes([], ['LCP' => 'good']));
+        self::assertSame(['LCP'], RumAlertState::changes([], ['LCP' => 'poor']));
+        self::assertSame([], RumAlertState::changes(['LCP' => 'poor'], ['LCP' => 'poor']));
+        self::assertSame(['LCP'], RumAlertState::changes(['LCP' => 'poor'], ['LCP' => 'needs-improvement']));
+        self::assertSame(['LCP'], RumAlertState::changes(['LCP' => 'poor'], ['LCP' => 'good']));
+        self::assertSame(['LCP'], RumAlertState::changes(['LCP' => 'poor'], ['LCP' => 'poor'], true));
+        self::assertSame([], RumAlertState::changes(['LCP' => 'good'], ['LCP' => 'good'], true));
+
+        $file = $this->logDir . '/state.json';
+        self::assertSame([], RumAlertState::load($file));
+        RumAlertState::save($file, ['LCP' => 'poor']);
+        self::assertSame(['LCP' => 'poor'], RumAlertState::load($file));
+    }
+
+    public function testLogReaderSkipsBrokenDatetimeAndReadsYesterdaysFile(): void
+    {
+        $since = new \DateTimeImmutable('2026-09-22 00:10:00+00:00');
+        file_put_contents($this->logDir . '/rum-2026-09-21.log', implode("\n", [
+            '{"context":{"metric":"LCP","value":1},"datetime":"kaputt"}',
+            '{"context":{"metric":"LCP","value":2},"datetime":"2026-09-22T00:05:00+00:00"}',
+            '{"context":{"metric":"LCP","value":3},"datetime":"2026-09-22T00:30:00+00:00"}',
+        ]) . "\n");
+
+        $records = iterator_to_array((new RumLogReader($this->logDir))->read($since), false);
+
+        self::assertSame([['metric' => 'LCP', 'value' => 3]], $records);
     }
 
     public function testLogReaderReadsRotatedFilesInWindowOnly(): void

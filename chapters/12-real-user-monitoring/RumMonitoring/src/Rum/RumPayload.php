@@ -48,13 +48,17 @@ final class RumPayload
             return null;
         }
 
-        // Ein LCP ueber 60 s oder ein negativer Wert ist kein Messwert, sondern Muell
-        if ($value < 0 || $value > 60000) {
+        // Ein LCP ueber 60 s, ein CLS ueber 10 oder ein negativer Wert ist kein Messwert
+        if ($value < 0 || $value > ($name === 'CLS' ? 10 : 60000)) {
             return null;
         }
 
         return [
             'metric' => $name,
+            // web-vitals meldet CLS/INP bei jedem Wechsel in den Hintergrund erneut und
+            // alles nach einer bfcache-Rueckkehr; die id fasst die Meldungen eines
+            // Seitenaufrufs zusammen (RumStatistics zaehlt je id nur die letzte)
+            'id' => self::match($data['id'] ?? null, '/^v\d+-\d+-\d+$/'),
             'value' => round((float) $value, $name === 'CLS' ? 4 : 1),
             'rating' => self::oneOf($data['rating'] ?? null, self::RATINGS),
             'navigation_type' => self::oneOf($data['navigationType'] ?? null, self::NAVIGATION_TYPES),

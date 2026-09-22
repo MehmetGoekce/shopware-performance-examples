@@ -34,7 +34,13 @@ final class RumLogReader
                         continue;
                     }
 
-                    if (new \DateTimeImmutable($entry['datetime']) < $since) {
+                    try {
+                        $time = new \DateTimeImmutable($entry['datetime']);
+                    } catch (\Exception) {
+                        continue;
+                    }
+
+                    if ($time < $since) {
                         continue;
                     }
 
