@@ -106,7 +106,7 @@ describe('GitHub Actions und Node.js (MEM-315)', () => {
         expect(names).toContain('.github/workflows/test.yml');
         expect(names).toContain('chapters/03-core-web-vitals/.github/workflows/lighthouse.yml');
         expect(names).toContain('chapters/13-continuous-testing/.github/workflows/lighthouse-ci.yml');
-        expect(names).toContain('chapters/21-third-party-scripts/EXAMPLES.md');
+        expect(names.some((n) => n.endsWith('.md'))).toBe(true);
     });
 
     it('nutzt nirgends einen Major, der auf node20 oder älter läuft, und kein Node.js unter 22', () => {

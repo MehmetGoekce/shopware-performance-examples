@@ -31,7 +31,6 @@ Die folgenden API-Aenderungen wurden in Shopware 6.6 eingefuehrt und sind im Cod
 | `CacheTagCollector` -> `CacheTagCollection` | CacheTagSubscriber.php | Gefixt |
 | `Entity::getStock()` Type-Hint | CachedProductService.php | `ProductEntity` verwenden |
 | `Context::getSalesChannelId()` | CachedProductService.php | `SalesChannelContext` nutzen |
-| `StorefrontRenderEvent::setParameters()` | ScriptLoadingSubscriber.php | Deprecated, Alternative dokumentiert |
 
 Siehe `phpstan-shopware.neon` fuer die vollstaendige Liste der ignorierten Fehler.
 

@@ -106,7 +106,6 @@ Die folgenden API-Änderungen wurden dokumentiert (temporär ignoriert):
 | `Entity::getStock()` etc. | CachedProductService.php | Type-Hint `ProductEntity` |
 | `Context::getSalesChannelId()` | CachedProductService.php | `SalesChannelContext` nutzen |
 | `Criteria::addCriteria()` | OptimizedProductService.php | Existiert nicht |
-| `StorefrontRenderEvent::setParameters()` | ScriptLoadingSubscriber.php | Deprecated |
 
 ### Phase 3: Unit Tests erweitern (Done)
 
