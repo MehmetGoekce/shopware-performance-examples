@@ -19,7 +19,10 @@ setup() {
     cat > "$TMP/console" <<'EOF'
 #!/bin/sh
 echo "console $*" >> "$CALLS"
-[ -n "$CONSOLE_FAIL" ] && { echo "console kaputt"; exit 1; }
+# CONSOLE_FAIL=all: jeder Aufruf scheitert, =route: nur der mit --by=route
+case "$CONSOLE_FAIL:$*" in
+    all:*|route:*--by=route*) echo "console kaputt"; exit 1 ;;
+esac
 echo "RUM-TABELLE $*"
 EOF
     cat > "$TMP/php" <<'EOF'
@@ -27,14 +30,18 @@ EOF
 echo "php $*" >> "$CALLS"
 echo "BUDGET-TABELLE"
 echo "Gesamt: ${BUDGET_OVERALL:-green}"
+[ -n "$BUDGET_UNRATED" ] && echo "Ohne Bewertung (unter 100 Seitenaufrufen): $BUDGET_UNRATED"
 exit "${STUB_BUDGET_RC:-0}"
 EOF
     cat > "$TMP/curl" <<'EOF'
 #!/bin/sh
 echo "curl $*" >> "$CALLS"
 # wie curl: ein HTTP-Fehler wird nur mit -f zum Exit-Code (22)
-case " $* " in *" -f "*|*" -sS -f "*) exit "${CURL_RC:-0}" ;; esac
-exit 0
+rc=0
+case " $* " in *" -f "*) rc="${CURL_RC:-0}" ;; esac
+# Body (nach -d) einzeln ablegen
+while [ $# -gt 0 ]; do [ "$1" = "-d" ] && printf '%s\n' "$2" > "$CALLS.body"; shift; done
+exit "$rc"
 EOF
     chmod +x "$TMP/console" "$TMP/php" "$TMP/curl"
     export CONSOLE="$TMP/console" PHP="$TMP/php" CURL="$TMP/curl"
@@ -67,10 +74,17 @@ report() {
     [ "$(sed -n 2p "$CALLS")" = "console rum:report --hours=168 --by=route" ]
 }
 
-@test "monthly fragt 720 Stunden" {
+@test "monthly fragt 28 Tage (672 Stunden), Monolog behaelt 30 Tagesdateien" {
     run "$SCRIPT" monthly
     [ "$status" -eq 0 ]
-    grep -qx "console rum:report --hours=720" "$CALLS"
+    grep -qx "console rum:report --hours=672" "$CALLS"
+}
+
+@test "ohne OUTPUT_DIR landet der Report unter var/ im Shopware-Verzeichnis" {
+    unset OUTPUT_DIR
+    run "$SCRIPT" weekly
+    [ "$status" -eq 0 ]
+    [ "$(ls "$SHOPWARE_DIR/var/performance-reports" | wc -l)" -eq 1 ]
 }
 
 @test "error-budget.php bekommt das Shopware-Verzeichnis" {
@@ -86,8 +100,10 @@ report() {
     [[ "$output" == *"RUM-TABELLE rum:report --hours=168"* ]]
     [[ "$output" == *"RUM-TABELLE rum:report --hours=168 --by=route"* ]]
     [[ "$output" == *"BUDGET-TABELLE"* ]]
-    [[ "$output" == *"Kein SLO verletzt."* ]]
-    [[ "$output" != *"ms |"* ]]
+    [[ "$output" == *"Keine bewertete Metrik ist rot."* ]]
+    # Zahlen mit Einheit kommen nur aus den Werkzeugen, und die Stubs liefern keine
+    run grep -nE '[0-9]+ ?(ms|%|s\b)' "$OUTPUT_DIR"/performance-report-*.md
+    [ "$status" -eq 1 ]
     # nur der fertige Report, keine liegengebliebene .part-Datei
     [ "$(ls "$OUTPUT_DIR" | wc -l)" -eq 1 ]
 }
@@ -97,6 +113,13 @@ report() {
     [ "$status" -eq 0 ]
     run report
     [[ "$output" == *"Mindestens ein SLO ist verletzt"* ]]
+}
+
+@test "unbewertete Metrik steht neben der Gesamtstufe" {
+    BUDGET_UNRATED=INP run "$SCRIPT" weekly
+    [ "$status" -eq 0 ]
+    run report
+    [[ "$output" == *"Keine bewertete Metrik ist rot. Ohne Bewertung (unter 100 Seitenaufrufen): INP."* ]]
 }
 
 @test "zu wenig Daten (Exit 3) steht im Report" {
@@ -113,9 +136,15 @@ report() {
 }
 
 @test "gescheitertes rum:report bricht ab, ohne Report" {
-    CONSOLE_FAIL=1 run "$SCRIPT" weekly
+    CONSOLE_FAIL=all run "$SCRIPT" weekly
     [ "$status" -eq 2 ]
     [[ "$output" == *"console kaputt"* ]]
+    [ -z "$(ls "$OUTPUT_DIR")" ]
+}
+
+@test "gescheitertes rum:report --by=route bricht ebenfalls ab" {
+    CONSOLE_FAIL=route run "$SCRIPT" weekly
+    [ "$status" -eq 2 ]
     [ -z "$(ls "$OUTPUT_DIR")" ]
 }
 
@@ -130,7 +159,13 @@ report() {
     SLACK_WEBHOOK=https://hooks.example/x STUB_BUDGET_RC=1 BUDGET_OVERALL=red run "$SCRIPT" weekly
     [ "$status" -eq 0 ]
     grep -q '^curl .*https://hooks.example/x' "$CALLS"
-    grep -q 'Error Budget red' "$CALLS"
+    [ "$(cat "$CALLS.body")" = '{"text": "Performance Report (weekly): Error Budget red"}' ]
+}
+
+@test "Slack bekommt die Stufe aus error-budget.php, nicht eine feste" {
+    SLACK_WEBHOOK=https://hooks.example/x BUDGET_OVERALL=yellow run "$SCRIPT" monthly
+    [ "$status" -eq 0 ]
+    [ "$(cat "$CALLS.body")" = '{"text": "Performance Report (monthly): Error Budget yellow"}' ]
 }
 
 @test "gescheiterter Slack-Versand endet mit Exit 2, Report bleibt" {

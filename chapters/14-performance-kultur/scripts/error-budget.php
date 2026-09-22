@@ -11,10 +11,14 @@ declare(strict_types=1);
  * installierten Plugins (custom/plugins/RumMonitoring) und rechnet mit
  * ../src/PerformanceBudgetService.php. Braucht nur PHP, keinen Shopware-Kernel.
  *
- * Exit-Codes: 0 = kein SLO verletzt, 1 = mindestens eine Metrik rot,
- *             2 = Aufruf- oder Pfadfehler, 3 = zu wenig Daten fuer eine Bewertung
+ * Exit-Codes: 0 = keine bewertete Metrik rot, 1 = mindestens eine Metrik rot,
+ *             2 = Aufruf-, Pfad- oder Rechtefehler, 3 = keine Metrik bewertbar
+ * Metriken unter --min-samples stehen in der Zeile "Ohne Bewertung".
  *
  * 28 Tage = Zeitfenster des Chrome UX Report (collectionPeriod der CrUX API).
+ * Mehr als 29 Tage deckt das Plugin nicht ab: Monolog behaelt 30 Tagesdateien.
+ * Speicher: rund 130 MB je Million Seitenaufrufe und Metrik (die CLI-php.ini
+ * von Debian/Ubuntu setzt memory_limit = -1).
  */
 
 use PerformanceKultur\PerformanceBudgetService;
@@ -62,9 +66,21 @@ foreach ([$rumDir . '/RumLogReader.php', $rumDir . '/RumStatistics.php'] as $fil
 }
 require_once __DIR__ . '/../src/PerformanceBudgetService.php';
 
-if (!is_dir($logDir)) {
-    fwrite(STDERR, "Nicht gefunden: $logDir\n");
+if (!is_dir($logDir) || !is_readable($logDir)) {
+    fwrite(STDERR, "Nicht gefunden oder nicht lesbar: $logDir\n");
     exit(2);
+}
+
+// Eine nicht lesbare Datei wuerde sonst still als "keine Daten" zaehlen
+$logFiles = glob($logDir . '/rum-*.log') ?: [];
+foreach ($logFiles as $file) {
+    if (!is_readable($file)) {
+        fwrite(STDERR, "Nicht lesbar: $file (als Benutzer mit Leserecht auf var/log aufrufen)\n");
+        exit(2);
+    }
+}
+if ($logFiles === []) {
+    fwrite(STDERR, "Keine rum-*.log in $logDir (Plugin aktiv, schon Beacons angekommen?)\n");
 }
 
 $since = new DateTimeImmutable(sprintf('-%d days', $days));
@@ -91,6 +107,11 @@ foreach ($budget as $metric => $row) {
 }
 
 printf("\nGesamt: %s\n", $overall === 'no-data' ? 'zu wenig Daten' : $overall);
+
+$unrated = PerformanceBudgetService::unrated($budget);
+if ($overall !== 'no-data' && $unrated !== []) {
+    printf("Ohne Bewertung (unter %d Seitenaufrufen): %s\n", $minSamples, implode(', ', $unrated));
+}
 
 exit(match ($overall) {
     'red' => 1,

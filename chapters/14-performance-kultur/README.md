@@ -93,21 +93,38 @@ RUM-Logs von Kapitel 12 aus. Voraussetzung: Plugin `RumMonitoring` ist
 installiert und hat Daten gesammelt.
 
 ```bash
-cd chapters/14-performance-kultur
-php scripts/error-budget.php /var/www/html                  # letzte 28 Tage
-php scripts/error-budget.php /var/www/html --days=7 --min-samples=200
+cd chapters/14-performance-kultur                           # Companion auf dem Shop-Server
+php scripts/error-budget.php /var/www/shop                  # letzte 28 Tage
+php scripts/error-budget.php /var/www/shop --days=7 --min-samples=200
 ```
 
-Als Benutzer des Webservers ausfuehren (liest `var/log/rum-*.log`). Nur PHP
-noetig, kein Shopware-Kernel. Exit-Codes: `0` kein SLO verletzt, `1` mindestens
-eine Metrik rot, `2` Aufruf- oder Pfadfehler, `3` zu wenig Daten (unter
-`--min-samples`, Vorgabe 100 wie bei `rum:check-alerts`).
+Nur PHP noetig, kein Shopware-Kernel. Der aufrufende Benutzer braucht
+Leserecht auf `var/log/rum-*.log` (im Testshop legt Monolog sie mit 0644 an,
+dort genuegt auch ein anderer Benutzer als www-data).
+
+Exit-Codes:
+
+- `0` keine bewertete Metrik rot
+- `1` mindestens eine Metrik rot (p75 nicht mehr gut)
+- `2` Aufruf-, Pfad- oder Rechtefehler (auch: eine `rum-*.log` ist nicht lesbar)
+- `3` keine Metrik bewertbar
+
+Eine Metrik unter `--min-samples` (Vorgabe 100 wie bei `rum:check-alerts`)
+bleibt ohne Bewertung und steht in der Zeile "Ohne Bewertung", damit
+"Gesamt: green" nicht wie "alles gut" aussieht. INP meldet web-vitals nur nach
+einer Interaktion, CLS nur aus Chromium-Browsern, deshalb liegen dort oft
+weniger Seitenaufrufe vor.
+
+Grenzen: Mehr als 29 Tage deckt das Plugin nicht ab (Monolog behaelt 30
+Tagesdateien). Speicher: rund 130 MB je Million Seitenaufrufe und Metrik
+(gemessen mit PHP 8.4); die CLI-`php.ini` von Debian/Ubuntu setzt
+`memory_limit = -1`, bei einem eigenen Limit `php -d memory_limit=1G`.
 
 Ausgabe im Testshop (Dockware 6.6.10.6, 390 kuenstliche Beacons, davon
 10 INP-Doppelmeldungen, die einmal zaehlen):
 
 ```text
-Error Budget seit 2026-08-25 16:30 UTC (28 Tage, SLO p75 <= Schwelle, Budget 25 % der Seitenaufrufe)
+Error Budget seit 2026-08-25 16:54 UTC (28 Tage, SLO p75 <= Schwelle, Budget 25 % der Seitenaufrufe)
 
 Metrik   Seitenaufrufe ueber Schwelle  verbraucht   uebrig  Stufe
 LCP                200             30      60.0 %   40.0 %  yellow
@@ -115,16 +132,30 @@ INP                130             40     123.1 %  -23.1 %  red
 CLS                 50             34           -        -  zu wenig Daten (< 100)
 
 Gesamt: red
+Ohne Bewertung (unter 100 Seitenaufrufen): CLS
 ```
 
-INP liegt bei 31 % der Seitenaufrufe ueber 200 ms, `rum:report` meldet fuer
-dieselben Daten ein p75 von 415 ms ("needs-improvement"). Stufe rot heisst
-dasselbe: Das p75 ist nicht mehr gut.
+INP liegt bei 31 % der Seitenaufrufe ueber 200 ms, `rum:report --hours=672`
+meldet fuer dieselben 28 Tage ein p75 von 415 ms ("needs-improvement"). Stufe
+rot heisst dasselbe: Das p75 ist nicht mehr gut.
 
-`scripts/generate-report.sh weekly|monthly` baut daraus einen Markdown-Report
-(`rum:report` gesamt und je Route, Error Budget) und laesst Top-Issues und
-Erfolge als Platzhalter stehen. Umgebung: `SHOPWARE_DIR`, `OUTPUT_DIR`,
-optional `SLACK_WEBHOOK`.
+### Report fuer Stakeholder
+
+`scripts/generate-report.sh weekly|monthly` baut einen Markdown-Report aus
+`rum:report` (gesamt und je Route) und dem Error Budget und laesst Top-Issues
+und Erfolge als Platzhalter stehen. `monthly` heisst 28 Tage. Als Benutzer des
+Webservers ausfuehren (`bin/console` schreibt in `var/cache`), den Companion
+also an einem Ort ablegen, den www-data lesen darf (etwa unter `/opt`):
+
+```bash
+cd chapters/14-performance-kultur
+sudo -u www-data SHOPWARE_DIR=/var/www/shop ./scripts/generate-report.sh weekly
+```
+
+Der Report landet in `$SHOPWARE_DIR/var/performance-reports/` (`OUTPUT_DIR`
+aendert das), `SLACK_WEBHOOK` schickt zusaetzlich die Gesamtstufe an Slack.
+Exit-Codes: `0` Report geschrieben, `1` Aufruffehler, `2` ein Werkzeug oder der
+Slack-Versand ist gescheitert.
 
 ## Metriken
 

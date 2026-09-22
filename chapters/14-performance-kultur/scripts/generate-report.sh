@@ -9,9 +9,13 @@
 #
 # Usage: ./generate-report.sh [weekly|monthly]
 #
+# monthly = 28 Tage: Monolog behaelt 30 Tagesdateien, und das Error Budget
+# rechnet ebenfalls mit 28 Tagen.
+#
 # Umgebung:
 #   SHOPWARE_DIR   Shopware-Verzeichnis (Vorgabe: /var/www/html)
-#   OUTPUT_DIR     Zielordner (Vorgabe: ../reports neben diesem Skript)
+#   OUTPUT_DIR     Zielordner (Vorgabe: $SHOPWARE_DIR/var/performance-reports,
+#                  dort darf der Webserver-Benutzer schreiben)
 #   SLACK_WEBHOOK  optional: Kurzfassung an einen Slack-Webhook schicken
 #   CONSOLE, PHP, CURL  Befehle (Vorgabe: $SHOPWARE_DIR/bin/console, php, curl)
 #
@@ -25,7 +29,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPORT_TYPE="${1:-weekly}"
 SHOPWARE_DIR="${SHOPWARE_DIR:-/var/www/html}"
-OUTPUT_DIR="${OUTPUT_DIR:-${SCRIPT_DIR}/../reports}"
+OUTPUT_DIR="${OUTPUT_DIR:-${SHOPWARE_DIR}/var/performance-reports}"
 CONSOLE="${CONSOLE:-${SHOPWARE_DIR}/bin/console}"
 PHP="${PHP:-php}"
 CURL="${CURL:-curl}"
@@ -41,8 +45,8 @@ case "${REPORT_TYPE}" in
         PERIOD="Letzte 7 Tage"
         ;;
     monthly)
-        DAYS=30
-        PERIOD="Letzte 30 Tage"
+        DAYS=28
+        PERIOD="Letzte 28 Tage"
         ;;
     *)
         echo "Unbekannter Report-Typ: ${REPORT_TYPE}" >&2
@@ -74,7 +78,7 @@ BUDGET_RC=0
 BUDGET=$("${PHP}" "${SCRIPT_DIR}/error-budget.php" "${SHOPWARE_DIR}" 2>&1) || BUDGET_RC=$?
 
 case "${BUDGET_RC}" in
-    0) BUDGET_NOTE="Kein SLO verletzt." ;;
+    0) BUDGET_NOTE="Keine bewertete Metrik ist rot." ;;
     1) BUDGET_NOTE="**Mindestens ein SLO ist verletzt (p75 nicht mehr gut):** Stufe rot laut Error-Budget-Policy." ;;
     3) BUDGET_NOTE="Zu wenig Seitenaufrufe fuer eine Bewertung." ;;
     *)
@@ -85,6 +89,10 @@ case "${BUDGET_RC}" in
 esac
 
 OVERALL=$(grep '^Gesamt: ' <<< "${BUDGET}" | head -n 1 || true)
+UNRATED=$(grep '^Ohne Bewertung' <<< "${BUDGET}" | head -n 1 || true)
+if [[ -n "${UNRATED}" ]]; then
+    BUDGET_NOTE="${BUDGET_NOTE} ${UNRATED}."
+fi
 
 cat > "${REPORT_FILE}.part" << EOF
 # Performance Report

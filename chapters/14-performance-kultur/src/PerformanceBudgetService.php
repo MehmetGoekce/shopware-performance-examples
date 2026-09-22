@@ -25,7 +25,7 @@ final class PerformanceBudgetService
     public const METRICS = ['LCP', 'INP', 'CLS'];
 
     /** p75-SLO: 25 % der Seitenaufrufe duerfen die Schwelle ueberschreiten */
-    public const ALLOWED_SHARE = 0.25;
+    public const ALLOWED_PERCENT = 25;
 
     /**
      * @param iterable<array<string, mixed>> $records    Log-Kontexte, in Log-Reihenfolge
@@ -67,14 +67,17 @@ final class PerformanceBudgetService
                 continue;
             }
 
-            $used = $over / $samples / self::ALLOWED_SHARE * 100;
-            $remaining = 100 - $used;
+            // In Zehntelprozent, verbraucht aufgerundet: Anzeige und Stufe passen
+            // immer zusammen, und "uebrig unter 0" heisst genau "p75 nicht mehr gut"
+            $denominator = $samples * self::ALLOWED_PERCENT;
+            $usedTenths = intdiv($over * 100 * 1000 + $denominator - 1, $denominator);
+            $remaining = (1000 - $usedTenths) / 10.0;
 
             $result[$metric] = [
                 'samples' => $samples,
                 'over' => $over,
-                'used_percent' => round($used, 1),
-                'remaining_percent' => round($remaining, 1),
+                'used_percent' => $usedTenths / 10.0,
+                'remaining_percent' => $remaining,
                 'policy' => self::policy($remaining),
             ];
         }
@@ -96,7 +99,8 @@ final class PerformanceBudgetService
     }
 
     /**
-     * Gesamtstatus = schlechteste Metrik mit Daten; ohne Daten "no-data"
+     * Gesamtstatus = schlechteste bewertete Metrik; ist keine bewertet, "no-data".
+     * Welche Metriken ohne Bewertung sind, liefert unrated().
      *
      * @param array<string, array{policy: string}> $budget
      */
@@ -112,5 +116,18 @@ final class PerformanceBudgetService
         }
 
         return 'no-data';
+    }
+
+    /**
+     * Metriken unter der Mindestzahl: Sie fehlen im Gesamtstatus und muessen
+     * daneben stehen, sonst liest sich "green" wie "alles gut"
+     *
+     * @param array<string, array{policy: string}> $budget
+     *
+     * @return list<string>
+     */
+    public static function unrated(array $budget): array
+    {
+        return array_keys(array_filter($budget, static fn (array $row): bool => $row['policy'] === 'no-data'));
     }
 }

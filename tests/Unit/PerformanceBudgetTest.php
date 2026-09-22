@@ -67,8 +67,8 @@ class PerformanceBudgetTest extends TestCase
         mt_srand(314);
         foreach (['LCP', 'INP', 'CLS'] as $metric) {
             $threshold = RumStatistics::THRESHOLDS[$metric][0];
-            for ($run = 0; $run < 300; $run++) {
-                $n = mt_rand(100, 400);
+            for ($run = 0; $run < 200; $run++) {
+                $n = mt_rand(100, 3000);
                 $shareOver = mt_rand(15, 35) / 100;
                 $values = [];
                 $records = [];
@@ -85,6 +85,34 @@ class PerformanceBudgetTest extends TestCase
                 self::assertSame($p75Good, $budget['remaining_percent'] >= 0, "$metric Lauf $run: n=$n, ueber=" . $budget['over']);
             }
         }
+    }
+
+    /**
+     * Die Anzeige rundet "verbraucht" auf: Knapp ueber der Grenze steht -0.1 % und rot,
+     * nicht 0.0 % und rot (gleiche Zahlen, andere Stufe)
+     */
+    public function testDisplayedRemainderAndPolicyAgreeNearTheLimit(): void
+    {
+        $justOver = PerformanceBudgetService::calculate(self::records('LCP', 1502, 501, 2500))['LCP'];
+        self::assertSame(100.1, $justOver['used_percent']);
+        self::assertSame(-0.1, $justOver['remaining_percent']);
+        self::assertSame('red', $justOver['policy']);
+
+        $justUnder = PerformanceBudgetService::calculate(self::records('LCP', 1501, 500, 2500))['LCP'];
+        self::assertSame(100.0, $justUnder['used_percent']);
+        self::assertSame(0.0, $justUnder['remaining_percent']);
+        self::assertSame('orange', $justUnder['policy']);
+    }
+
+    public function testUnratedListsMetricsBelowMinSamples(): void
+    {
+        $budget = PerformanceBudgetService::calculate(array_merge(
+            self::records('LCP', 200, 0, 2500),
+            self::records('INP', 0, 99, 200),
+        ));
+
+        self::assertSame('green', PerformanceBudgetService::overall($budget));
+        self::assertSame(['INP', 'CLS'], PerformanceBudgetService::unrated($budget));
     }
 
     public function testRepeatedReportsOfOnePageViewCountOnceWithTheLastValue(): void

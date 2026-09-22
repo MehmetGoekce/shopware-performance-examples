@@ -116,6 +116,64 @@ class ErrorBudgetScriptTest extends TestCase
         self::assertMatchesRegularExpression('/^LCP\s+100\s+10\s+40\.0 %\s+60\.0 %\s+green$/m', $out);
         self::assertMatchesRegularExpression('/^CLS\s+100\s+5\s+20\.0 %\s+80\.0 %\s+green$/m', $out);
         self::assertStringContainsString('Gesamt: green', $out);
+        self::assertStringNotContainsString('Ohne Bewertung', $out);
+    }
+
+    /**
+     * Eine Metrik unter --min-samples fehlt im Gesamtstatus und muss daneben stehen
+     */
+    public function testUnratedMetricIsNamedNextToTheOverallStatus(): void
+    {
+        $this->writeLog('-1 hour', ['LCP', 200, 0], ['INP', 0, 99], ['CLS', 200, 0]);
+
+        [$rc, $out] = $this->runScript($this->shop);
+
+        self::assertSame(0, $rc, $out);
+        self::assertStringContainsString("Gesamt: green\nOhne Bewertung (unter 100 Seitenaufrufen): INP\n", $out);
+    }
+
+    public function testUnreadableLogIsAnErrorNotMissingData(): void
+    {
+        if (\function_exists('posix_geteuid') && posix_geteuid() === 0) {
+            self::markTestSkipped('root darf jede Datei lesen');
+        }
+        $this->writeLog('-1 hour', ['LCP', 200, 0]);
+        $file = glob($this->shop . '/var/log/rum-*.log')[0];
+        chmod($file, 0);
+
+        try {
+            [$rc, , $err] = $this->runScript($this->shop);
+        } finally {
+            chmod($file, 0644);
+        }
+
+        self::assertSame(2, $rc);
+        self::assertStringContainsString('Nicht lesbar', $err);
+    }
+
+    public function testUnreadableLogDirIsAnError(): void
+    {
+        if (\function_exists('posix_geteuid') && posix_geteuid() === 0) {
+            self::markTestSkipped('root darf jedes Verzeichnis lesen');
+        }
+        chmod($this->shop . '/var/log', 0100);
+
+        try {
+            [$rc, , $err] = $this->runScript($this->shop);
+        } finally {
+            chmod($this->shop . '/var/log', 0755);
+        }
+
+        self::assertSame(2, $rc);
+        self::assertStringContainsString('nicht lesbar', $err);
+    }
+
+    public function testNoLogFilesAtAllSaysSo(): void
+    {
+        [$rc, $out, $err] = $this->runScript($this->shop);
+
+        self::assertSame(3, $rc, $out);
+        self::assertStringContainsString('Keine rum-*.log', $err);
     }
 
     public function testBrokenSloExitsOne(): void
