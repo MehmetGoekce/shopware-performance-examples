@@ -151,8 +151,10 @@ else
 fi
 
 ini_value() {
+    # Kein exit im awk: Er liest bis zum Ende, sonst stirbt printf an
+    # SIGPIPE und pipefail beendet das Skript still (rc 141).
     printf '%s\n' "${FPM_INI}" | awk -v key="$1" -F' => ' \
-        '$1 == key { print $2; exit }'
+        '$1 == key && !found { print $2; found = 1 }'
 }
 
 ENABLED=$(ini_value "opcache.enable")
@@ -219,7 +221,7 @@ if ! command -v cgi-fcgi >/dev/null 2>&1; then
     echo "   uebersprungen: cgi-fcgi fehlt (Paket libfcgi-bin)."
     echo "   -i zeigt nur eingetragene Werte: gerundetes max_accelerated_files und"
     echo "   den JIT-Zustand liefert opcache_get_status(false) in einem Request."
-elif [[ ! -S "${FPM_SOCKET}" || ! -w "${FPM_SOCKET}" ]]; then
+elif [[ ! -e "${FPM_SOCKET}" || ! -w "${FPM_SOCKET}" ]]; then
     echo "   uebersprungen: Socket ${FPM_SOCKET} fehlt oder ist fuer $(id -un)"
     echo "   nicht beschreibbar (FPM_SOCKET setzen, ggf. mit sudo)."
 else
@@ -229,12 +231,16 @@ else
     cat > "${PROBE}" <<'PHP'
 <?php
 $s = function_exists('opcache_get_status') ? opcache_get_status(false) : false;
-echo 'RT OPCACHE=', $s === false ? 0 : 1,
+// Schaltet der Pool OPcache ab (php_admin_value[opcache.enable] = 0), kommt
+// trotzdem ein Array zurueck - nur mit opcache_enabled = false.
+$on = is_array($s) && !empty($s['opcache_enabled']);
+echo 'RT OPCACHE=', $on ? 1 : 0,
      ' JIT=', ($s['jit']['enabled'] ?? false) ? 1 : 0,
      ' KEYS=', $s['opcache_statistics']['max_cached_keys'] ?? 0, "\n";
 PHP
+    # timeout: Ist der Pool voll ausgelastet, wartet cgi-fcgi sonst unbegrenzt.
     RT=$(SCRIPT_FILENAME="${PROBE}" SCRIPT_NAME=/check-opcache.php REQUEST_METHOD=GET \
-         cgi-fcgi -bind -connect "${FPM_SOCKET}" 2>/dev/null | tr -d '\r' | grep '^RT ' || true)
+         timeout 10 cgi-fcgi -bind -connect "${FPM_SOCKET}" 2>/dev/null | tr -d '\r' | grep '^RT ' || true)
     if [[ -z "${RT}" ]]; then
         echo "   keine Antwort ueber ${FPM_SOCKET} - Laufzeitwerte unbekannt."
     else
@@ -245,8 +251,8 @@ PHP
         echo "   JIT im Request:          $([[ "${RT_JIT}" == 1 ]] && echo an || echo aus)"
         echo "   max_cached_keys (wirksam): ${RT_KEYS}"
         if [[ "${RT_OPCACHE}" != 1 ]]; then
-            echo "   opcache_get_status() liefert im Request false - OPcache arbeitet"
-            echo "   in diesem Pool nicht, egal was -i meldet."
+            echo "   OPcache arbeitet in diesem Pool nicht (opcache_enabled = false),"
+            echo "   egal was -i meldet - z. B. php_admin_value[opcache.enable] = 0 im Pool."
             PROBLEMS=$((PROBLEMS + 1))
         fi
     fi

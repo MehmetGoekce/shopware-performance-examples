@@ -50,7 +50,7 @@ Verhaltens-Gate. Er faengt, was einen Dienst nicht starten laesst:
 
 | Schritt | Faengt | Faengt nicht |
 |---|---|---|
-| `nginx -t` + Laufzeitabfrage | Syntaxfehler, fehlende Direktiven, dazu die drei Fallen unten als echte HTTP-Antworten | semantische Fehler ausserhalb dieser drei Pruefungen, z. B. einen Socket-Pfad, der nicht zum FPM-Pool passt |
+| `nginx -t` + Laufzeitabfrage | Syntaxfehler, fehlende Direktiven, dazu die drei Fallen unten als echte HTTP-Antworten | semantische Fehler ausserhalb dieser drei Pruefungen. Einen Socket-Pfad, der nicht zum Pool passt, fangen `pool-template-drift.bats` und der Boot in `tests/Integration/pool-vhost-boot.sh` |
 | `mysqld --validate-config` | unbekannte Variablen und Tippfehler | Werte ausserhalb des gueltigen Bereichs (`instances = 999` geht durch) und **abgekuendigte** Direktiven — die Warnung MY-013907 erscheint erst beim echten Start |
 | `supervisord -n` | Parsefehler, `numprocs` ohne `process_name`, falscher PHP-Pfad, Programme, die nicht RUNNING erreichen | Tippfehler im Shopware-Befehl selbst: der Schritt stubt `php` und `bin/console` weg, ein `messenger:consume asyncc` besteht ihn |
 

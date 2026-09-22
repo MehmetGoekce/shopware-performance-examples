@@ -26,6 +26,9 @@ POOL_DIR=/etc/php/8.3/fpm/pool.d
 DOCROOT=/var/www/shopware/public
 
 fail() { echo "FAIL: $*"; exit 1; }
+# Bricht ein Befehl unter set -e ab (z. B. curl rc 7), soll eine FAIL-Zeile
+# dastehen statt eines nackten Exit-Codes.
+trap 'echo "FAIL: Abbruch in Zeile $LINENO (rc $?)"; exit 1' ERR
 ok() { echo "ok: $*"; }
 
 stop_fpm() {
@@ -61,7 +64,8 @@ sed -i -e "$SED_E1" -e "$SED_E2" "$VHOST"
 
 # Docker schaltet IPv6 in Containern oft ab; dann startet nginx mit [::] nicht.
 V6=1
-if [ "$(cat /proc/sys/net/ipv6/conf/all/disable_ipv6 2>/dev/null || echo 1)" = "1" ]; then
+if [ "$(cat /proc/sys/net/ipv6/conf/all/disable_ipv6 2>/dev/null || echo 1)" = "1" ] \
+   || [ "$(cat /proc/sys/net/ipv6/conf/lo/disable_ipv6 2>/dev/null || echo 1)" = "1" ]; then
     V6=0
     sed -i '/^[[:space:]]*listen \[::\]/d' "$VHOST"
     echo "hinweis: IPv6 im Container aus - [::]-Listen entfernt, v6-Probe uebersprungen"

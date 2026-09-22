@@ -178,7 +178,8 @@ Entfernen einer Coverage-Erweiterung aus der Produktionskonfiguration.
 ## Voraussetzungen
 
 - Ubuntu 22.04/24.04 oder Debian 12
-- PHP 8.3 (empfohlen). Shopware 6.6 ist mit 8.2, 8.3 und 8.4 kompatibel;
+- PHP 8.3 (empfohlen). Shopware 6.6 ist mit 8.2 und 8.3 kompatibel, ab
+  6.6.10.0 auch mit 8.4 (composer.json);
   PHP 8.4 ist seit November 2024 erschienen.
 - Root-Zugriff fuer Konfigurationsaenderungen
 - Apache Benchmark (`ab`) fuer den JIT-Test: `sudo apt install apache2-utils`
