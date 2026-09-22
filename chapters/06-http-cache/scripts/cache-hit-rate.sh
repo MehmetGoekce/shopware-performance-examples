@@ -5,10 +5,10 @@
 # Berechnet die Cache-Hit-Rate aus Varnish-Zählern oder aus einem Access-Log,
 # dessen LETZTES Feld der Cache-Status ist.
 #
-# Verwendung:
-#   ./cache-hit-rate.sh --varnishstat
-#   ./cache-hit-rate.sh /var/log/varnish/varnishncsa.log
-#   ./cache-hit-rate.sh /var/log/nginx/access.log
+# Verwendung (im Ordner chapters/06-http-cache):
+#   ./scripts/cache-hit-rate.sh --varnishstat
+#   ./scripts/cache-hit-rate.sh /var/log/varnish/varnishncsa.log
+#   ./scripts/cache-hit-rate.sh /var/log/nginx/access.log
 #
 # Log-Formate mit Cache-Status als letztem Feld:
 #   Varnish:  varnishncsa -F '%h %t "%r" %s %b %{Varnish:handling}x'
@@ -18,7 +18,7 @@
 #             log_format cache '$remote_addr [$time_local] "$request" $status $upstream_cache_status';
 #
 # Varnish im Container:
-#   VARNISHSTAT_CMD="docker exec varnish varnishstat" ./cache-hit-rate.sh --varnishstat
+#   VARNISHSTAT_CMD="docker exec varnish varnishstat" ./scripts/cache-hit-rate.sh --varnishstat
 #
 # @see https://github.com/MehmetGoekce/shopware-performance-examples
 

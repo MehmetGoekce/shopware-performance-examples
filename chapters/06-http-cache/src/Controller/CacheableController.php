@@ -25,8 +25,8 @@
  *   3. Templates unter src/Resources/views/storefront/page/ anlegen
  *   4. Cache leeren: bin/console cache:clear
  *
- * Prüfen:
- *   ../../scripts/cache-debug.sh https://ihr-shop.ch /custom-page
+ * Prüfen (im Ordner chapters/06-http-cache):
+ *   ./scripts/cache-debug.sh https://ihr-shop.ch /custom-page
  *
  * @see https://github.com/MehmetGoekce/shopware-performance-examples
  */

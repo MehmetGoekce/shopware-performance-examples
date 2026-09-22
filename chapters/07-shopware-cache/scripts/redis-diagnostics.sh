@@ -12,11 +12,11 @@
 #   critical  Warenkörbe          → volatile-lru, mit Persistenz
 #
 # Verwendung:
-#   ./redis-diagnostics.sh --role cache redis://redis-cache:6379
-#   ./redis-diagnostics.sh --role session redis://redis-session:6380
+#   ./scripts/redis-diagnostics.sh --role cache redis://redis-cache:6379
+#   ./scripts/redis-diagnostics.sh --role session redis://redis-session:6380
 #
 # Redis im Container:
-#   REDIS_CLI="docker exec redis redis-cli" ./redis-diagnostics.sh --role cache redis://127.0.0.1:6379
+#   REDIS_CLI="docker exec redis redis-cli" ./scripts/redis-diagnostics.sh --role cache redis://127.0.0.1:6379
 #
 # Exit-Code: 0 = keine FAIL-Befunde, 1 = mindestens ein FAIL oder nicht erreichbar
 #

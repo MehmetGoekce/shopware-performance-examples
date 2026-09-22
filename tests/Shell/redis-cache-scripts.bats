@@ -40,7 +40,7 @@ teardown() {
 }
 
 @test "both redis scripts show help with --help" {
-    for script in cache-hit-rate.sh redis-diagnostics.sh; do
+    for script in redis-hit-rate.sh redis-diagnostics.sh; do
         run "$DIR/$script" --help
         [ "$status" -eq 0 ]
         [[ "$output" == *"Usage:"* ]]
@@ -48,36 +48,36 @@ teardown() {
 }
 
 @test "both redis scripts reject unknown options" {
-    for script in cache-hit-rate.sh redis-diagnostics.sh; do
+    for script in redis-hit-rate.sh redis-diagnostics.sh; do
         run "$DIR/$script" --nope
         [ "$status" -eq 1 ]
     done
 }
 
-@test "cache-hit-rate.sh computes the rate from keyspace hits and misses" {
-    run "$DIR/cache-hit-rate.sh" redis://cache:6379
+@test "redis-hit-rate.sh computes the rate from keyspace hits and misses" {
+    run "$DIR/redis-hit-rate.sh" redis://cache:6379
     [ "$status" -eq 0 ]
     [[ "$output" == *"91.00%"* ]]
     [[ "$output" != *"niedrig"* ]]
 }
 
-@test "cache-hit-rate.sh flags a rate below 80 percent" {
+@test "redis-hit-rate.sh flags a rate below 80 percent" {
     printf 'keyspace_hits:300\r\nkeyspace_misses:700\r\n' > "$FIX/INFO_stats"
-    run "$DIR/cache-hit-rate.sh"
+    run "$DIR/redis-hit-rate.sh"
     [ "$status" -eq 0 ]
     [[ "$output" == *"30.00% (niedrig)"* ]]
 }
 
-@test "cache-hit-rate.sh handles zero reads" {
+@test "redis-hit-rate.sh handles zero reads" {
     printf 'keyspace_hits:0\r\nkeyspace_misses:0\r\n' > "$FIX/INFO_stats"
-    run "$DIR/cache-hit-rate.sh"
+    run "$DIR/redis-hit-rate.sh"
     [ "$status" -eq 0 ]
     [[ "$output" == *"Noch keine Lesezugriffe"* ]]
 }
 
-@test "cache-hit-rate.sh exits 1 when redis is unreachable" {
+@test "redis-hit-rate.sh exits 1 when redis is unreachable" {
     rm "$FIX/INFO_stats"
-    run "$DIR/cache-hit-rate.sh"
+    run "$DIR/redis-hit-rate.sh"
     [ "$status" -eq 1 ]
     [[ "$output" == *"nicht erreichbar"* ]]
 }

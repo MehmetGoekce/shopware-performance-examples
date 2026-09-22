@@ -18,7 +18,7 @@ Getestet mit Shopware 6.6.10.6 (Dockware), Redis 7.4 und PHP 8.3 mit `redis`-Ext
 ├── deploy/
 │   └── deploy-cache-step.yml     # GitHub-Actions-Schritt: leeren, Sitemap, Warmup (Kapitel 7.6)
 ├── scripts/
-│   ├── cache-hit-rate.sh         # Trefferquote einer Redis-Instanz
+│   ├── redis-hit-rate.sh         # Trefferquote einer Redis-Instanz
 │   └── redis-diagnostics.sh      # Policy, Persistenz, Keys ohne TTL, OOM je Rolle
 └── src/
     ├── Example/
@@ -31,6 +31,8 @@ Getestet mit Shopware 6.6.10.6 (Dockware), Redis 7.4 und PHP 8.3 mit `redis`-Ext
 Cache-Warmup nach dem Deployment: [`06-http-cache/scripts/cache-warmup.sh`](../06-http-cache/scripts/cache-warmup.sh) (liest den Sitemap-Index samt `.xml.gz`-Teilen). `deploy/deploy-cache-step.yml` erwartet es im Shop-Repo unter `scripts/cache-warmup.sh`, ausführbar und mit dem Code ausgerollt, und prüft das, bevor es die Caches leert.
 
 ## Schnellstart
+
+Befehle mit `./scripts/…` laufen in diesem Ordner (`cd chapters/07-shopware-cache`), `bin/console` im Shopware-Verzeichnis.
 
 ### 1. Redis-Instanzen
 
@@ -77,7 +79,7 @@ Vor 6.6.8.0 statt `cache:clear:all`: `bin/console cache:pool:clear cache.object 
 ```bash
 ./scripts/redis-diagnostics.sh --role cache redis://127.0.0.1:6379
 ./scripts/redis-diagnostics.sh --role session redis://127.0.0.1:6380
-./scripts/cache-hit-rate.sh redis://127.0.0.1:6379
+./scripts/redis-hit-rate.sh redis://127.0.0.1:6379
 
 # Keys ansehen (SCAN statt KEYS, blockiert Redis nicht)
 redis-cli -n 0 --scan | head -20

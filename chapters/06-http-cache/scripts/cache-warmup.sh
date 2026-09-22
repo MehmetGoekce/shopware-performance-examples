@@ -21,10 +21,10 @@
 #     mit --parallel 4 6-10 kalt, mit dem zweiten Durchgang 0). Der zweite
 #     Durchgang rendert nur die kalt gebliebenen Seiten neu.
 #
-# Verwendung:
-#   ./cache-warmup.sh https://ihr-shop.ch
-#   ./cache-warmup.sh https://ihr-shop.ch --sitemap
-#   ./cache-warmup.sh https://ihr-shop.ch --sitemap --parallel 4 --limit 500
+# Verwendung (im Ordner chapters/06-http-cache; im Shop-Repo, Kapitel 7: scripts/):
+#   ./scripts/cache-warmup.sh https://ihr-shop.ch
+#   ./scripts/cache-warmup.sh https://ihr-shop.ch --sitemap
+#   ./scripts/cache-warmup.sh https://ihr-shop.ch --sitemap --parallel 4 --limit 500
 #
 # Umgebungsvariablen:
 #   CURL_CMD  curl-Befehl (Default: curl, für Tests austauschbar)
@@ -177,4 +177,4 @@ if [[ "${PARALLEL}" -gt 1 ]]; then
 fi
 
 echo ""
-echo "Nächster Schritt: ./cache-debug.sh ${BASE_URL}"
+echo "Nächster Schritt (Companion, Ordner chapters/06-http-cache): ./scripts/cache-debug.sh ${BASE_URL}"

@@ -16,9 +16,9 @@
 #                     damit Age bei einem Treffer mindestens 1 ist)
 #   CURL_CMD          curl-Befehl (Default: curl, für Tests austauschbar)
 #
-# Verwendung:
-#   ./cache-debug.sh https://ihr-shop.ch
-#   ./cache-debug.sh https://ihr-shop.ch / /kategorie/ /produkt/SW10001
+# Verwendung (im Ordner chapters/06-http-cache):
+#   ./scripts/cache-debug.sh https://ihr-shop.ch
+#   ./scripts/cache-debug.sh https://ihr-shop.ch / /kategorie/ /produkt/SW10001
 #
 # @see https://github.com/MehmetGoekce/shopware-performance-examples
 

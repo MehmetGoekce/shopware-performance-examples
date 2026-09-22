@@ -48,6 +48,8 @@ Beides beim Übernehmen in ein eigenes Plugin anpassen; die Twig-Templates selbs
 
 ## Schnellstart: eingebauter Cache
 
+Befehle mit `./scripts/…` laufen in diesem Ordner (`cd chapters/06-http-cache`), `bin/console` im Shopware-Verzeichnis.
+
 ```bash
 # .env bzw. Umgebung des Webservers (nicht nur der CLI!)
 APP_ENV=prod

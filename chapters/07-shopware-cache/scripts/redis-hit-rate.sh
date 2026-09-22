@@ -7,15 +7,15 @@
 # (oder seit "CONFIG RESETSTAT") - liegen Sessions auf derselben Instanz,
 # zählen sie mit.
 #
-# Verwendung:
-#   ./cache-hit-rate.sh                          # redis://127.0.0.1:6379
-#   ./cache-hit-rate.sh redis://redis-cache:6379
+# Verwendung (im Ordner chapters/07-shopware-cache):
+#   ./scripts/redis-hit-rate.sh                          # redis://127.0.0.1:6379
+#   ./scripts/redis-hit-rate.sh redis://redis-cache:6379
 #
 # Messen ohne Altlasten:
 #   redis-cli -u <url> CONFIG RESETSTAT  →  Traffic laufen lassen  →  Skript
 #
 # Redis im Container:
-#   REDIS_CLI="docker exec redis redis-cli" ./cache-hit-rate.sh redis://127.0.0.1:6379
+#   REDIS_CLI="docker exec redis redis-cli" ./scripts/redis-hit-rate.sh redis://127.0.0.1:6379
 #
 # @see https://github.com/MehmetGoekce/shopware-performance-examples
 
@@ -100,6 +100,6 @@ else
     echo "Mögliche Ursachen:"
     echo "  - Cache wurde gerade geleert (Deployment, cache:clear:all) - später erneut messen"
     echo "  - maxmemory-policy allkeys-* mit redis_tag_aware: Cache speichert nichts"
-    echo "    (./redis-diagnostics.sh --role cache ${URL})"
+    echo "    (./scripts/redis-diagnostics.sh --role cache ${URL})"
     echo "  - maxmemory zu klein: viele evicted_keys"
 fi
