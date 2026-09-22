@@ -51,7 +51,7 @@ Gemessen auf `/Clothing/` (Demo-Daten), HTTP-Cache geleert:
 
 Gegenproben mit abgeändertem Plugin:
 
-- Ohne `setPrivate()` für die neue Zuweisung: Der Cache speichert die erste Antwort samt `Set-Cookie`, und 8 von 8 weiteren neuen Besuchern bekamen dieselbe Variante aus dem Cache.
+- Ohne `setPrivate()` für die neue Zuweisung: Der Cache speichert die erste Antwort samt `Set-Cookie`, und die 7 weiteren neuen Besucher bekamen dieselbe Variante aus dem Cache.
 - Ohne `CacheKeySubscriber`: Ein Besucher mit Cookie `control` bekam die gecachte Seite der Variante `eager`.
 - `$event->getRequest()` statt `$event->request`: Die Methode gibt es nicht, **jede** Seite antwortet mit HTTP 500, auch ohne Cookie, weil das Event bei jedem Cache-Lookup läuft.
 
