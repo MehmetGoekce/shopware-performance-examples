@@ -35,7 +35,7 @@ Ohne aktives `RumMonitoring` bricht `plugin:install` für `AbTesting` mit «Requ
 
 ## Experiment konfigurieren
 
-Im Parameter `ab_testing.experiments` in `services.xml`. Key und Variantennamen: `a-z`, `0-9`, `_`. Ein Cookie-Wert, der keine konfigurierte Variante ist, wird ignoriert und neu zugewiesen, sonst könnte jeder Besucher mit erfundenen Werten beliebig viele Cache-Einträge anlegen.
+Im Parameter `ab_testing.experiments` in `services.xml`. Key und Variantennamen: `a-z`, `0-9`, `_`. Für Performance-Metriken gleiche Gewichte: Bei ungleichem Split hat die kleine Gruppe mehr Cache-Misses und damit eine höhere TTFB. Nach jeder Änderung `cache:clear` und den HTTP-Cache leeren. Ein Cookie-Wert, der keine konfigurierte Variante ist, wird ignoriert und neu zugewiesen, sonst könnte jeder Besucher mit erfundenen Werten beliebig viele Cache-Einträge anlegen.
 
 ## Wie Zuweisung und HTTP-Cache zusammenspielen
 
@@ -55,7 +55,7 @@ Gegenproben mit abgeändertem Plugin:
 - Ohne `CacheKeySubscriber`: Ein Besucher mit Cookie `control` bekam die gecachte Seite der Variante `eager`.
 - `$event->getRequest()` statt `$event->request`: Die Methode gibt es nicht, **jede** Seite antwortet mit HTTP 500, auch ohne Cookie, weil das Event bei jedem Cache-Lookup läuft.
 
-Der Preis: Der erste Aufruf eines neuen Besuchers auf einer Experiment-Route kommt nie aus dem Cache. Seiten ausserhalb des Experiments haben für Besucher mit Cookie einen Cache-Eintrag je Variante, weil der Cache-Key vor dem Routing entsteht.
+Der Preis: Der erste Aufruf eines neuen Besuchers auf einer Experiment-Route kommt nie aus dem Cache. Clients ohne Cookie-Speicher (Crawler, Monitoring, Lighthouse CI) sind bei jedem Aufruf neu: gerendert, `private`, eine Zeile im Zuweisungs-Log. Seiten ausserhalb des Experiments haben für Besucher mit Cookie einen Cache-Eintrag je Variante, weil der Cache-Key vor dem Routing entsteht.
 
 Auf 6.7 tragen auch nicht gecachte Seiten ein `Age`: Symfony übernimmt das Alter gecachter ESI-Fragmente (Header, Footer) in die Seite. Ob eine Seite aus dem Cache kommt, sehen Sie dort an TTFB und Inhalt, nicht am `Age`.
 
@@ -64,23 +64,23 @@ Hinter Varnish wirkt `HttpCacheKeyEvent` nicht; das Plugin ist dafür nicht gete
 ## Auswertung
 
 ```bash
-bin/console ab:sample-size --effect=120 --metric=LCP --days=7
+bin/console ab:sample-size --effect=120 --metric=LCP --days=7 --route=frontend.navigation.page
 bin/console ab:analyze listing_images --metric=LCP --days=14
 ```
 
-`ab:analyze` endet mit Exit-Code 0 (ausgewertet), 1 (zu wenig Daten), 2 (falscher Aufruf) oder 3 (Sample Ratio Mismatch: Zuweisungen passen nicht zum Split, Ergebnis nicht verwenden). Mit mehr als einer Variante gilt je Vergleich das Signifikanzniveau geteilt durch die Zahl der Vergleiche (Bonferroni).
+`ab:analyze` wertet nur Seitenaufrufe auf den Routen des Experiments aus (anders mit `--route`): Der Log-Processor schreibt die Variante in jede Zeile eines Besuchers mit Cookie, auch auf Seiten ausserhalb des Experiments. Exit-Code 0 (ausgewertet), 1 (zu wenig Daten oder nicht auswertbar, etwa keine Streuung), 2 (falscher Aufruf) oder 3 (Sample Ratio Mismatch: Zuweisungen passen nicht zum Split, Ergebnis nicht verwenden). Zuweisungen an nicht mehr konfigurierte Varianten stehen in der Ausgabe, zählen aber nicht im Test. Mit mehr als einer Variante gilt je Vergleich das Signifikanzniveau geteilt durch die Zahl der Vergleiche (Bonferroni).
 
 Grenzen:
 
-- Randomisiert wird je Besucher, gemessen je Seitenaufruf. Wer viele Seiten aufruft, zählt mehrfach; das Konfidenzintervall ist dann zu schmal.
+- Randomisiert wird je Besucher, gemessen je Seitenaufruf. Wer mehrere Seiten der Route aufruft, zählt mehrfach, und seine Aufrufe hängen zusammen; das Konfidenzintervall ist dann zu schmal. Das Log enthält keine Besucher-ID, das Plugin kann es nicht korrigieren.
 - Nur Besucher, deren Browser die RUM-Beacons schickt und die die Stichprobe von `RumMonitoring` trifft, landen in der Auswertung.
 - Das Cookie `exp_<experiment>` enthält nur den Variantennamen, keine ID. Ob Sie dafür eine Einwilligung brauchen, klären Sie mit Ihrer Datenschutzberatung.
 
 ## Tests
 
-- `tests/Unit/AbTestingTest.php` – Welch-t, Freiheitsgrade, p-Wert und Konfidenzintervall gegen SciPy 1.8 (`ttest_ind(equal_var=False)`), t-Verteilung bei kleinen Freiheitsgraden, Quantile, Stichprobengrösse (37 für 210 ms bei 320 ms Standardabweichung), SRM-Test gegen `stats.chisquare`, Konfiguration, Zuweisung nach Gewicht, Auswertung der RUM-Zeilen (eine Meldung je Seitenaufruf), Zuweisungs-Log, nicht lesbare Logs. 18 von 18 Mutanten getötet.
+- `tests/Unit/AbTestingTest.php` – Welch-t, Freiheitsgrade, p-Wert und Konfidenzintervall gegen SciPy 1.8 (`ttest_ind(equal_var=False)`), t-Verteilung bei kleinen Freiheitsgraden, Quantile, Stichprobengrösse (37 für 210 ms bei 320 ms Standardabweichung), SRM-Test gegen `stats.chisquare`, Konfiguration, Zuweisung nach Gewicht, Auswertung der RUM-Zeilen (eine Meldung je Seitenaufruf, Routenfilter), Zufallsauswahl erreicht jede Variante, Kontroll-Mittel 0 (CLS), Zuweisungs-Log samt Datei des Vortags, nicht lesbare Logs. 24 von 24 Mutanten getötet.
 - Im Dockware-Shop 6.6.10.6: alle Fälle der Tabelle oben und die drei Gegenproben, Beacons aus Chromium, Firefox und WebKit mit Variante im RUM-Log, `ab:sample-size` und `ab:analyze` auf erzeugten Testdaten (Ausgabe gegen SciPy geprüft), SRM-Fall mit Exit-Code 3.
-- Im Dockware-Shop 6.7.2.2: Installation, die Fälle der Tabelle oben, Variante im RUM-Log (Beacon per curl, gültiges und erfundenes Cookie).
+- Im Dockware-Shop 6.7.2.2: Installation, die Fälle der Tabelle oben, Variante im RUM-Log (Beacon per curl, gültiges und erfundenes Cookie), Routenfilter (400 Zeilen der Produktseite bleiben in der Vorgabe draussen), Exit 1 mit Meldung, wenn keine Gruppe streut.
 
 ## Quellen
 

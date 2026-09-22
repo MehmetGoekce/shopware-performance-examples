@@ -8,7 +8,8 @@ namespace AbTesting\Stats;
  * Ergebnis eines Welch-t-Tests Variante gegen Kontrolle.
  *
  * difference = Mittel Variante - Mittel Kontrolle. Bei Zeiten (LCP, INP) und
- * CLS ist negativ besser.
+ * CLS ist negativ besser. relativeChange ist null, wenn das Mittel der
+ * Kontrolle 0 ist (bei CLS moeglich).
  */
 final class SignificanceResult
 {
@@ -18,7 +19,7 @@ final class SignificanceResult
         public readonly float $controlMean,
         public readonly float $variantMean,
         public readonly float $difference,
-        public readonly float $relativeChange,
+        public readonly ?float $relativeChange,
         public readonly float $tStatistic,
         public readonly float $degreesOfFreedom,
         public readonly float $pValue,

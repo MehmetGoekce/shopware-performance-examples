@@ -23,6 +23,9 @@ use Symfony\Component\Console\Output\OutputInterface;
  *
  *   bin/console ab:analyze listing_images --metric=LCP --days=14
  *
+ * Ausgewertet werden nur Seitenaufrufe auf den Routen des Experiments
+ * (aenderbar mit --route).
+ *
  * Exit-Codes: 0 ausgewertet, 1 zu wenig Daten, 2 falscher Aufruf,
  * 3 Sample Ratio Mismatch (Ergebnis nicht verwenden).
  */
@@ -50,7 +53,8 @@ class AbAnalyzeCommand extends Command
             ->addOption('metric', null, InputOption::VALUE_REQUIRED, 'LCP, INP, CLS, FCP oder TTFB', 'LCP')
             ->addOption('days', null, InputOption::VALUE_REQUIRED, 'Zeitfenster in Tagen (volle Wochen)', '14')
             ->addOption('confidence', null, InputOption::VALUE_REQUIRED, 'Konfidenzniveau', '0.95')
-            ->addOption('device', null, InputOption::VALUE_REQUIRED, 'nur mobile oder desktop');
+            ->addOption('device', null, InputOption::VALUE_REQUIRED, 'nur mobile oder desktop')
+            ->addOption('route', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'nur diese Routen (Vorgabe: die Routen des Experiments)');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -75,8 +79,9 @@ class AbAnalyzeCommand extends Command
             return Command::INVALID;
         }
 
+        $routes = $input->getOption('route') ?: $this->config->all()[$key]['routes'];
         $since = new \DateTimeImmutable(sprintf('-%d days', $days));
-        $values = ExperimentData::valuesByVariant($this->rumReader->read($since), $this->config, $key, $metric, $device);
+        $values = ExperimentData::valuesByVariant($this->rumReader->read($since), $this->config, $key, $metric, $device, $routes);
         $control = $this->config->control($key);
         $format = $metric === 'CLS' ? '%.3f' : '%.0f';
 
@@ -85,10 +90,11 @@ class AbAnalyzeCommand extends Command
         $perComparison = 1 - (1 - $confidence) / $comparisons;
 
         $output->writeln(sprintf(
-            'Experiment %s, %s%s, seit %s (%s)',
+            'Experiment %s, %s%s, Route %s, seit %s (%s)',
             $key,
             $metric,
             $device !== null ? ', ' . $device : '',
+            implode(', ', $routes),
             $since->format('Y-m-d H:i T'),
             $metric === 'CLS' ? 'ohne Einheit' : 'Werte in ms'
         ));
@@ -109,8 +115,16 @@ class AbAnalyzeCommand extends Command
             $row = [$variant, \count($list), sprintf($format, array_sum($list) / \count($list)), sprintf($format, RumStatistics::percentile($sorted, 75)), '', '', ''];
 
             if ($variant !== $control) {
-                $r = $this->analyzer->compare($values[$control], $list, $perComparison);
-                $row[4] = sprintf($format . ' (%+.1f %%)', $r->difference, $r->relativeChange);
+                try {
+                    $r = $this->analyzer->compare($values[$control], $list, $perComparison);
+                } catch (\InvalidArgumentException $e) {
+                    $output->writeln(sprintf('<error>%s gegen %s nicht auswertbar: %s</error>', $variant, $control, $e->getMessage()));
+
+                    return Command::FAILURE;
+                }
+                $row[4] = $r->relativeChange === null
+                    ? sprintf($format, $r->difference)
+                    : sprintf($format . ' (%+.1f %%)', $r->difference, $r->relativeChange);
                 $row[5] = sprintf($format . ' bis ' . $format, $r->ciLow, $r->ciHigh);
                 $row[6] = $r->pValue < 0.0001 ? '< 0.0001' : sprintf('%.4f', $r->pValue);
                 $verdicts[] = match ($r->winner()) {
@@ -150,6 +164,15 @@ class AbAnalyzeCommand extends Command
         $parts = [];
         foreach ($weights as $variant => $weight) {
             $parts[] = sprintf('%s %d', $variant, $counts[$variant] ?? 0);
+        }
+        $unknown = array_sum(array_diff_key($counts, $weights));
+        if ($unknown > 0) {
+            $parts[] = sprintf('nicht konfiguriert %d (nicht im Test)', $unknown);
+        }
+        if (array_sum(array_intersect_key($counts, $weights)) === 0) {
+            $output->writeln('<comment>SRM nicht geprueft: keine Zuweisungen an konfigurierte Varianten</comment>');
+
+            return Command::SUCCESS;
         }
         $p = $this->analyzer->sampleRatioMismatchP($counts, $weights);
         $output->writeln(sprintf('Zuweisungen: %s, SRM-Test p = %.4g', implode(', ', $parts), $p));

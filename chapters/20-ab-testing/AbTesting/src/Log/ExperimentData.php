@@ -16,7 +16,11 @@ final class ExperimentData
      * und INP mehrfach) und zaehlen einmal, mit dem letzten Wert - wie
      * RumStatistics::aggregate(). Zeilen ohne Variante zaehlen nicht.
      *
+     * Der Log-Processor schreibt die Variante in jede Zeile eines Besuchers mit
+     * Cookie, auch auf Seiten ausserhalb des Experiments. Deshalb nach Route filtern.
+     *
      * @param iterable<array<string, mixed>> $records Log-Kontexte in Log-Reihenfolge
+     * @param list<string>|null $routes nur diese Routen (null = alle)
      *
      * @return array<string, list<float>> Variante => Werte, in der Reihenfolge der Konfiguration
      */
@@ -26,6 +30,7 @@ final class ExperimentData
         string $experiment,
         string $metric,
         ?string $device = null,
+        ?array $routes = null,
     ): array {
         $field = ExperimentConfig::cookieName($experiment);
         $latest = [];
@@ -36,6 +41,9 @@ final class ExperimentData
                 continue;
             }
             if ($device !== null && ($record['device'] ?? null) !== $device) {
+                continue;
+            }
+            if ($routes !== null && !\in_array($record['route'] ?? null, $routes, true)) {
                 continue;
             }
 

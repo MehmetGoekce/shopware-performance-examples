@@ -17,7 +17,8 @@ use Symfony\Component\Console\Output\OutputInterface;
  * Seitenaufrufe je Variante, bevor der Test startet.
  *
  *   bin/console ab:sample-size --effect=210 --sd=320
- *   bin/console ab:sample-size --effect=210 --metric=LCP --days=7   # Standardabweichung aus den RUM-Logs
+ *   bin/console ab:sample-size --effect=120 --metric=LCP --route=frontend.navigation.page
+ *       # Standardabweichung aus den RUM-Logs der Route
  */
 #[AsCommand(name: 'ab:sample-size', description: 'Stichprobengroesse je Variante (zweiseitiger Test)')]
 class AbSampleSizeCommand extends Command
@@ -36,6 +37,7 @@ class AbSampleSizeCommand extends Command
             ->addOption('sd', null, InputOption::VALUE_REQUIRED, 'Standardabweichung; ohne Angabe aus den RUM-Logs')
             ->addOption('metric', null, InputOption::VALUE_REQUIRED, 'Metrik fuer die Standardabweichung aus den RUM-Logs', 'LCP')
             ->addOption('days', null, InputOption::VALUE_REQUIRED, 'Zeitfenster fuer die Standardabweichung', '7')
+            ->addOption('route', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'nur diese Routen (die des Experiments)')
             ->addOption('alpha', null, InputOption::VALUE_REQUIRED, 'Signifikanzniveau', '0.05')
             ->addOption('power', null, InputOption::VALUE_REQUIRED, 'Teststaerke', '0.8');
     }
@@ -66,7 +68,8 @@ class AbSampleSizeCommand extends Command
                 return Command::INVALID;
             }
         } else {
-            $values = $this->baseline($metric, new \DateTimeImmutable(sprintf('-%d days', $days)));
+            $routes = $input->getOption('route') ?: null;
+            $values = $this->baseline($metric, new \DateTimeImmutable(sprintf('-%d days', $days)), $routes);
             if (\count($values) < 2) {
                 $output->writeln(sprintf('<error>Zu wenig RUM-Daten fuer %s in den letzten %d Tagen, --sd angeben</error>', $metric, $days));
 
@@ -74,7 +77,14 @@ class AbSampleSizeCommand extends Command
             }
             $mean = array_sum($values) / \count($values);
             $sd = sqrt(array_sum(array_map(static fn (float $v): float => ($v - $mean) ** 2, $values)) / (\count($values) - 1));
-            $output->writeln(sprintf('Standardabweichung %s aus %d Seitenaufrufen (%d Tage): %.4g', $metric, \count($values), $days, $sd));
+            $output->writeln(sprintf(
+                'Standardabweichung %s aus %d Seitenaufrufen (%d Tage, Route %s): %.4g',
+                $metric,
+                \count($values),
+                $days,
+                $routes === null ? 'alle' : implode(', ', $routes),
+                $sd
+            ));
         }
 
         $n = $this->analyzer->requiredSampleSize($effect, $sd, $alpha, $power);
@@ -86,13 +96,18 @@ class AbSampleSizeCommand extends Command
     /**
      * Letzter Wert je Seitenaufruf (id), wie RumStatistics::aggregate().
      *
+     * @param list<string>|null $routes
+     *
      * @return list<float>
      */
-    private function baseline(string $metric, \DateTimeImmutable $since): array
+    private function baseline(string $metric, \DateTimeImmutable $since, ?array $routes): array
     {
         $latest = [];
         $n = 0;
         foreach ($this->rumReader->read($since) as $record) {
+            if ($routes !== null && !\in_array($record['route'] ?? null, $routes, true)) {
+                continue;
+            }
             if (($record['metric'] ?? null) === $metric && is_numeric($record['value'] ?? null)) {
                 $latest[\is_string($record['id'] ?? null) ? $record['id'] : '#' . $n++] = (float) $record['value'];
             }

@@ -128,6 +128,18 @@ class AbTestingTest extends TestCase
         $analyzer->compare([5.0, 5.0], [5.0, 5.0]);
     }
 
+    public function testControlMeanZeroGivesNoRelativeChange(): void
+    {
+        // CLS: Kontrolle ohne Layout-Verschiebung. SciPy ttest_ind(variant, control): t 1.7320508, df 3, p 0.1816901
+        $r = (new StatisticalAnalyzer())->compare([0.0, 0.0, 0.0, 0.0], [0.0, 0.1, 0.0, 0.1]);
+
+        self::assertNull($r->relativeChange);
+        self::assertEqualsWithDelta(0.05, $r->difference, 1e-12);
+        self::assertEqualsWithDelta(1.7320508, $r->tStatistic, 1e-7);
+        self::assertEqualsWithDelta(3.0, $r->degreesOfFreedom, 1e-9);
+        self::assertEqualsWithDelta(0.1816901, $r->pValue, 1e-7);
+    }
+
     /**
      * @return iterable<string, array{float, float, float}>
      */
@@ -182,6 +194,8 @@ class AbTestingTest extends TestCase
         // Ungleicher Split 75/25 und drei Varianten
         self::assertEqualsWithDelta(2.6073e-4, $analyzer->sampleRatioMismatchP(['control' => 700, 'eager' => 300], ['control' => 75, 'eager' => 25]), 1e-8);
         self::assertEqualsWithDelta(0.36787944, $analyzer->sampleRatioMismatchP(['a' => 3400, 'b' => 3300, 'c' => 3300], ['a' => 1, 'b' => 1, 'c' => 1]), 1e-8);
+        // Zuweisungen an eine nicht mehr konfigurierte Variante zaehlen nicht mit
+        self::assertEqualsWithDelta(0.6475684, $analyzer->sampleRatioMismatchP(['control' => 2466, 'eager' => 2434, 'old' => 300], $half), 1e-7);
         // Eine Variante ganz ohne Zuweisungen (Cache-Fehler: alle bekommen dieselbe)
         self::assertLessThan(1e-10, $analyzer->sampleRatioMismatchP(['eager' => 100], $half));
     }
@@ -229,6 +243,18 @@ class AbTestingTest extends TestCase
         VariantPicker::pick($weights, 100);
     }
 
+    public function testRandomReachesEveryVariantAndOnlyThose(): void
+    {
+        $seen = [];
+        for ($i = 0; $i < 400; ++$i) {
+            $seen[VariantPicker::random(['a' => 1, 'b' => 1])] = true;
+        }
+        ksort($seen);
+
+        // Bei 400 Zuegen ist die Chance, eine Variante nie zu sehen, 2 * 0.5^400
+        self::assertSame(['a' => true, 'b' => true], $seen);
+    }
+
     public function testValuesByVariantCountsEachPageViewOnceWithItsLastValue(): void
     {
         $config = new ExperimentConfig(self::EXPERIMENTS);
@@ -250,6 +276,27 @@ class AbTestingTest extends TestCase
         self::assertSame(
             ['control' => [0.04, 0.06], 'eager' => [0.12]],
             ExperimentData::valuesByVariant($records, $config, 'listing_images', 'CLS', 'mobile')
+        );
+    }
+
+    public function testValuesByVariantFiltersRoutes(): void
+    {
+        $config = new ExperimentConfig(self::EXPERIMENTS);
+        $records = [
+            ['metric' => 'LCP', 'id' => 'v6-1-1', 'value' => 2000, 'route' => 'frontend.navigation.page', 'exp_listing_images' => 'control'],
+            ['metric' => 'LCP', 'id' => 'v6-1-2', 'value' => 3000, 'route' => 'frontend.detail.page', 'exp_listing_images' => 'control'],
+            ['metric' => 'LCP', 'id' => 'v6-1-3', 'value' => 1000, 'route' => 'frontend.detail.page', 'exp_listing_images' => 'eager'],
+            ['metric' => 'LCP', 'id' => 'v6-1-4', 'value' => 2010, 'route' => 'frontend.navigation.page', 'exp_listing_images' => 'eager'],
+            ['metric' => 'LCP', 'id' => 'v6-1-5', 'value' => 999, 'exp_listing_images' => 'eager'],
+        ];
+
+        self::assertSame(
+            ['control' => [2000.0], 'eager' => [2010.0]],
+            ExperimentData::valuesByVariant($records, $config, 'listing_images', 'LCP', null, ['frontend.navigation.page'])
+        );
+        self::assertSame(
+            ['control' => [2000.0, 3000.0], 'eager' => [1000.0, 2010.0, 999.0]],
+            ExperimentData::valuesByVariant($records, $config, 'listing_images', 'LCP')
         );
     }
 
@@ -275,6 +322,22 @@ class AbTestingTest extends TestCase
         self::assertSame(['control' => 1, 'eager' => 2], $reader->count('listing_images', $now->modify('-1 day')));
         self::assertSame(['control' => 2, 'eager' => 2], $reader->count('listing_images', $now->modify('-3 days')));
         self::assertSame([], $reader->count('listing_images', $now->modify('+1 day')));
+    }
+
+    public function testAssignmentLogReaderReadsTheFileOfThePreviousDay(): void
+    {
+        // Monolog benennt die Datei nach der Zeitzone von PHP: Ein Eintrag nach
+        // Mitternacht UTC kann noch in der Datei des Vortags stehen
+        file_put_contents($this->logDir . '/ab_testing-2026-09-21.log', json_encode([
+            'message' => 'assignment',
+            'context' => ['experiment' => 'listing_images', 'variant' => 'eager'],
+            'datetime' => '2026-09-22T00:30:00+00:00',
+        ], \JSON_THROW_ON_ERROR) . "\n");
+
+        self::assertSame(
+            ['eager' => 1],
+            (new AssignmentLogReader($this->logDir))->count('listing_images', new \DateTimeImmutable('2026-09-22T00:00:00+00:00'))
+        );
     }
 
     public function testUnreadableLogIsAnErrorNotZeroAssignments(): void

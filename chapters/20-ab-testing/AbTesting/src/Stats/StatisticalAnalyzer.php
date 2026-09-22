@@ -55,7 +55,7 @@ final class StatisticalAnalyzer
             controlMean: $c['mean'],
             variantMean: $v['mean'],
             difference: $difference,
-            relativeChange: $difference / $c['mean'] * 100,
+            relativeChange: $c['mean'] != 0 ? $difference / $c['mean'] * 100 : null,
             tStatistic: $t,
             degreesOfFreedom: $df,
             pValue: $pValue,
@@ -93,12 +93,14 @@ final class StatisticalAnalyzer
      * dass die Zuweisung oder die Datenerfassung kaputt ist - dann ist auch der
      * Vergleich der Metriken nicht zu gebrauchen.
      *
+     * Varianten in $observed, die nicht in $weights stehen, zaehlen nicht mit.
+     *
      * @param array<string, int> $observed Variante => Anzahl
      * @param array<string, int> $weights Variante => Gewicht aus der Konfiguration
      */
     public function sampleRatioMismatchP(array $observed, array $weights): float
     {
-        $total = array_sum($observed);
+        $total = array_sum(array_intersect_key($observed, $weights));
         $weightSum = array_sum($weights);
 
         if ($total === 0 || \count($weights) < 2) {
