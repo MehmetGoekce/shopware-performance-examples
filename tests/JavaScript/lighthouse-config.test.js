@@ -4,7 +4,7 @@
  *
  * Eine Zusicherung auf ein unbekanntes Audit meldet Lighthouse CI mit
  * «is not a known audit» auf ihrer eigenen Stufe (Kapitel 3, F32): bei
- * "error" bricht der Lauf ab, bei "warn" bleibt eine Warnung – gemessen
+ * "error" endet der Lauf mit Exit 1, bei "warn" bleibt eine Warnung – gemessen
  * wird in beiden Fällen nichts. Deshalb wird jede Audit-ID vorab gegen die
  * Liste der Lighthouse-Version gehalten, die @lhci/cli 0.15.1 mitbringt (12.6.1).
  */

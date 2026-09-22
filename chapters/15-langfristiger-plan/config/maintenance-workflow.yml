@@ -1,10 +1,12 @@
 # Ablage im Shop-Repository: .github/workflows/maintenance.yml — Kapitel 15
 #
 # Woechentlicher Wartungslauf:
-#   - composer audit: bekannte Sicherheitsluecken in composer.lock
+#   - composer audit: bekannte Sicherheitsluecken und verlassene Pakete in
+#     composer.lock
 #   - Lighthouse-Baseline gegen die Staging-URL (wie Kapitel 13), Berichte
 #     90 Tage als Artefakt
-#   - Scheitert einer der beiden Jobs, legt der dritte ein Issue an
+#   - Scheitert einer der beiden Jobs, legt der dritte ein Issue an oder
+#     kommentiert das noch offene vom letzten Mal
 #
 # Einrichten:
 #   1. lighthouserc.cjs aus Kapitel 13 (chapters/13-continuous-testing/config/)
@@ -16,8 +18,9 @@
 # Produktion ist ein Risiko. Wartungsbefehle laufen auf dem Server, die
 # Scheduled Tasks als Dienst (Kapitel 22).
 #
-# Getestet: actionlint, "composer audit --locked" (Composer 2.8), Issue-Skript
-# mit einem Stub fuer github/context. Die LHCI-Schritte sind die aus Kapitel 13.
+# Getestet: actionlint, "composer audit --locked" (Composer 2.8 und 2.10),
+# Issue-Skript mit einem Stub fuer github/context. Die LHCI-Schritte sind die
+# aus Kapitel 13.
 
 name: Performance Maintenance
 
@@ -42,7 +45,8 @@ jobs:
           tools: composer:v2
           coverage: none
 
-      # Liest nur composer.lock, installiert nichts. Exit 1 bei Advisories
+      # Liest nur composer.lock, installiert nichts. Exit 1 bei Advisories und,
+      # ab Werk, bei verlassenen (abandoned) Paketen
       - name: Composer Audit
         run: composer audit --locked
 
@@ -82,15 +86,34 @@ jobs:
     permissions:
       issues: write
     steps:
-      - name: Create Issue
+      # Ein offenes Wartungs-Issue bekommt einen Kommentar statt eines neuen
+      # Issues: Ein Audit, das bis zum naechsten Update rot bleibt, soll nicht
+      # jede Woche ein weiteres anlegen
+      - name: Create or update issue
         uses: actions/github-script@v9
         with:
           script: |
             const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-            await github.rest.issues.create({
+            const body = `Der Wartungslauf ist gescheitert (Audit oder Lighthouse-Baseline): ${run}`;
+            const { data: open } = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: 'Wöchentliche Wartung: Probleme gefunden',
-              body: `Der Wartungslauf ist gescheitert (Audit oder Lighthouse-Baseline): ${run}`,
-              labels: ['maintenance', 'performance'],
+              labels: 'maintenance',
+              state: 'open',
             });
+            if (open.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: open[0].number,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: 'Wöchentliche Wartung: Probleme gefunden',
+                body,
+                labels: ['maintenance', 'performance'],
+              });
+            }

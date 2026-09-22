@@ -30,8 +30,14 @@ describe('Kapitel 14: labeler', () => {
     });
 
     it('nutzt Pfade eines Shopware-Projekts, nicht die des Shopware-Core', () => {
-        expect(config).toMatch(/'custom\/plugins\/\*\/src\/Resources\/views\/\*\*\/\*\.twig'/);
+        expect(config).toMatch(/'custom\/\{plugins,static-plugins\}\/\*\/src\/Resources\/views\/\*\*\/\*\.twig'/);
+        expect(config).toMatch(/'custom\/\{plugins,static-plugins\}\/\*\/src\/Resources\/app\/storefront\/\*\*\/\*\.\{js,ts,scss\}'/);
         expect(config).not.toMatch(/'src\/(Storefront|Core)\//);
+    });
+
+    it('markiert auch PHP-Änderungen (DAL, Subscriber) zum Review', () => {
+        const review = config.split('performance-review-needed:')[1];
+        expect(review).toMatch(/'custom\/\{plugins,static-plugins\}\/\*\/src\/\*\*\/\*\.php'/);
     });
 
     it('nutzt das Konfigurationsformat ab labeler v5', () => {
@@ -49,6 +55,7 @@ describe('Kapitel 15: Wartungs-Workflow', () => {
 
     it('prüft composer.lock, ohne etwas zu installieren', () => {
         expect(workflow).toMatch(/run: composer audit --locked\n/);
+        expect(workflow).not.toMatch(/composer (install|update|require)\b/);
     });
 
     it('misst mit fester LHCI-Version gegen LHCI_BASE_URL, nie mit "npx lhci"', () => {
@@ -68,7 +75,14 @@ describe('Kapitel 15: Wartungs-Workflow', () => {
         expect(job).toMatch(/permissions:\n\s+issues: write\n/);
         expect(job).toMatch(/uses: actions\/github-script@v9\n/);
         expect(workflow).toMatch(/^permissions:\n {2}contents: read\n/m);
-        expect(workflow.split('  create-issue:')[0]).not.toMatch(/issues: write/);
+        expect(workflow).not.toMatch(/write-all/);
+        expect(workflow.split('  create-issue:')[0]).not.toMatch(/:\s*write\b/);
+    });
+
+    it('kommentiert ein offenes Wartungs-Issue, statt jede Woche ein neues anzulegen', () => {
+        const job = workflow.split('  create-issue:')[1];
+        expect(job).toMatch(/github\.rest\.issues\.listForRepo\(\{[^}]*labels: 'maintenance',\s*state: 'open',/);
+        expect(job).toMatch(/github\.rest\.issues\.createComment\(/);
     });
 
     it('hat keinen SSH-Zugang zur Produktion', () => {

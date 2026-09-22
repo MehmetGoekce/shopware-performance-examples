@@ -6,10 +6,14 @@ on:
   pull_request:
     branches: [main]
 
+# ubuntu-24.04 fest statt ubuntu-latest: Das Label wechselt ab 2026-10-19
+# auf Ubuntu 26.04 (actions/runner-images#14748), dort bricht
+# "playwright install --with-deps" mit Playwright 1.57 ab, und apt liefert
+# eine andere bats-Version als das lokale Testimage.
 jobs:
   php:
     name: PHP Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         php-version: ['8.2', '8.3']
@@ -45,7 +49,7 @@ jobs:
 
   javascript:
     name: JavaScript Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v7
@@ -67,7 +71,7 @@ jobs:
 
   e2e:
     name: E2E Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [php, javascript]
 
     steps:
@@ -100,7 +104,7 @@ jobs:
 
   varnish-vcl:
     name: Varnish VCL Syntax
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v7
@@ -115,7 +119,7 @@ jobs:
 
   mysql-cnf:
     name: MySQL Config Boot
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v7
@@ -264,7 +268,7 @@ jobs:
 
   php-fpm-pool:
     name: PHP-FPM Pool Boot
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v7
@@ -442,7 +446,7 @@ jobs:
 
   shellcheck:
     name: ShellCheck
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v7
@@ -456,7 +460,7 @@ jobs:
 
   nginx-conf:
     name: Nginx Config Syntax
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v7
@@ -530,7 +534,7 @@ jobs:
 
   appendix-configs:
     name: Anhang C Config Syntax
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v7
@@ -713,7 +717,7 @@ jobs:
 
   bats:
     name: BATS Shell Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v7

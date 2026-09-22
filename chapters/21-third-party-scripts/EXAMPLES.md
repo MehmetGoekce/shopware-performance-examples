@@ -687,13 +687,14 @@ jobs:
 
       - name: Run script audit
         run: |
-          node scripts/audit-third-party.js https://shop.com --json > audit.json
+          node scripts/audit-third-party.js https://shop.com --output=audit.json
 
       - name: Check performance budget
         run: |
           node scripts/check-budget.js audit.json
 
       - name: Upload report
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: audit-report

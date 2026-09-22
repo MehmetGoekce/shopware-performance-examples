@@ -4,7 +4,7 @@
 # pull_request_target, damit das Token auch bei Pull Requests aus Forks
 # Labels setzen darf. Das ist hier sicher, weil der Job keinen Code aus dem
 # Pull Request auscheckt oder ausfuehrt: Die Action liest nur die Liste der
-# geaenderten Dateien und die Konfiguration aus dem Basis-Branch.
+# geaenderten Dateien und die Konfiguration aus dem Default-Branch.
 #
 # @see https://github.com/actions/labeler/tree/v7.0.0#create-workflow
 
