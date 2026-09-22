@@ -224,7 +224,7 @@ describe('Workflows, GitLab, Compose', () => {
     const files = {
         pr: read('.github/workflows/lighthouse-ci.yml'),
         staging: read('.github/workflows/lighthouse-staging.yml'),
-        gitlab: read('gitlab/.gitlab-ci.yml'),
+        gitlab: read('gitlab/gitlab-ci.yml'),
     };
 
     it('ruft nie "npx lhci" auf (fremdes npm-Paket, Exit 0)', () => {

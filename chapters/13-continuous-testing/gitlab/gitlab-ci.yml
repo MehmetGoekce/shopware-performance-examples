@@ -1,4 +1,5 @@
 # Lighthouse CI in GitLab — Kapitel 13
+# Als .gitlab-ci.yml ins Repository-Root kopieren (oder dort einfügen).
 #
 # Misst die Staging- oder Review-URL aus der CI/CD-Variable LHCI_BASE_URL
 # (Settings > CI/CD > Variables). lighthouserc.cjs liegt im Repository-Root.

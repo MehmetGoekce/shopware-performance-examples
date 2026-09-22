@@ -27,7 +27,7 @@ Locust 2.46.6.
 ├── .github/workflows/
 │   ├── lighthouse-ci.yml         # Pull Request gegen LHCI_BASE_URL, PR-Kommentar
 │   └── lighthouse-staging.yml    # nach jedem Deployment, Slack, LHCI-Server
-├── gitlab/.gitlab-ci.yml         # GitLab-Job
+├── gitlab/gitlab-ci.yml          # GitLab-Job (als .gitlab-ci.yml ins Root)
 └── docker/docker-compose.yml     # LHCI-Server mit Basic Auth
 ```
 
@@ -81,7 +81,8 @@ Repository-Root, Variable `LHCI_BASE_URL` setzen und den Job `lighthouse` als
 Required Check eintragen. Der Stand des Pull Requests muss unter der URL
 deployt sein.
 
-**GitLab:** `gitlab/.gitlab-ci.yml` übernehmen, CI/CD-Variable `LHCI_BASE_URL`.
+**GitLab:** `gitlab/gitlab-ci.yml` als `.gitlab-ci.yml` übernehmen, CI/CD-Variable
+`LHCI_BASE_URL`.
 
 ## LHCI-Server
 
