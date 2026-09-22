@@ -267,6 +267,15 @@ XML
     done
 }
 
+# MEM-310: Das Buch ruft Skripte als ./scripts/<name>.sh im Kapitelordner auf.
+# Heissen zwei Kapitelskripte gleich, landet der Leser im falschen Ordner beim
+# falschen Skript (cache-hit-rate.sh in Kapitel 6 und 7). generate-report.sh
+# (Kapitel 14 und 22) ruft das Buch nie über einen relativen Pfad auf.
+@test "no two chapters ship a script with the same name" {
+    dups="$(for f in chapters/*/scripts/*.sh; do basename "$f"; done | sort | uniq -d | grep -vx 'generate-report.sh' || true)"
+    [ -z "$dups" ] || { echo "doppelt: $dups"; return 1; }
+}
+
 @test "make cache-warmup without URL prints usage and fails" {
     command -v make >/dev/null || skip "make fehlt im Image"
     run env -u URL -u PARALLEL -u LIMIT make -s cache-warmup
