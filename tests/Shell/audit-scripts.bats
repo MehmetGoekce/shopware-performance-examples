@@ -71,7 +71,7 @@ EOF
     export PHP_FPM_CMD="$TMP/fpm"
     export PS_CMD="$TMP/ps"
     export REDIS_CLI_CMD="no-such-redis-cli"
-    export AUDIT_WAIT=1
+    export AUDIT_WAIT=2
 }
 
 teardown() {
@@ -196,16 +196,20 @@ code_lines() {
     [ "$output" = "0" ]
 }
 
-# curl-Stub: je Abruf eine Zeile "Age|Date|X-Symfony-Cache" aus $FIX/resp.
-# Leere Felder lassen den Header weg. Danach viel Ballast (Regel 42).
+# curl-Stub: je Abruf eine Zeile "Age|Date|X-Symfony-Cache|Status|Cache-Control|301"
+# aus $FIX/resp. Leere Felder lassen den Header weg (Status 200, no-cache, private);
+# "301" im 6. Feld stellt einen Weiterleitungsblock voran (curl -L -D -).
+# Danach viel Ballast (Regel 42). Protokolliert Zeit und Argumente.
 resp_curl() {
     printf '%s\n' "$@" > "$FIX/resp"
     cat > "$TMP/curl" <<'EOF'
 #!/bin/bash
 n=$(( $(cat "$FIX/calls" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$FIX/calls"
 date +%s >> "$FIX/times"
-IFS='|' read -r age date trace <<< "$(sed -n "${n}p" "$FIX/resp")"
-printf 'HTTP/1.1 200 OK\r\ncache-control: no-cache, private\r\n'
+echo "$*" >> "$FIX/args"
+IFS='|' read -r age date trace code cc pre <<< "$(sed -n "${n}p" "$FIX/resp")"
+[[ "$pre" == "301" ]] && printf 'HTTP/1.1 301 Moved\r\nLocation: https://shop.test/\r\nDate: Thu, 01 Jan 2026 00:00:0%s GMT\r\n\r\n' "$n"
+printf 'HTTP/1.1 %s X\r\ncache-control: %s\r\n' "${code:-200}" "${cc:-no-cache, private}"
 [[ -n "$age" ]] && printf 'Age: %s\r\n' "$age"
 [[ -n "$date" ]] && printf 'date: %s\r\n' "$date"
 [[ -n "$trace" ]] && printf 'X-Symfony-Cache: %s\r\n' "$trace"
@@ -221,16 +225,63 @@ D2='Wed, 23 Sep 2026 18:00:03 GMT'
 @test "audit.sh reports a hit when Age grows by the pause and Date stays" {
     resp_curl "0|$D1|" "2|$D1|"
     AUDIT_WAIT=2 CURL_CMD="$TMP/curl" SHOP_URL="http://shop.test" run "$DIR/audit.sh" "$TMP/shop"
-    [[ "$output" == *"Abruf 2 (Gast, ohne Cookies): TTFB 0.010 s, Age 2, Date $D1"* ]]
+    [[ "$output" == *"Abruf 2 (Gast, ohne Cookies): HTTP 200, TTFB 0.010 s, Age 2, Date $D1"* ]]
     [[ "$output" == *"Treffer: Age ist um mindestens die Pause (2 s) gewachsen, Date unverändert."* ]]
     [[ "$output" != *"Kein Treffer"* && "$output" != *"Nicht entscheidbar"* ]]
 }
 
-@test "audit.sh waits the pause between the two requests" {
-    resp_curl "0|$D1|" "2|$D1|"
-    AUDIT_WAIT=2 CURL_CMD="$TMP/curl" SHOP_URL="http://shop.test" run "$DIR/audit.sh" "$TMP/shop"
+@test "audit.sh waits the pause between the two requests, not before the first" {
+    resp_curl "0|$D1|" "3|$D1|"
+    t0=$(date +%s)
+    AUDIT_WAIT=3 CURL_CMD="$TMP/curl" SHOP_URL="http://shop.test" run "$DIR/audit.sh" "$TMP/shop"
     t1=$(sed -n 1p "$FIX/times"); t2=$(sed -n 2p "$FIX/times")
-    [ $((t2 - t1)) -ge 2 ]
+    [ $((t2 - t1)) -ge 3 ]
+    [ $((t1 - t0)) -le 1 ]
+}
+
+@test "audit.sh follows redirects and evaluates the target (MEM-325 Review B1)" {
+    resp_curl "0|$D1||||301" "2|$D1||||301"
+    AUDIT_WAIT=2 CURL_CMD="$TMP/curl" SHOP_URL="http://shop.test" run "$DIR/audit.sh" "$TMP/shop"
+    grep -q -e ' -L ' "$FIX/args"
+    [[ "$output" == *"Abruf 2 (Gast, ohne Cookies): HTTP 200, TTFB 0.010 s, Age 2, Date $D1"* ]]
+    [[ "$output" == *"Treffer: Age ist um mindestens die Pause (2 s) gewachsen, Date unverändert."* ]]
+}
+
+@test "audit.sh does not evaluate a non-200 answer" {
+    resp_curl "4|$D1||404" "6|$D2||404"
+    AUDIT_WAIT=2 CURL_CMD="$TMP/curl" SHOP_URL="http://shop.test" run "$DIR/audit.sh" "$TMP/shop"
+    [[ "$output" == *"Nicht bewertbar: die Seite antwortet mit HTTP 404 statt 200."* ]]
+    [[ "$output" != *"Nicht entscheidbar"* && "$output" != *"Kein Treffer"* ]]
+}
+
+@test "audit.sh does not evaluate a no-store page" {
+    resp_curl "4|$D1|||no-store, private" "6|$D2|||no-store, private"
+    AUDIT_WAIT=2 CURL_CMD="$TMP/curl" SHOP_URL="http://shop.test" run "$DIR/audit.sh" "$TMP/shop"
+    [[ "$output" == *"Nicht bewertbar: die Seite ist bewusst nicht cachebar (no-store)."* ]]
+}
+
+@test "audit.sh: same Date without Age growth is not decidable (other layer, re-stored fragment)" {
+    resp_curl "30|$D1|" "2|$D1|"
+    AUDIT_WAIT=2 CURL_CMD="$TMP/curl" SHOP_URL="http://shop.test" run "$DIR/audit.sh" "$TMP/shop"
+    [[ "$output" == *"Nicht entscheidbar: Date gleich, Age aber nicht um die Pause gewachsen."* ]]
+}
+
+@test "audit.sh: Age on only one request is not decidable" {
+    for pair in "|$D1|:2|$D1|" "2|$D1|:|$D1|"; do
+        rm -f "$FIX/calls"
+        resp_curl "${pair%%:*}" "${pair##*:}"
+        AUDIT_WAIT=2 CURL_CMD="$TMP/curl" SHOP_URL="http://shop.test" run "$DIR/audit.sh" "$TMP/shop"
+        [[ "$output" == *"Nicht entscheidbar: Age nur bei einem der beiden Abrufe"* ]]
+    done
+}
+
+@test "audit.sh: trace stale-while-revalidate / stale-if-error is a hit" {
+    for t in "stale-while-revalidate" "stale/stale-if-error"; do
+        rm -f "$FIX/calls"
+        resp_curl "0|$D1|miss/store" "0|$D2|$t"
+        AUDIT_WAIT=2 CURL_CMD="$TMP/curl" SHOP_URL="http://shop.test" run "$DIR/audit.sh" "$TMP/shop"
+        [[ "$output" == *"Treffer: X-Symfony-Cache meldet"* && "$output" != *"Kein Treffer"* ]]
+    done
 }
 
 @test "audit.sh: Age grows by the pause but Date is new (ESI on 6.7) = not decidable" {
@@ -239,6 +290,7 @@ D2='Wed, 23 Sep 2026 18:00:03 GMT'
     AUDIT_WAIT=2 CURL_CMD="$TMP/curl" SHOP_URL="http://shop.test" run "$DIR/audit.sh" "$TMP/shop"
     [[ "$output" == *"Nicht entscheidbar: Age ist um die Pause gewachsen, Date aber nicht gleich geblieben."* ]]
     [[ "$output" == *"proxy_pass_header Date"* ]]
+    [[ "$output" == *"Apache mit mod_php"* ]]
     [[ "$output" != *"Treffer: Age ist"* ]]
 }
 
@@ -252,7 +304,7 @@ D2='Wed, 23 Sep 2026 18:00:03 GMT'
 @test "audit.sh: Age grows by one less than the pause with the same Date = no hit" {
     resp_curl "0|$D1|" "2|$D1|"
     AUDIT_WAIT=3 CURL_CMD="$TMP/curl" SHOP_URL="http://shop.test" run "$DIR/audit.sh" "$TMP/shop"
-    [[ "$output" == *"Kein Treffer erkennbar"* ]]
+    [[ "$output" == *"Nicht entscheidbar: Date gleich"* ]]
     [[ "$output" != *"Treffer: Age ist"* ]]
 }
 
@@ -315,7 +367,7 @@ D2='Wed, 23 Sep 2026 18:00:03 GMT'
 }
 
 @test "audit.sh: trace valid (revalidated, re-rendered) is not a hit" {
-    resp_curl "0|$D1|stale, valid, store" "2|$D1|stale, valid, store"
+    resp_curl "0|$D1|stale/valid/store" "2|$D1|stale/valid/store"
     AUDIT_WAIT=2 CURL_CMD="$TMP/curl" SHOP_URL="http://shop.test" run "$DIR/audit.sh" "$TMP/shop"
     [[ "$output" == *"Kein Treffer: X-Symfony-Cache"* ]]
 }
@@ -327,6 +379,8 @@ D2='Wed, 23 Sep 2026 18:00:03 GMT'
 
 @test "audit.sh exits 2 on an invalid AUDIT_WAIT" {
     AUDIT_WAIT=0 run "$DIR/audit.sh" "$TMP/shop"
+    [ "$status" -eq 2 ]
+    AUDIT_WAIT=1 run "$DIR/audit.sh" "$TMP/shop"
     [ "$status" -eq 2 ]
     AUDIT_WAIT=x run "$DIR/audit.sh" "$TMP/shop"
     [ "$status" -eq 2 ]

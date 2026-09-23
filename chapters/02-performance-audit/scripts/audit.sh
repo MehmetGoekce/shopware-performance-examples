@@ -15,14 +15,16 @@
 #      mit SHOP_URL zusätzlich zwei Abrufe als Gast. Treffer = Age wächst um
 #      mindestens die Pause UND Date bleibt gleich: Nur eine gespeicherte Kopie
 #      wiederholt ihr Date. Gibt Symfony X-Symfony-Cache aus (dev oder
-#      framework.http_cache.trace_level), entscheidet der Header, nur "fresh"
-#      ist ein Treffer. Age allein reicht nicht: Symfony setzt beim Speichern
+#      framework.http_cache.trace_level), entscheidet der Header: "fresh" (und
+#      stale-while-revalidate/stale-if-error) ist ein Treffer. Age allein reicht nicht: Symfony setzt beim Speichern
 #      Age = Sekunden seit Date, und ab 6.7 trägt jede Seite das Age ihres
 #      ältesten ESI-Fragments (Header, Footer), auch der nie gecachte Warenkorb.
 #      Wächst Age, Date aber auch, ist es nicht entscheidbar: ESI-Fragment oder
-#      ein Proxy davor, der Date neu setzt (nginx proxy_pass).
+#      ein Webserver davor, der Date neu setzt (nginx proxy_pass, Apache mit
+#      mod_php); ebenso gleiches Date ohne Zuwachs. Weiterleitungen folgt der
+#      Test; eine Antwort ≠ 200 oder no-store ist nicht bewertbar.
 #      debug:config bricht in APP_ENV=prod mit "frozen ParameterBag" ab.
-#      debug:dotenv kennt nur Variablen aus .env-Dateien (auch .env.prod.local);
+#      debug:dotenv kennt nur Variablen aus .env-Dateien (in prod auch .env.prod.local);
 #      eine Variable, die nur in der Umgebung steht (FPM env[], Apache SetEnv),
 #      sieht es nicht. Die Sicht des Webservers zeigt die Administration unter
 #      Einstellungen > System > Caches & Indizes.
@@ -37,7 +39,8 @@
 # Umgebungsvariablen:
 #   SHOP_URL        Basis-URL für den Abruf-Test (Default: leer = kein Test)
 #   AUDIT_WAIT      Pause zwischen den beiden Abrufen in ganzen Sekunden
-#                   (Default: 2, mindestens 1)
+#                   (Default und Minimum: 2; zwei MISS können sich durch die
+#                   Rundung auf Sekunden um 1 unterscheiden)
 #   IMAGE_MIN_KB    Schwelle für grosse Bilder in KB (Default: 500)
 #   PHP_FPM_CMD     FPM-Binary; leer = alle php-fpm* unter /usr/sbin, /usr/local/sbin
 #   CONSOLE_CMD, PHP_CMD, CURL_CMD, REDIS_CLI_CMD, PS_CMD
@@ -70,8 +73,8 @@ show_usage() {
     echo "  SHOP_URL=https://ihr-shop.ch sudo -E -u www-data $0 /var/www/shopware"
 }
 
-if ! [[ "${AUDIT_WAIT}" =~ ^[0-9]+$ ]] || [[ "${AUDIT_WAIT}" -lt 1 ]]; then
-    echo "Fehler: AUDIT_WAIT muss eine ganze Zahl >= 1 sein: ${AUDIT_WAIT}" >&2
+if ! [[ "${AUDIT_WAIT}" =~ ^[0-9]+$ ]] || [[ "${AUDIT_WAIT}" -lt 2 ]]; then
+    echo "Fehler: AUDIT_WAIT muss eine ganze Zahl >= 2 sein: ${AUDIT_WAIT}" >&2
     exit 2
 fi
 if ! [[ "${IMAGE_MIN_KB}" =~ ^[0-9]+$ ]]; then
@@ -117,6 +120,11 @@ ini_value() {
 # Ein leerer Wert verschiebt die Spalten; dann steht in Spalte 2 "n/a".
 dotenv_value() {
     awk -v name="$1" '$1 == name { v = ($2 == "n/a") ? "" : $2; print "gesetzt|" v; exit }' <<< "$2"
+}
+
+# Letzter Headerblock einer Ausgabe von curl -L -D - (das Ziel der Weiterleitungen)
+last_block() {
+    awk '/^HTTP\// { b = "" } { b = b $0 "\n" } END { printf "%s", b }' <<< "$1"
 }
 
 # Wert eines Antwort-Headers (Name ohne Doppelpunkt, gross/klein egal), ohne CR
@@ -242,44 +250,69 @@ if [[ -n "${SHOP_URL}" ]]; then
     url="${SHOP_URL%/}/"
     ages=()
     dates=()
+    codes=()
+    ccs=()
     trace=""
     for i in 1 2; do
-        sleep "${AUDIT_WAIT}"
-        headers=$("${CURL[@]}" -s -o /dev/null -D - -w 'ttfb: %{time_starttransfer}\n' "$url" 2>/dev/null) || headers=""
+        [[ $i -eq 2 ]] && sleep "${AUDIT_WAIT}"
+        # -L folgt Weiterleitungen (http -> https, www); gewertet wird nur der
+        # letzte Headerblock, also das Ziel.
+        headers=$("${CURL[@]}" -s -L -o /dev/null -D - -w 'ttfb: %{time_starttransfer}\n' "$url" 2>/dev/null) || headers=""
         ttfb=$(awk 'tolower($1) == "ttfb:" { print $2; exit }' <<< "$headers")
+        headers=$(last_block "$headers")
+        code=$(awk '/^HTTP\// { print $2; exit }' <<< "$headers")
         age=$(response_header age "$headers")
         date_hdr=$(response_header date "$headers")
         trace=$(response_header x-symfony-cache "$headers")
-        echo "Abruf ${i} (Gast, ohne Cookies): TTFB ${ttfb:-?} s, Age ${age:--}, Date ${date_hdr:--}${trace:+, X-Symfony-Cache ${trace}}"
+        echo "Abruf ${i} (Gast, ohne Cookies): HTTP ${code:-?}, TTFB ${ttfb:-?} s, Age ${age:--}, Date ${date_hdr:--}${trace:+, X-Symfony-Cache ${trace}}"
         ages+=("${age}")
         dates+=("${date_hdr}")
+        codes+=("${code}")
+        ccs+=("$(response_header cache-control "$headers")")
     done
     # Symfonys Trace entscheidet, wenn er da ist. Er nennt zuerst die Hauptanfrage,
-    # ESI-Fragmente folgen nach ";". Nur "fresh" zählt: "valid" hat die Seite neu gerendert.
+    # ESI-Fragmente folgen nach ";". "fresh" zählt, dazu die beiden Fälle, in denen
+    # Symfony eine veraltete gespeicherte Kopie ausliefert; "valid" hat die Seite
+    # neu gerendert.
     main_trace="${trace%%;*}"
     main_trace="${main_trace##*: }"
     trace_hit=0
     for token in ${main_trace//[\/,]/ }; do
-        [[ "${token}" == "fresh" ]] && trace_hit=1
+        case "${token}" in
+            fresh|stale-while-revalidate|stale-if-error) trace_hit=1 ;;
+        esac
     done
+    ages_ok=0
+    [[ "${ages[0]}" =~ ^[0-9]+$ && "${ages[1]}" =~ ^[0-9]+$ ]] && ages_ok=1
     aged=0
-    if [[ "${ages[0]}" =~ ^[0-9]+$ && "${ages[1]}" =~ ^[0-9]+$ ]] \
-        && [[ $((ages[1] - ages[0])) -ge "${AUDIT_WAIT}" ]]; then
+    if [[ "${ages_ok}" -eq 1 ]] && [[ $((ages[1] - ages[0])) -ge "${AUDIT_WAIT}" ]]; then
         aged=1
     fi
-    if [[ -n "${trace}" && "${trace_hit}" -eq 1 ]]; then
-        echo "Treffer: X-Symfony-Cache meldet \"fresh\" für den 2. Abruf."
+    same_date=0
+    [[ -n "${dates[0]}" && "${dates[0]}" == "${dates[1]}" ]] && same_date=1
+    if [[ "${codes[0]}" != "200" || "${codes[1]}" != "200" ]]; then
+        echo "Nicht bewertbar: die Seite antwortet mit HTTP ${codes[1]:-?} statt 200."
+    elif [[ "${ccs[1]}" == *no-store* ]]; then
+        echo "Nicht bewertbar: die Seite ist bewusst nicht cachebar (no-store)."
+    elif [[ -n "${trace}" && "${trace_hit}" -eq 1 ]]; then
+        echo "Treffer: X-Symfony-Cache meldet \"${main_trace}\" für den 2. Abruf."
     elif [[ -n "${trace}" ]]; then
         echo "Kein Treffer: X-Symfony-Cache meldet \"${main_trace}\" für den 2. Abruf."
         echo "Einstellung und Messung des Caches: Kapitel 6."
-    elif [[ "${aged}" -eq 1 && -n "${dates[0]}" && "${dates[0]}" == "${dates[1]}" ]]; then
+    elif [[ "${aged}" -eq 1 && "${same_date}" -eq 1 ]]; then
         echo "Treffer: Age ist um mindestens die Pause (${AUDIT_WAIT} s) gewachsen, Date unverändert."
     elif [[ "${aged}" -eq 1 ]]; then
         echo "Nicht entscheidbar: Age ist um die Pause gewachsen, Date aber nicht gleich geblieben."
         echo "Entweder bindet die neu gerenderte Seite ein gecachtes ESI-Fragment ein (ab 6.7"
-        echo "Header und Footer, dann trägt sie dessen Age), oder ein Proxy davor setzt Date neu"
-        echo "(nginx proxy_pass ohne proxy_pass_header Date). Eindeutig mit"
+        echo "Header und Footer, dann trägt sie dessen Age), oder der Webserver davor setzt Date"
+        echo "neu (nginx proxy_pass ohne proxy_pass_header Date, Apache mit mod_php). Eindeutig mit"
         echo "framework.http_cache.trace_level: short (Kapitel 6)."
+    elif [[ "${ages_ok}" -eq 1 && "${same_date}" -eq 1 ]]; then
+        echo "Nicht entscheidbar: Date gleich, Age aber nicht um die Pause gewachsen. Eine"
+        echo "gespeicherte Kopie, aber eine andere Cache-Schicht schreibt Age nicht fort, oder das"
+        echo "älteste ESI-Fragment wurde neu gespeichert. Eindeutig mit trace_level: short (Kapitel 6)."
+    elif [[ -n "${ages[0]}${ages[1]}" && "${ages_ok}" -eq 0 ]]; then
+        echo "Nicht entscheidbar: Age nur bei einem der beiden Abrufe, erneut prüfen."
     else
         echo "Kein Treffer erkennbar. Age > 0 allein ist kein Treffer: beim MISS"
         echo "steht dort die Zeit seit dem Date-Header, ab 6.7 das Age der ESI-Fragmente."
