@@ -11,6 +11,8 @@
 #
 #   Pool:  chapters/09-php-performance/config/shopware-fpm.conf
 #   vHost: chapters/anhang-c-konfigurationen/config/nginx-shopware.conf
+#   HTTP/3: chapters/24-ausblick/config/nginx-http3.conf (nur das Delta, per
+#           include im vHost - kein eigener server-Block, MEM-318)
 #
 # Wer eine zweite Vorlage anlegt, muss hier eine Ausnahme mit Ticket eintragen.
 # Das ist der Zweck: Doppelung soll wehtun.
@@ -18,6 +20,7 @@
 POOL="./chapters/09-php-performance/config/shopware-fpm.conf"
 VHOST="./chapters/anhang-c-konfigurationen/config/nginx-shopware.conf"
 INI="./chapters/09-php-performance/config/99-shopware.ini"
+HTTP3="./chapters/24-ausblick/config/nginx-http3.conf"
 
 # Kopfkommentar als Fliesstext: ';' bzw. '#' weg, Zeilen zu einem Strom verbunden.
 # Noetig, weil die Prosa umbrochen ist - ein zeilenweises grep trifft sie nie.
@@ -50,10 +53,7 @@ dateien() {
 @test "genau ein Companion-vHost beansprucht shop.example.com auf 443" {
     # Aktive Zeilen, nicht Kommentare: Der kanonische vHost nennt den
     # Konflikt im Kopf selbst.
-    # Bekannte Ausnahme: Kapitel 24 bringt HTTP/3 noch als eigenen server-Block
-    # mit - MEM-318. Mit dem Ticket faellt die Ausnahme weg.
-    dateien | grep -v '^chapters/24-ausblick/config/nginx-http3.conf$' \
-        | while read -r f; do
+    dateien | while read -r f; do
             # server_name mit weiteren Namen und listen *:443 zaehlen mit.
             if grep -qE '^[[:space:]]*server_name[[:space:]][^;]*\bshop\.example\.com\b' "$f" \
                && grep -qE '^[[:space:]]*listen[[:space:]]+([^;]*:)?443\b' "$f"; then
@@ -76,12 +76,47 @@ dateien() {
     [ "$pool_sock" = "$vhost_sock" ]
 }
 
-@test "die Ausnahme fuer Kapitel 24 ist noch noetig" {
-    # Schlaegt an, sobald MEM-318 erledigt ist - dann die Ausnahme oben
+@test "genau eine Companion-Datei bringt den QUIC-Listener" {
+    # MEM-318: Zwei Dateien mit `listen ... quic reuseport` im selben Baum
+    # starten nicht ("duplicate listen options"), und zwei Fassungen desselben
+    # Deltas laufen auseinander.
+    # Bekannte Ausnahme: Kapitel 11 bringt noch ein eigenes HTTP/3-Fragment mit
+    # `listen 443 ssl;` mit, das neben Anhang C nicht startet - MEM-323. Mit
+    # dem Ticket faellt die Ausnahme weg.
+    dateien | grep -v '^chapters/11-cdn-integration/config/nginx-http3.conf$' \
+        | while read -r f; do
+            grep -lE '^[[:space:]]*listen[[:space:]][^;#]*\bquic\b' "$f" 2>/dev/null || true
+        done > "$BATS_TEST_TMPDIR/quic"
+    cat "$BATS_TEST_TMPDIR/quic"
+    [ "$(wc -l < "$BATS_TEST_TMPDIR/quic")" -eq 1 ]
+    [ "$(cat "$BATS_TEST_TMPDIR/quic")" = "${HTTP3#./}" ]
+}
+
+@test "die Ausnahme fuer Kapitel 11 ist noch noetig" {
+    # Schlaegt an, sobald MEM-323 erledigt ist - dann die Ausnahme oben
     # entfernen, statt eine tote Zeile stehen zu lassen.
-    run grep -qE '^[[:space:]]*server_name[[:space:]]+shop\.example\.com;' \
-        ./chapters/24-ausblick/config/nginx-http3.conf
+    run grep -qE '^[[:space:]]*listen[[:space:]][^;#]*\bquic\b' \
+        ./chapters/11-cdn-integration/config/nginx-http3.conf
     [ "$status" -eq 0 ]
+}
+
+@test "das HTTP/3-Delta ist kein eigener vHost" {
+    # MEM-318: Als eigener server-Block neben Anhang C lief jede HTTP/3-Anfrage
+    # in diesen Block und auf einen Upstream, auf dem niemand hoert (502).
+    # Das Delta darf deshalb nur ergaenzen, was der vHost aus Anhang C nicht hat.
+    for muster in '^[[:space:]]*server[[:space:]]*\{' '^[[:space:]]*server_name[[:space:]]' \
+                  '^[[:space:]]*upstream[[:space:]]' '^[[:space:]]*location[[:space:]]' \
+                  '^[[:space:]]*listen[[:space:]][^;#]*\bssl\b' '^[[:space:]]*ssl_protocols[[:space:]]'; do
+        run grep -qE "$muster" "$HTTP3"
+        [ "$status" -ne 0 ]
+    done
+    # Beide Adressfamilien: der vHost hoert auf 443 und [::]:443.
+    grep -qxE '[[:space:]]*listen 443 quic reuseport;' "$HTTP3"
+    grep -qxE '[[:space:]]*listen \[::\]:443 quic reuseport;' "$HTTP3"
+    grep -qE "^[[:space:]]*add_header Alt-Svc 'h3=\":443\"; ma=86400' always;" "$HTTP3"
+    # Einbindung wie im Kopf beschrieben, und der vHost hat die Stelle dafuer.
+    grep -qF 'include snippets/shopware-http3.conf;' "$HTTP3"
+    grep -qE '^[[:space:]]*listen \[::\]:443 ssl;' "$VHOST"
 }
 
 @test "Pool, conf.d und vHost erlauben dieselbe Upload-Groesse" {
