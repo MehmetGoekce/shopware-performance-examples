@@ -6,7 +6,7 @@ Code-Beispiele und Konfigurationen für zukunftsweisende Performance-Technologie
 
 | Thema | Dateien | Beschreibung |
 |-------|---------|--------------|
-| HTTP/3 & QUIC | `config/nginx-http3.conf` | Nginx mit QUIC-Support |
+| HTTP/3 & QUIC | `config/nginx-http3.conf` | HTTP/3-Delta zum vHost aus Anhang C (per `include`, kein eigener server-Block) |
 | Edge Computing | `edge-functions/` | Cloudflare Workers Beispiele |
 | Anomalie-Erkennung | `scripts/detect-anomalies.py` | ML-basierte Performance-Überwachung |
 | INP-Optimierung | `scripts/analyze-inp.js` | Browser-Script für INP-Analyse |
@@ -16,13 +16,21 @@ Code-Beispiele und Konfigurationen für zukunftsweisende Performance-Technologie
 
 ### HTTP/3 mit Nginx
 
-```bash
-# Nginx 1.25+ mit QUIC-Support prüfen
-nginx -V 2>&1 | grep -o 'quic'
+Braucht nginx ab 1.25.1 mit HTTP/3-Modul (nginx.org-Pakete, Ubuntu 26.04;
+Ubuntu 24.04 hat es nicht) und den vHost aus Anhang C. Die Datei ist kein
+eigener vHost, sondern ergänzt den aus Anhang C:
 
-# Wenn nicht vorhanden: Nginx mit QUIC kompilieren oder
-# Cloudflare/Fastly als Reverse Proxy nutzen
+```bash
+nginx -V 2>&1 | grep -o with-http_v3_module
+sudo cp config/nginx-http3.conf /etc/nginx/snippets/shopware-http3.conf
+# In /etc/nginx/sites-available/shopware.conf, im server-Block für 443,
+# direkt unter die beiden listen-Zeilen:
+#     include snippets/shopware-http3.conf;
+sudo nginx -t 2>&1 | grep -E 'emerg|conflicting server name'
+sudo systemctl reload nginx
 ```
+
+Ohne das Modul: HTTP/3 am CDN terminieren (Kapitel 11).
 
 ### Edge Functions
 
@@ -101,7 +109,7 @@ python scripts/detect-anomalies.py --input metrics.json
 chapters/24-ausblick/
 ├── README.md
 ├── config/
-│   ├── nginx-http3.conf        # HTTP/3 Nginx-Konfiguration
+│   ├── nginx-http3.conf        # HTTP/3-Delta zum vHost aus Anhang C
 │   └── quic-tuning.conf        # QUIC-Optimierungen
 ├── edge-functions/
 │   ├── ab-testing/             # A/B-Testing auf der Edge
