@@ -2,8 +2,10 @@
  * Kapitel 24: A/B-Testing auf der Edge
  * Ausblick – Neue Technologien und Trends
  *
- * Cloudflare Worker für A/B-Testing ohne Origin-Last.
- * Varianten-Zuweisung erfolgt auf der Edge (< 1ms).
+ * Cloudflare Worker für A/B-Testing: Die Variante wird auf der Edge
+ * zugewiesen, die Seite kommt weiter vom Origin. Der Origin muss den Header
+ * auswerten und in seinen Cache-Key aufnehmen (Kapitel 20), sonst liefert der
+ * HTTP-Cache die zuerst gecachte Variante an alle.
  *
  * Deployment:
  *   npm install -g wrangler
@@ -54,7 +56,8 @@ export default {
             const test = AB_TESTS[testName];
             let variant = cookies[test.cookie];
 
-            if (!variant) {
+            // nur bekannte Varianten aus dem Cookie übernehmen
+            if (!test.variants.includes(variant)) {
                 // Neue Zuweisung basierend auf Gewichtung
                 variant = assignVariant(test.variants, test.weights);
                 newCookies.push({
@@ -67,15 +70,13 @@ export default {
             assignments[testName] = variant;
         }
 
-        // Request an Origin mit Varianten-Headern. [...request.headers] liefert
-        // die Paare [Name, Wert] und behält alle Header; {...request.headers}
-        // ergäbe {} (Headers hat keine eigenen Properties)
-        const modifiedRequest = new Request(request, {
-            headers: new Headers([
-                ...request.headers,
-                ['X-AB-Tests', JSON.stringify(assignments)]
-            ])
-        });
+        // Request an Origin mit Varianten-Headern. Headers kopieren und mit
+        // set() ersetzen: {...request.headers} ergäbe {}, und ein angehängtes
+        // Paar ([...request.headers, [...]]) würde einen vom Client
+        // mitgeschickten X-AB-Tests nur ergänzen ("{...}, {...}", kein JSON)
+        const headers = new Headers(request.headers);
+        headers.set('X-AB-Tests', JSON.stringify(assignments));
+        const modifiedRequest = new Request(request, { headers });
 
         // Origin-Response holen
         const response = await fetch(modifiedRequest);
@@ -134,7 +135,8 @@ function parseCookies(cookieHeader) {
     if (!cookieHeader) return cookies;
 
     cookieHeader.split(';').forEach(cookie => {
-        const [name, value] = cookie.trim().split('=');
+        const [name, ...rest] = cookie.trim().split('=');
+        const value = rest.join('=');
         if (name && value) {
             cookies[name] = value;
         }

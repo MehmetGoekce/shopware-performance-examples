@@ -65,6 +65,10 @@ cp wrangler.toml.example wrangler.toml
 wrangler deploy
 ```
 
+A/B- und Geo-Worker schicken dem Origin nur einen Header. Shopware muss ihn
+auswerten und in den Cache-Key aufnehmen (Kapitel 20), sonst liefert der
+HTTP-Cache die zuerst gecachte Variante oder Währung an alle.
+
 ### 3. CO2 je Seitenaufruf schätzen
 
 Der Endpoint `/site` der Website Carbon API (URL rein, Messung dort) ist seit
@@ -104,9 +108,12 @@ chapters/24-ausblick/
 │   │   ├── src/index.js        # mehrere Tests, Gewichtung
 │   │   ├── src/minimal.js      # Fassung aus dem Buch
 │   │   └── wrangler.toml.example
-│   └── geo-routing/            # Geo-basiertes Routing
-│       ├── src/index.js        # Währung, Sprache, Override-Cookie
-│       ├── src/minimal.js      # Fassung aus dem Buch
+│   ├── geo-routing/            # Geo-basiertes Routing
+│   │   ├── src/index.js        # Währung, Sprache, Override-Cookie
+│   │   ├── src/minimal.js      # Fassung aus dem Buch
+│   │   └── wrangler.toml.example
+│   └── rate-limit/             # Anfragen je IP begrenzen (Rate Limiting Binding)
+│       ├── src/index.js        # Fassung aus dem Buch
 │       └── wrangler.toml.example
 └── scripts/
     ├── detect-anomalies.py     # ML Anomalie-Erkennung

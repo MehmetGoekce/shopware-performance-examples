@@ -2,7 +2,9 @@
  * Kapitel 24: Geo-basiertes Routing auf der Edge
  * Ausblick – Neue Technologien und Trends
  *
- * Cloudflare Worker für länderspezifische Anpassungen:
+ * Cloudflare Worker für länderspezifische Anpassungen. Der Origin muss die
+ * Header auswerten und in seinen Cache-Key aufnehmen (Kapitel 20), sonst
+ * liefert der HTTP-Cache die zuerst gecachte Währung an alle:
  * - Währung basierend auf Land
  * - Sprach-Redirect
  * - Regionale Preise
@@ -70,21 +72,21 @@ export default {
             || GEO_CONFIG[country]
             || GEO_CONFIG['DEFAULT'];
 
-        // Request an Origin mit Geo-Headern. [...request.headers] liefert die
-        // Paare [Name, Wert] und behält alle Header; {...request.headers}
-        // ergäbe {} (Headers hat keine eigenen Properties)
-        const modifiedRequest = new Request(request, {
-            headers: new Headers([
-                ...request.headers,
-                ['X-Customer-Country', country],
-                ['X-Customer-City', city],
-                ['X-Customer-Continent', continent],
-                ['X-Customer-Currency', config.currency],
-                ['X-Customer-Language', config.language],
-                ['X-Customer-VAT-Rate', config.vatRate.toString()],
-                ['X-Price-Multiplier', config.priceMultiplier.toString()]
-            ])
-        });
+        // Request an Origin mit Geo-Headern. Headers kopieren und mit set()
+        // ersetzen: Ein angehängtes Paar ([...request.headers, [...]]) würde
+        // einen vom Client geschickten X-Price-Multiplier: 0.01 nur ergänzen
+        // ("0.01, 1", in PHP (float) = 0.01). Der Origin darf Preise trotzdem
+        // nie allein aus diesen Headern ableiten
+        const headers = new Headers(request.headers);
+        headers.set('X-Customer-Country', country);
+        // Headers nehmen nur Latin-1 (ByteString), "Łódź" würfe einen TypeError
+        headers.set('X-Customer-City', encodeURIComponent(city));
+        headers.set('X-Customer-Continent', continent);
+        headers.set('X-Customer-Currency', config.currency);
+        headers.set('X-Customer-Language', config.language);
+        headers.set('X-Customer-VAT-Rate', config.vatRate.toString());
+        headers.set('X-Price-Multiplier', config.priceMultiplier.toString());
+        const modifiedRequest = new Request(request, { headers });
 
         const response = await fetch(modifiedRequest);
 
@@ -105,7 +107,8 @@ function parseCookies(cookieHeader) {
     if (!cookieHeader) return cookies;
 
     cookieHeader.split(';').forEach(cookie => {
-        const [name, value] = cookie.trim().split('=');
+        const [name, ...rest] = cookie.trim().split('=');
+        const value = rest.join('=');
         if (name && value) {
             cookies[name] = value;
         }

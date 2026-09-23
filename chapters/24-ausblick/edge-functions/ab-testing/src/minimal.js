@@ -15,7 +15,7 @@ export default {
         // Produkt-Detailseite?
         if (url.pathname.startsWith('/detail/')) {
             // Cookie zuerst lesen, sonst würfelt jeder Request neu
-            const seen = request.headers.get('Cookie')?.match(/ab_variant=([AB])/)?.[1];
+            const seen = request.headers.get('Cookie')?.match(/(?:^|;\s*)ab_variant=([AB])(?=;|$)/)?.[1];
             const variant = seen ?? (Math.random() < 0.5 ? 'A' : 'B');
 
             // Variant-Header an Origin senden. Headers ist iterierbar, aber

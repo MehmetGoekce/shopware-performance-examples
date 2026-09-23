@@ -10,6 +10,7 @@ import abFull from '../../chapters/24-ausblick/edge-functions/ab-testing/src/ind
 import abBook from '../../chapters/24-ausblick/edge-functions/ab-testing/src/minimal.js';
 import geoFull from '../../chapters/24-ausblick/edge-functions/geo-routing/src/index.js';
 import geoBook from '../../chapters/24-ausblick/edge-functions/geo-routing/src/minimal.js';
+import rateLimit from '../../chapters/24-ausblick/edge-functions/rate-limit/src/index.js';
 
 let origin;
 
@@ -59,6 +60,20 @@ describe('Kapitel 24: A/B-Test, Fassung aus dem Buch (minimal.js)', () => {
         expect(origin.map((o) => o.req.headers.get('x-ab-variant'))).toEqual(Array(20).fill('B'));
     });
 
+    it('liest nur das eigene Cookie, nicht my_ab_variant oder ab_variant=Ax', async () => {
+        // Math.random() = 0 würfelt A; ein fälschlich gelesenes Cookie ergäbe B
+        vi.spyOn(Math, 'random').mockReturnValue(0);
+        for (const cookie of ['my_ab_variant=B', 'ab_variant=Bx', 'x=1; ab_variant=B; y=2']) {
+            await abBook.fetch(request('/detail/42', { headers: { Cookie: cookie } }));
+        }
+        vi.restoreAllMocks();
+        const res = await abBook.fetch(request('/detail/42', { headers: { Cookie: 'x=1; ab_variant=A; y=2' } }));
+
+        expect(origin.map((o) => o.req.headers.get('x-ab-variant')).slice(0, 3)).toEqual(['A', 'A', 'B']);
+        expect(origin[3].req.headers.get('x-ab-variant')).toBe('A');
+        expect(res.status).toBe(404);
+    });
+
     it('lässt andere Pfade unverändert durch', async () => {
         const res = await abBook.fetch(request('/checkout/cart'));
 
@@ -68,7 +83,7 @@ describe('Kapitel 24: A/B-Test, Fassung aus dem Buch (minimal.js)', () => {
 });
 
 describe('Kapitel 24: A/B-Test, ausführliche Fassung (index.js)', () => {
-    it('Array-Spread von Headers behält alle Header (Objekt-Spread ergäbe {})', async () => {
+    it('kopiert alle Header (Objekt-Spread ergäbe {})', async () => {
         expect({ ...new Headers(browserHeaders) }).toEqual({});
 
         await abFull.fetch(request('/detail/42', { headers: browserHeaders }));
@@ -78,6 +93,18 @@ describe('Kapitel 24: A/B-Test, ausführliche Fassung (index.js)', () => {
         expect(sent.get('user-agent')).toBe('UA/1');
         expect(sent.get('accept-encoding')).toBe('br');
         expect(Object.keys(JSON.parse(sent.get('x-ab-tests')))).toEqual(['product-page']);
+    });
+
+    it('ersetzt einen vom Client geschickten X-AB-Tests, statt ihn zu ergänzen', async () => {
+        await abFull.fetch(request('/detail/42', { headers: { 'X-AB-Tests': '{"product-page":"x"}', Cookie: 'ab_product_page=control' } }));
+
+        expect(JSON.parse(origin[0].req.headers.get('x-ab-tests'))).toEqual({ 'product-page': 'control' });
+    });
+
+    it('übernimmt aus dem Cookie nur bekannte Varianten', async () => {
+        await abFull.fetch(request('/detail/42', { headers: { Cookie: 'ab_product_page=evil' } }));
+
+        expect(['control', 'new-layout']).toContain(JSON.parse(origin[0].req.headers.get('x-ab-tests'))['product-page']);
     });
 
     it('setzt ein Cookie nur bei neuer Zuweisung und behält den Status', async () => {
@@ -93,7 +120,7 @@ describe('Kapitel 24: A/B-Test, ausführliche Fassung (index.js)', () => {
 
 describe('Kapitel 24: Geo-Währung, Fassung aus dem Buch (minimal.js)', () => {
     it('setzt Währung nach CF-IPCountry und behält die übrigen Header', async () => {
-        await geoBook(request('/', { headers: { ...browserHeaders, 'CF-IPCountry': 'CH' } }));
+        await geoBook.fetch(request('/', { headers: { ...browserHeaders, 'CF-IPCountry': 'CH' } }));
 
         const sent = origin[0].req.headers;
         expect(sent.get('x-customer-currency')).toBe('CHF');
@@ -102,15 +129,20 @@ describe('Kapitel 24: Geo-Währung, Fassung aus dem Buch (minimal.js)', () => {
     });
 
     it('behält Methode und Body (ein POST bleibt ein POST)', async () => {
-        await geoBook(request('/checkout/order', { method: 'POST', body: 'tos=on' }));
+        await geoBook.fetch(request('/checkout/order', { method: 'POST', body: 'tos=on' }));
 
         expect(origin[0].req.method).toBe('POST');
         expect(origin[0].body).toBe('tos=on');
     });
 
+    it('ist ein Cloudflare-Worker-Modul (export default { fetch })', () => {
+        expect(typeof geoBook.fetch).toBe('function');
+        expect(typeof abBook.fetch).toBe('function');
+    });
+
     it('fällt ohne Land auf DE/EUR zurück, unbekannte Länder auf EUR', async () => {
-        await geoBook(request('/'));
-        await geoBook(request('/', { headers: { 'CF-IPCountry': 'JP' } }));
+        await geoBook.fetch(request('/'));
+        await geoBook.fetch(request('/', { headers: { 'CF-IPCountry': 'JP' } }));
 
         expect(origin.map((o) => o.req.headers.get('x-customer-currency'))).toEqual(['EUR', 'EUR']);
         expect(origin[0].req.headers.get('x-customer-country')).toBe('DE');
@@ -127,10 +159,23 @@ describe('Kapitel 24: Geo-Routing, ausführliche Fassung (index.js)', () => {
         expect(origin[2].req.headers.get('x-customer-vat-rate')).toBe('0.19');
     });
 
+    it('überschreibt vom Client geschickte Preis- und Währungs-Header', async () => {
+        await geoFull.fetch(request('/', { cf: { country: 'CH' }, headers: { 'X-Price-Multiplier': '0.01', 'X-Customer-Currency': 'USD' } }));
+
+        expect(origin[0].req.headers.get('x-price-multiplier')).toBe('1');
+        expect(origin[0].req.headers.get('x-customer-currency')).toBe('CHF');
+    });
+
     it('unbekanntes Land und ungültiger Override nehmen DEFAULT', async () => {
         await geoFull.fetch(request('/', { cf: { country: 'JP' }, headers: { Cookie: 'geo_override=XX' } }));
 
         expect(origin[0].req.headers.get('x-customer-language')).toBe('en');
+    });
+
+    it('kodiert Städtenamen ausserhalb von Latin-1, statt mit TypeError abzubrechen', async () => {
+        await geoFull.fetch(request('/', { cf: { country: 'DE', city: 'Łódź' } }));
+
+        expect(decodeURIComponent(origin[0].req.headers.get('x-customer-city'))).toBe('Łódź');
     });
 
     it('behält Status, Header und Cookie des Browsers', async () => {
@@ -139,5 +184,28 @@ describe('Kapitel 24: Geo-Routing, ausführliche Fassung (index.js)', () => {
         expect(res.status).toBe(404);
         expect(res.headers.get('x-geo-currency')).toBe('CHF');
         expect(origin[0].req.headers.get('cookie')).toBe('sw-session=abc');
+    });
+});
+
+describe('Kapitel 24: Rate Limit (Buchfassung, Rate Limiting Binding)', () => {
+    const env = (allowed) => {
+        const calls = [];
+        return { calls, RATE_LIMITER: { limit: async (opts) => { calls.push(opts); return { success: allowed }; } } };
+    };
+
+    it('fragt das Binding je IP und antwortet mit 429, ohne den Origin zu fragen', async () => {
+        const e = env(false);
+        const res = await rateLimit.fetch(request('/', { headers: { 'CF-Connecting-IP': '203.0.113.7' } }), e);
+
+        expect(e.calls).toEqual([{ key: '203.0.113.7' }]);
+        expect(res.status).toBe(429);
+        expect(origin).toHaveLength(0);
+    });
+
+    it('reicht erlaubte Requests unverändert weiter', async () => {
+        const res = await rateLimit.fetch(request('/', { headers: { 'CF-Connecting-IP': '203.0.113.7' } }), env(true));
+
+        expect(origin).toHaveLength(1);
+        expect(res.status).toBe(404);
     });
 });
