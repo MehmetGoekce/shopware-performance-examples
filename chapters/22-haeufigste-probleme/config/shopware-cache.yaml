@@ -22,9 +22,12 @@
 #   SHOPWARE_HTTP_DEFAULT_TTL=7200    # Default ist bereits 7200
 #
 # Beide Werte sind ab Werk gesetzt. Wenn der Cache nicht arbeitet, hat sie
-# jemand überschrieben — zuerst nachsehen:
+# jemand überschrieben — zuerst nachsehen (alle .env-Dateien, auch .env.prod.local):
 #
-#   grep -E 'SHOPWARE_HTTP' .env .env.local
+#   bin/console debug:dotenv SHOPWARE_HTTP
+#
+# Eine Umgebungsvariable des Webservers (FPM env[], Apache SetEnv) sieht das
+# nicht; die zeigt die Administration unter Einstellungen > System > Caches & Indizes.
 #
 # ============================================================
 # Woran man erkennt, dass der Cache arbeitet

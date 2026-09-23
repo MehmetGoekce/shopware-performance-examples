@@ -61,7 +61,8 @@ Prueft, ob vor der Storefront ein HTTP-Cache arbeitet.
 Argumente:
   SHOP_URL    Startseite des Shops. Default: http://localhost
   SHOP_PATH   Optional. Wurzel der Shopware-Installation; wird nur benutzt,
-              um SHOPWARE_HTTP_CACHE_ENABLED aus .env/.env.local zu lesen.
+              um SHOPWARE_HTTP_* aus .env, .env.local, .env.prod und
+              .env.prod.local zu lesen.
 
 Der Test schickt zwei GET-Requests im Abstand von zwei Sekunden und
 vergleicht Age, Date und, falls vorhanden, X-Symfony-Cache. Treffer heisst:
@@ -182,9 +183,11 @@ fi
 
 if [[ -n "${SHOP_PATH}" ]]; then
     echo
-    echo "4. Konfiguration in .env..."
+    echo "4. Konfiguration in den .env-Dateien (spaetere Zeile gewinnt)..."
     FOUND_ENV=0
-    for f in "${SHOP_PATH}/.env" "${SHOP_PATH}/.env.local"; do
+    # Reihenfolge wie Symfonys Dotenv in prod: jede Datei ueberschreibt die davor.
+    for f in "${SHOP_PATH}/.env" "${SHOP_PATH}/.env.local" \
+             "${SHOP_PATH}/.env.prod" "${SHOP_PATH}/.env.prod.local"; do
         if [[ -f "$f" ]]; then
             LINES=$(grep -E '^SHOPWARE_HTTP_(CACHE_ENABLED|DEFAULT_TTL)=' "$f" || true)
             if [[ -n "${LINES}" ]]; then
@@ -194,12 +197,16 @@ if [[ -n "${SHOP_PATH}" ]]; then
         fi
     done
     if [[ -f "${SHOP_PATH}/.env.local.php" ]]; then
-        echo "   Achtung: .env.local.php vorhanden — sie hat Vorrang vor .env.local."
+        echo "   Achtung: .env.local.php vorhanden — dann liest Symfony nur sie, keine .env-Datei."
     fi
     if [[ "${FOUND_ENV}" -eq 0 ]]; then
-        echo "   Nichts gesetzt — es gelten die Defaults"
-        echo "   (SHOPWARE_HTTP_CACHE_ENABLED=1, SHOPWARE_HTTP_DEFAULT_TTL=7200)."
+        echo "   In keiner .env-Datei gesetzt — es gelten die Defaults"
+        echo "   (SHOPWARE_HTTP_CACHE_ENABLED=1, SHOPWARE_HTTP_DEFAULT_TTL=7200),"
+        echo "   sofern die Umgebung des Webservers nichts setzt."
     fi
+    echo "   Eine Umgebungsvariable des Webservers (FPM env[], Apache SetEnv) schlaegt"
+    echo "   jede .env-Datei und steht in keiner. Was der Webserver sieht, zeigt die"
+    echo "   Administration: Einstellungen > System > Caches & Indizes (HTTP-Cache An/Aus)."
 fi
 
 echo
@@ -222,9 +229,12 @@ Kein Age-Header — vor dieser URL arbeitet kein Shared Cache.
 Zu pruefen, in dieser Reihenfolge:
 
   1. Ist der Cache ueberhaupt eingeschaltet?
-       grep -E 'SHOPWARE_HTTP_(CACHE_ENABLED|DEFAULT_TTL)' .env .env.local
+       bin/console debug:dotenv SHOPWARE_HTTP
      Beide Werte sind ab Werk gesetzt (1 bzw. 7200). Ein Problem entsteht
-     erst, wenn jemand SHOPWARE_HTTP_CACHE_ENABLED=0 gesetzt hat.
+     erst, wenn jemand SHOPWARE_HTTP_CACHE_ENABLED=0 gesetzt hat. debug:dotenv
+     liest alle .env-Dateien, nicht die Umgebung des Webservers (FPM env[],
+     Apache SetEnv). Die zeigt die Administration:
+       Einstellungen > System > Caches & Indizes
 
   2. Ist die gepruefte Route ueberhaupt cachebar?
      Nur Routen mit _httpCache (Startseite, Kategorie, Produkt) werden
@@ -337,16 +347,15 @@ traegt jede Seite ein Age (ESI), auch wenn der Cache abgeschaltet ist.
 
 Zu pruefen, in dieser Reihenfolge:
 
-  1. Ist der Cache ueberhaupt eingeschaltet?
-       grep -E 'SHOPWARE_HTTP_(CACHE_ENABLED|DEFAULT_TTL)' .env .env.local
+  1. Ist der Cache ueberhaupt eingeschaltet, und laeuft der Shop in prod?
      Ein Problem entsteht erst, wenn jemand SHOPWARE_HTTP_CACHE_ENABLED=0
-     gesetzt hat.
+     gesetzt hat; in dev ist cache.app ein ArrayAdapter, jeder Abruf ein MISS.
+     Die Administration zeigt beides so, wie der Webserver es sieht:
+       Einstellungen > System > Caches & Indizes (Umgebung, HTTP-Cache)
+     bin/console debug:dotenv SHOPWARE_HTTP zeigt die .env-Dateien, nicht
+     die Umgebung des Webservers (FPM env[], Apache SetEnv).
 
-  2. Laeuft der Shop in prod?
-       grep APP_ENV .env .env.local
-     In dev ist cache.app ein ArrayAdapter, jeder Abruf ist ein MISS.
-
-  3. Ist die gepruefte Route ueberhaupt cachebar? (Startseite, Kategorie und
+  2. Ist die gepruefte Route ueberhaupt cachebar? (Startseite, Kategorie und
      Produkt ja; Checkout, Kundenkonto und Suchergebnisseite nie.)
 
 Wurde der Eintrag beim 1. Abruf erst erzeugt, ist ein zweiter Lauf ein Treffer.

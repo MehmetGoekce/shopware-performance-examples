@@ -375,6 +375,40 @@ D2="Date: Wed, 23 Sep 2026 15:53:35 GMT"
     [ "$status" -eq 69 ]
 }
 
+@test "check-http-cache.sh: Abschnitt 4 liest auch .env.prod und .env.prod.local, in Symfonys Reihenfolge (MEM-325)" {
+    # Gemessen (MEM-325 A1): =0 in .env.prod.local schaltet den Cache ab, grep .env .env.local zeigt 1.
+    shop="$BATS_TEST_TMPDIR/shop"; mkdir -p "$shop"
+    printf 'SHOPWARE_HTTP_CACHE_ENABLED=1\n' > "$shop/.env"
+    printf 'SHOPWARE_HTTP_DEFAULT_TTL=600\n' > "$shop/.env.prod"
+    printf 'SHOPWARE_HTTP_CACHE_ENABLED=0\n' > "$shop/.env.prod.local"
+    http_cache_stub "200|$D1" "200|$D2"
+    PATH="$stub_dir:$PATH" run bash "$DIR/check-http-cache.sh" http://example.test "$shop"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *".env: SHOPWARE_HTTP_CACHE_ENABLED=1"*".env.prod: SHOPWARE_HTTP_DEFAULT_TTL=600"*".env.prod.local: SHOPWARE_HTTP_CACHE_ENABLED=0"* ]]
+    [[ "$output" == *"Caches & Indizes"* ]]
+}
+
+@test "check-http-cache.sh: ohne .env-Eintrag nennt es die Umgebung des Webservers" {
+    shop="$BATS_TEST_TMPDIR/shop"; mkdir -p "$shop"
+    : > "$shop/.env"
+    http_cache_stub "200|Age: 0|$D1" "200|Age: 0|$D2"
+    PATH="$stub_dir:$PATH" run bash "$DIR/check-http-cache.sh" http://example.test "$shop"
+    [[ "$output" == *"In keiner .env-Datei gesetzt"* ]]
+    [[ "$output" == *"FPM env[]"* ]]
+}
+
+@test "check-http-cache.sh: Hinweise empfehlen debug:dotenv und die Administration statt grep .env .env.local" {
+    for resp in "200|$D1" "200|Age: 0|$D1"; do
+        rm -f "$BATS_TEST_TMPDIR/count"
+        http_cache_stub "$resp" "${resp/$D1/$D2}"
+        PATH="$stub_dir:$PATH" run bash "$DIR/check-http-cache.sh" http://example.test
+        [ "$status" -eq 1 ]
+        [[ "$output" == *"bin/console debug:dotenv SHOPWARE_HTTP"* ]]
+        [[ "$output" == *"Einstellungen > System > Caches & Indizes"* ]]
+        [[ "$output" != *".env .env.local"* ]]
+    done
+}
+
 @test "check-http-cache.sh wertet no-cache, private nicht als Defekt" {
     # Regressionstest zu F41: eine gesunde Storefront antwortet genau so.
     http_cache_stub "200|Age: 5|$D1" "200|Age: 7|$D1"

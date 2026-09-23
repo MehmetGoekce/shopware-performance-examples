@@ -57,7 +57,7 @@ Gegenproben mit abgeändertem Plugin:
 
 Der Preis: Der erste Aufruf eines neuen Besuchers auf einer Experiment-Route kommt nie aus dem Cache. Clients ohne Cookie-Speicher (Crawler, Monitoring, Lighthouse CI) sind bei jedem Aufruf neu: gerendert, `private`, eine Zeile im Zuweisungs-Log. Seiten ausserhalb des Experiments haben für Besucher mit Cookie einen Cache-Eintrag je Variante, weil der Cache-Key vor dem Routing entsteht.
 
-Auf 6.7 tragen auch nicht gecachte Seiten ein `Age`: Symfony übernimmt das Alter gecachter ESI-Fragmente (Header, Footer) in die Seite. Ob eine Seite aus dem Cache kommt, sehen Sie dort an TTFB und Inhalt, nicht am `Age`.
+Auf 6.7 tragen auch nicht gecachte Seiten ein `Age`: Symfony übernimmt das Alter gecachter ESI-Fragmente (Header, Footer) in die Seite. Ob eine Seite aus dem Cache kommt, sehen Sie dort nicht am `Age` allein, sondern am `Date`, das nur eine gespeicherte Kopie beim zweiten Abruf wiederholt, oder eindeutig an `X-Symfony-Cache` (Kapitel 6.8); die TTFB taugt nicht dafür.
 
 Hinter Varnish wirkt `HttpCacheKeyEvent` nicht; das Plugin ist dafür nicht getestet.
 
