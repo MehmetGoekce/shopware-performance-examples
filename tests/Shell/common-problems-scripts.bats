@@ -181,9 +181,12 @@ code_only() {
     }
 }
 
-# curl-Stub fuer check-http-cache.sh: liefert beim n-ten Aufruf die Header
-# aus der n-ten Argumentzeile ("|" trennt die Headerzeilen).
-# Aufruf: http_cache_stub "Age: 0|Date: A" "Age: 2|Date: A"
+# curl-Stub fuer check-http-cache.sh. Je Aufruf eine Argumentzeile:
+#   "200|Age: 0|Date: A"        ein Headerblock (Status|Header|Header ...)
+#   "301|Age: 5#200|Date: A"    Weiterleitung: Bloecke durch "#" getrennt
+#   "FAIL"                      curl scheitert (Exit 7)
+# Jeder Block bekommt "Cache-Control: no-cache, private" dazu. Der Stub
+# protokolliert Sekunde und Argumente jedes Aufrufs in $BATS_TEST_TMPDIR/calls.
 http_cache_stub() {
     stub_dir="$BATS_TEST_TMPDIR/bin"
     mkdir -p "$stub_dir"
@@ -193,11 +196,16 @@ http_cache_stub() {
 n_file="$BATS_TEST_TMPDIR/count"
 n=$(( $(cat "$n_file" 2>/dev/null || echo 0) + 1 ))
 echo "$n" > "$n_file"
+echo "$(date +%s) $*" >> "$BATS_TEST_TMPDIR/calls"
 line=$(sed -n "${n}p" "$BATS_TEST_TMPDIR/responses")
-printf 'HTTP/1.1 200 OK\r\nCache-Control: no-cache, private\r\n'
-IFS='|' read -ra hs <<< "$line"
-for h in "${hs[@]}"; do printf '%s\r\n' "$h"; done
-printf '\r\n'
+[[ "$line" == "FAIL" ]] && exit 7
+IFS='#' read -ra blocks <<< "$line"
+for block in "${blocks[@]}"; do
+    IFS='|' read -ra hs <<< "$block"
+    printf 'HTTP/1.1 %s X\r\nCache-Control: no-cache, private\r\n' "${hs[0]}"
+    for h in "${hs[@]:1}"; do printf '%s\r\n' "$h"; done
+    printf '\r\n'
+done
 STUB
     chmod +x "$stub_dir/curl"
     export BATS_TEST_TMPDIR
@@ -207,64 +215,96 @@ D1="Date: Wed, 23 Sep 2026 15:53:33 GMT"
 D2="Date: Wed, 23 Sep 2026 15:53:35 GMT"
 
 @test "check-http-cache.sh: Age waechst um die Pause, Date gleich = Treffer" {
-    http_cache_stub "Age: 0|$D1" "Age: 2|$D1"
+    http_cache_stub "200|Age: 0|$D1" "200|Age: 2|$D1"
+    PATH="$stub_dir:$PATH" run bash "$DIR/check-http-cache.sh" http://example.test
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Der HTTP-Cache arbeitet"* ]]
+    [[ "$output" == *"zeigt der Test nicht"* ]]
+}
+
+@test "check-http-cache.sh: warmer Cache (Treffer -> Treffer) ist ein Treffer" {
+    http_cache_stub "200|Age: 100|$D1" "200|Age: 102|$D1"
     PATH="$stub_dir:$PATH" run bash "$DIR/check-http-cache.sh" http://example.test
     [ "$status" -eq 0 ]
     [[ "$output" == *"Der HTTP-Cache arbeitet"* ]]
 }
 
-@test "check-http-cache.sh: warmer Cache (Treffer -> Treffer) ist ein Treffer" {
-    http_cache_stub "Age: 100|$D1" "Age: 102|$D1"
+@test "check-http-cache.sh: ruft zweimal per GET mit -L ab, mindestens 2 s auseinander" {
+    http_cache_stub "200|Age: 0|$D1" "200|Age: 2|$D1"
     PATH="$stub_dir:$PATH" run bash "$DIR/check-http-cache.sh" http://example.test
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Der HTTP-Cache arbeitet"* ]]
+    [ "$(wc -l < "$BATS_TEST_TMPDIR/calls")" -eq 2 ]
+    while read -r _ args; do
+        [[ " $args " == *" -L "* ]]
+        [[ " $args " != *" -I "* && " $args " != *" --head "* ]]
+        [[ "$args" == *"http://example.test"* ]]
+    done < "$BATS_TEST_TMPDIR/calls"
+    t1=$(sed -n 1p "$BATS_TEST_TMPDIR/calls" | cut -d' ' -f1)
+    t2=$(sed -n 2p "$BATS_TEST_TMPDIR/calls" | cut -d' ' -f1)
+    [ $((t2 - t1)) -ge 2 ]
 }
 
 @test "check-http-cache.sh: zwei MISS mit Age 0 -> 1 sind kein Treffer (MEM-316)" {
     # Gemessen in dev: jeder Abruf ein MISS, 2 von 20 Laeufen zeigten 0 -> 1.
-    http_cache_stub "Age: 0|$D1" "Age: 1|$D2"
+    http_cache_stub "200|Age: 0|$D1" "200|Age: 1|$D2"
     PATH="$stub_dir:$PATH" run bash "$DIR/check-http-cache.sh" http://example.test
     [ "$status" -eq 1 ]
     [[ "$output" != *"Der HTTP-Cache arbeitet"* ]]
     [[ "$output" == *"nicht um die Pause gewachsen"* ]]
 }
 
+@test "check-http-cache.sh: abgeschalteter Cache mit ESI-Age (6.7) nennt die Env-Variable" {
+    # Gemessen auf 6.7.2.2 mit SHOPWARE_HTTP_CACHE_ENABLED=0: Age 0 -> 0.
+    http_cache_stub "200|Age: 0|$D1" "200|Age: 0|$D2"
+    PATH="$stub_dir:$PATH" run bash "$DIR/check-http-cache.sh" http://example.test
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"SHOPWARE_HTTP_CACHE_ENABLED=0"* ]]
+}
+
 @test "check-http-cache.sh: Grenze - Zuwachs Pause-1 bei gleichem Date ist kein Treffer" {
-    http_cache_stub "Age: 10|$D1" "Age: 11|$D1"
+    http_cache_stub "200|Age: 10|$D1" "200|Age: 11|$D1"
     PATH="$stub_dir:$PATH" run bash "$DIR/check-http-cache.sh" http://example.test
     [ "$status" -eq 1 ]
     [[ "$output" != *"Der HTTP-Cache arbeitet"* ]]
 }
 
-@test "check-http-cache.sh: ESI - Age waechst um die Pause, Date auch = nicht eindeutig" {
+@test "check-http-cache.sh: ESI - Age waechst um die Pause, Date auch = nicht entscheidbar" {
     # Gemessen auf 6.7.2.2: /checkout/cart wird nie gecacht, traegt aber das
     # Age des gecachten Header-Fragments (0 -> 2 -> 4), Date wandert mit.
-    http_cache_stub "Age: 0|$D1" "Age: 2|$D2"
+    http_cache_stub "200|Age: 0|$D1" "200|Age: 2|$D2"
     PATH="$stub_dir:$PATH" run bash "$DIR/check-http-cache.sh" http://example.test
-    [ "$status" -eq 1 ]
+    [ "$status" -eq 69 ]
     [[ "$output" != *"Der HTTP-Cache arbeitet"* ]]
     [[ "$output" == *"KEIN Nachweis"* ]]
     [[ "$output" == *"trace_level: short"* ]]
+    [[ "$output" == *"proxy_pass_header Date;"* ]]
 }
 
-@test "check-http-cache.sh: Age waechst, aber kein Date-Header = kein Treffer" {
-    http_cache_stub "Age: 0" "Age: 2"
+@test "check-http-cache.sh: Age waechst, aber kein Date-Header = nicht entscheidbar" {
+    http_cache_stub "200|Age: 0" "200|Age: 2"
     PATH="$stub_dir:$PATH" run bash "$DIR/check-http-cache.sh" http://example.test
-    [ "$status" -eq 1 ]
+    [ "$status" -eq 69 ]
     [[ "$output" != *"Der HTTP-Cache arbeitet"* ]]
     [[ "$output" == *"ohne Date-Header"* ]]
 }
 
+@test "check-http-cache.sh: Header ohne Leerzeichen nach dem Doppelpunkt werden gelesen" {
+    http_cache_stub "200|age:0|date:Wed, 23 Sep 2026 15:53:33 GMT" "200|AGE:2|DATE:Wed, 23 Sep 2026 15:53:33 GMT"
+    PATH="$stub_dir:$PATH" run bash "$DIR/check-http-cache.sh" http://example.test
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Der HTTP-Cache arbeitet"* ]]
+}
+
 @test "check-http-cache.sh: Trace fresh beim 2. Abruf entscheidet, auch wenn Date wandert" {
     # Hinter einem Proxy, der Date neu setzt, ist der Trace der einzige Beleg.
-    http_cache_stub "Age: 0|$D1|X-Symfony-Cache: miss/store" "Age: 2|$D2|X-Symfony-Cache: fresh"
+    http_cache_stub "200|Age: 0|$D1|X-Symfony-Cache: miss/store" "200|Age: 2|$D2|X-Symfony-Cache: fresh"
     PATH="$stub_dir:$PATH" run bash "$DIR/check-http-cache.sh" http://example.test
     [ "$status" -eq 0 ]
     [[ "$output" == *"Der HTTP-Cache arbeitet"* ]]
 }
 
 @test "check-http-cache.sh: Trace miss entscheidet, auch wenn Age und Date nach Treffer aussehen" {
-    http_cache_stub "Age: 0|$D1|X-Symfony-Cache: GET /: miss, store" "Age: 2|$D1|X-Symfony-Cache: GET /: miss, store; GET /_esi/global/header: fresh"
+    http_cache_stub "200|Age: 0|$D1|X-Symfony-Cache: GET /: miss, store" "200|Age: 2|$D1|X-Symfony-Cache: GET /: miss, store; GET /_esi/global/header: fresh"
     PATH="$stub_dir:$PATH" run bash "$DIR/check-http-cache.sh" http://example.test
     [ "$status" -eq 1 ]
     [[ "$output" != *"Der HTTP-Cache arbeitet"* ]]
@@ -272,29 +312,72 @@ D2="Date: Wed, 23 Sep 2026 15:53:35 GMT"
 }
 
 @test "check-http-cache.sh: Trace invalid ist kein Treffer" {
-    http_cache_stub "Age: 0|$D1|X-Symfony-Cache: stale/invalid/store" "Age: 2|$D1|X-Symfony-Cache: stale/invalid/store"
+    http_cache_stub "200|Age: 0|$D1|X-Symfony-Cache: stale/invalid/store" "200|Age: 2|$D1|X-Symfony-Cache: stale/invalid/store"
     PATH="$stub_dir:$PATH" run bash "$DIR/check-http-cache.sh" http://example.test
     [ "$status" -eq 1 ]
     [[ "$output" != *"Der HTTP-Cache arbeitet"* ]]
 }
 
-@test "check-http-cache.sh: Age gesunken = Eintrag zwischen den Abrufen abgelaufen" {
-    http_cache_stub "Age: 7000|$D1" "Age: 0|$D2"
+@test "check-http-cache.sh: Trace valid (Backend gefragt, 304) ist kein Treffer" {
+    http_cache_stub "200|Age: 0|$D1|X-Symfony-Cache: stale/valid/store" "200|Age: 2|$D1|X-Symfony-Cache: stale/valid/store"
+    PATH="$stub_dir:$PATH" run bash "$DIR/check-http-cache.sh" http://example.test
+    [ "$status" -eq 1 ]
+    [[ "$output" != *"Der HTTP-Cache arbeitet"* ]]
+}
+
+@test "check-http-cache.sh: Age gesunken = kein Treffer, mit Hinweis auf Ablauf" {
+    http_cache_stub "200|Age: 7000|$D1" "200|Age: 0|$D2"
     PATH="$stub_dir:$PATH" run bash "$DIR/check-http-cache.sh" http://example.test
     [ "$status" -eq 1 ]
     [[ "$output" == *"Age gesunken"* ]]
 }
 
+@test "check-http-cache.sh: zwei MISS mit Age 1 -> 0 (Cache aus, 6.7) nennen die Env-Variable" {
+    # Gemessen auf 6.7.2.2 mit SHOPWARE_HTTP_CACHE_ENABLED=0 direkt nach cache:clear.
+    http_cache_stub "200|Age: 1|$D1" "200|Age: 0|$D2"
+    PATH="$stub_dir:$PATH" run bash "$DIR/check-http-cache.sh" http://example.test
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"SHOPWARE_HTTP_CACHE_ENABLED=0"* ]]
+}
+
+@test "check-http-cache.sh: Age nur beim 2. Abruf = nicht entscheidbar" {
+    http_cache_stub "200|$D1" "200|Age: 0|$D2"
+    PATH="$stub_dir:$PATH" run bash "$DIR/check-http-cache.sh" http://example.test
+    [ "$status" -eq 69 ]
+    [[ "$output" == *"Age nur bei einem"* ]]
+}
+
 @test "check-http-cache.sh meldet fehlenden Age-Header als Problem" {
-    http_cache_stub "$D1" "$D2"
+    http_cache_stub "200|$D1" "200|$D2"
     PATH="$stub_dir:$PATH" run bash "$DIR/check-http-cache.sh" http://example.test
     [ "$status" -eq 1 ]
     [[ "$output" == *"Kein Age-Header"* ]]
 }
 
+@test "check-http-cache.sh: Age einer gecachten Weiterleitung zaehlt nicht fuer das Ziel" {
+    http_cache_stub "301|Age: 10|$D1|Location: /de/#200|$D2" "301|Age: 12|$D1|Location: /de/#200|$D2"
+    PATH="$stub_dir:$PATH" run bash "$DIR/check-http-cache.sh" http://example.test
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"weitergeleitet"* ]]
+    [[ "$output" == *"Kein Age-Header"* ]]
+}
+
+@test "check-http-cache.sh: Ziel liefert 404 = Aufruffehler 64" {
+    http_cache_stub "404|Age: 55|$D1" "404|Age: 55|$D1"
+    PATH="$stub_dir:$PATH" run bash "$DIR/check-http-cache.sh" http://example.test
+    [ "$status" -eq 64 ]
+    [[ "$output" == *"HTTP 404"* ]]
+}
+
+@test "check-http-cache.sh: scheitert der 2. Abruf, endet es mit 69" {
+    http_cache_stub "200|Age: 0|$D1" "FAIL"
+    PATH="$stub_dir:$PATH" run bash "$DIR/check-http-cache.sh" http://example.test
+    [ "$status" -eq 69 ]
+}
+
 @test "check-http-cache.sh wertet no-cache, private nicht als Defekt" {
     # Regressionstest zu F41: eine gesunde Storefront antwortet genau so.
-    http_cache_stub "Age: 5|$D1" "Age: 7|$D1"
+    http_cache_stub "200|Age: 5|$D1" "200|Age: 7|$D1"
     PATH="$stub_dir:$PATH" run bash "$DIR/check-http-cache.sh" http://example.test
     [ "$status" -eq 0 ]
     [[ "$output" == *"Normalfall"* ]]

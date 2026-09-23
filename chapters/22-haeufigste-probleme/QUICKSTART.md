@@ -49,11 +49,12 @@ Existiert eine `.env.local.php` (aus `composer dump-env prod`), hat sie
 
 **Erwartet:** «Der HTTP-Cache arbeitet»: `Age` wächst über zwei Requests
 um mindestens die Pause, und `Date` bleibt gleich. Wächst `Age`, `Date` aber
-auch, meldet das Skript «nicht eindeutig» (ESI-Fragment oder ein Proxy, der
-`Date` neu setzt) und nennt den Weg zur Klärung.
+auch, schreibt das Skript «KEIN Nachweis fuer einen Treffer» und endet mit
+Exit 69 (nicht entscheidbar: ESI-Fragment oder ein Proxy, der `Date` neu setzt).
+Die Ausgabe nennt den Weg zur Klärung.
 
-**Nicht erwartet:** `Cache-Control: public, max-age=…`. Eine
-Shopware-6.6-Storefront antwortet dem Browser immer mit
+**Nicht erwartet:** `Cache-Control: public, …`. Eine Shopware-Storefront
+(6.6 und 6.7) antwortet dem Browser ohne `reverse_proxy.enabled` immer mit
 `Cache-Control: no-cache, private` — auch bei einem Cache-Treffer. Wer auf
 diesen Header prüft, hält jeden korrekt konfigurierten Shop für defekt.
 
