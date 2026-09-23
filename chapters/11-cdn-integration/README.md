@@ -54,6 +54,8 @@ Drei Punkte, die den Rest dieses Verzeichnisses erklären (alle im Testshop geme
 |--------|--------------|
 | `Service/CloudflarePurgeService.php` | Purge via API v4, zerlegt Listen in 100er-Blöcke, wirft nie (loggt stattdessen) |
 | `EventSubscriber/CdnCacheTagSubscriber.php` | Übersetzt Shopwares `xkey` in einen `Cache-Tag`-Header |
+| `EventSubscriber/EarlyHintsLinkSubscriber.php` | Setzt `Link: rel=preload` für Theme-CSS und Theme-JS, damit Cloudflare Early Hints senden kann |
+| `Service/PreloadLinkBuilder.php` | Liest die URLs dafür aus dem gerenderten `<head>` (reine Logik, `tests/Unit/PreloadLinkBuilderTest.php`) |
 | `EventSubscriber/CdnPurgeSubscriber.php` | Purge bei `product.written` / `category.written` (Tags `product-`, `category-route-`, `product-listing-`, `product-listing-route-`) |
 | `Resources/config/services.xml` | Service-Definitionen (Namespace `YourPlugin` anpassen) |
 
@@ -94,6 +96,33 @@ nächsten liegt — ein Runner in Frankfurt wärmt nicht Singapur.
 zusätzlich `?<lastModified>`; Bundle-Assets werden **ausschliesslich** über den
 Query-String versioniert; Medien haben den Upload-Timestamp im Pfad **und**
 `?ts=`. Der CDN-Cache-Key muss den Query-String deshalb enthalten.
+
+## Early Hints
+
+Cloudflare sendet ein `103 Early Hints` nur mit `Link`-Headern, die es vorher an
+einer Antwort des Shops gesehen hat. Shopware setzt keinen, und
+`symfony/web-link` gehört nicht zu Shopware (in 6.6.10.6 nicht installiert,
+in 6.5 bis 6.7 keine Abhängigkeit von `shopware/core`): Der oft zitierte
+`GenericLinkProvider`-Code endet mit `Class … not found`.
+
+Ein fester Header funktioniert nicht: Theme-CSS liegt unter
+`/theme/<seed>/css/all.css?<version>`, Theme-JS unter
+`/theme/<seed>/js/storefront/storefront.js?<version>`, und der Seed wechselt
+bei jedem `theme:compile`. `EarlyHintsLinkSubscriber` nimmt deshalb die URLs,
+die Shopware gerade in den `<head>` geschrieben hat.
+
+Gemessen an 6.6.10.6 (Dockware, prod, eingebauter HTTP-Cache):
+
+- Header bei MISS und HIT, keiner bei 404, 302 oder 204.
+- Nach `theme:compile` zeigt er sofort auf den neuen Seed.
+- Chromium lädt `all.css` und `storefront.js` je einmal, ohne «preloaded but
+  not used». Ohne den Versions-Parameter lädt er beide doppelt.
+- Liegt das Theme auf einer CDN-Domain, zeigt der Header dorthin und wirkt
+  genauso.
+
+```bash
+curl -s -D - -o /dev/null https://ihr-shop.de/ | grep -i '^link'
+```
 
 ## Invalidierung
 

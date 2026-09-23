@@ -23,6 +23,13 @@
             <tag name="kernel.event_subscriber"/>
         </service>
 
+        <service id="YourPlugin\Service\PreloadLinkBuilder"/>
+
+        <service id="YourPlugin\EventSubscriber\EarlyHintsLinkSubscriber">
+            <argument type="service" id="YourPlugin\Service\PreloadLinkBuilder"/>
+            <tag name="kernel.event_subscriber"/>
+        </service>
+
         <service id="YourPlugin\EventSubscriber\CdnPurgeSubscriber">
             <argument type="service" id="YourPlugin\Service\CloudflarePurgeService"/>
             <tag name="kernel.event_subscriber"/>
