@@ -83,13 +83,16 @@ dateien() {
     # Bekannte Ausnahme: Kapitel 11 bringt noch ein eigenes HTTP/3-Fragment mit
     # `listen 443 ssl;` mit, das neben Anhang C nicht startet - MEM-323. Mit
     # dem Ticket faellt die Ausnahme weg.
+    # Gezaehlt werden Zeilen, nicht Dateien (Review MEM-318): eine doppelte
+    # quic-Zeile im Delta selbst startet ebenso wenig.
     dateien | grep -v '^chapters/11-cdn-integration/config/nginx-http3.conf$' \
         | while read -r f; do
-            grep -lE '^[[:space:]]*listen[[:space:]][^;#]*\bquic\b' "$f" 2>/dev/null || true
+            grep -HE '^[[:space:]]*listen[[:space:]][^;#]*\bquic\b' "$f" 2>/dev/null || true
         done > "$BATS_TEST_TMPDIR/quic"
     cat "$BATS_TEST_TMPDIR/quic"
-    [ "$(wc -l < "$BATS_TEST_TMPDIR/quic")" -eq 1 ]
-    [ "$(cat "$BATS_TEST_TMPDIR/quic")" = "${HTTP3#./}" ]
+    [ "$(wc -l < "$BATS_TEST_TMPDIR/quic")" -eq 2 ]
+    [ "$(cut -d: -f1 "$BATS_TEST_TMPDIR/quic" | sort -u)" = "${HTTP3#./}" ]
+    [ "$(sed 's/^[^:]*://' "$BATS_TEST_TMPDIR/quic" | tr -s ' ' | sort -u | wc -l)" -eq 2 ]
 }
 
 @test "die Ausnahme fuer Kapitel 11 ist noch noetig" {
@@ -104,9 +107,14 @@ dateien() {
     # MEM-318: Als eigener server-Block neben Anhang C lief jede HTTP/3-Anfrage
     # in diesen Block und auf einen Upstream, auf dem niemand hoert (502).
     # Das Delta darf deshalb nur ergaenzen, was der vHost aus Anhang C nicht hat.
-    for muster in '^[[:space:]]*server[[:space:]]*\{' '^[[:space:]]*server_name[[:space:]]' \
+    # Aktiv verboten sind ausserdem 0-RTT (Replay ueber TCP sofort, auf jeder
+    # Version) und quic_retry (ein Roundtrip mehr je Verbindung) - beide stehen
+    # nur als Kommentar mit Begruendung darin.
+    for muster in '^[[:space:]]*server([[:space:]{]|$)' '^[[:space:]]*server_name[[:space:]]' \
                   '^[[:space:]]*upstream[[:space:]]' '^[[:space:]]*location[[:space:]]' \
-                  '^[[:space:]]*listen[[:space:]][^;#]*\bssl\b' '^[[:space:]]*ssl_protocols[[:space:]]'; do
+                  '^[[:space:]]*listen[[:space:]][^;#]*\bssl\b' '^[[:space:]]*ssl_protocols[[:space:]]' \
+                  '^[[:space:]]*ssl_early_data[[:space:]]' '^[[:space:]]*quic_retry[[:space:]]' \
+                  '^[[:space:]]*http3[[:space:]]+off'; do
         run grep -qE "$muster" "$HTTP3"
         [ "$status" -ne 0 ]
     done
@@ -114,8 +122,14 @@ dateien() {
     grep -qxE '[[:space:]]*listen 443 quic reuseport;' "$HTTP3"
     grep -qxE '[[:space:]]*listen \[::\]:443 quic reuseport;' "$HTTP3"
     grep -qE "^[[:space:]]*add_header Alt-Svc 'h3=\":443\"; ma=86400' always;" "$HTTP3"
-    # Einbindung wie im Kopf beschrieben, und der vHost hat die Stelle dafuer.
-    grep -qF 'include snippets/shopware-http3.conf;' "$HTTP3"
+    grep -qxE '[[:space:]]*http3 on;' "$HTTP3"
+    # Einbindung wie im Kopf beschrieben (eigene Kommentarzeile), und der vHost
+    # hat die Stelle dafuer. Zieldatei im Kopf, include-Pfad und README-cp
+    # muessen dieselbe Datei nennen.
+    grep -qxE '#[[:space:]]+include snippets/shopware-http3\.conf;' "$HTTP3"
+    grep -qxF '# Datei: /etc/nginx/snippets/shopware-http3.conf' "$HTTP3"
+    grep -qxF 'sudo cp config/nginx-http3.conf /etc/nginx/snippets/shopware-http3.conf' \
+        ./chapters/24-ausblick/README.md
     grep -qE '^[[:space:]]*listen \[::\]:443 ssl;' "$VHOST"
 }
 

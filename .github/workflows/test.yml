@@ -610,6 +610,89 @@ jobs:
           docker rm -f nginx-live >/dev/null
           exit $fail
 
+      - name: Boot the chapter 24 HTTP/3 delta with the vHost
+        run: |
+          # MEM-318: Das HTTP/3-Delta aus Kapitel 24 im 443-Server von Anhang C,
+          # mit dem Pool aus Kapitel 9 und echten HTTP/3-Anfragen. nginx -t allein
+          # laesst durch, was HTTP/3 still abschaltet (`http3 off;`, ein eigenes
+          # add_header in der PHP-Location nimmt Alt-Svc mit).
+          set -euo pipefail
+          mkdir -p h3/sites h3/snippets h3/run h3/www h3/le
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=shop.example.com \
+            -keyout h3/le/privkey.pem -out h3/le/fullchain.pem 2>/dev/null
+          chmod 644 h3/le/privkey.pem
+          cp chapters/anhang-c-konfigurationen/config/nginx-shopware.conf h3/sites/shopware.conf
+          cp chapters/24-ausblick/config/nginx-http3.conf h3/snippets/shopware-http3.conf
+          cp chapters/09-php-performance/config/shopware-fpm.conf h3/pool.conf
+          # Die include-Zeile wortgleich aus dem Kopf des Deltas, gesetzt wie dort
+          # beschrieben: direkt unter die listen-Zeilen des 443-Servers.
+          inc="$(sed -nE 's/^#[[:space:]]+(include snippets\/shopware-http3\.conf;)$/\1/p' h3/snippets/shopware-http3.conf)"
+          [ -n "$inc" ] || { echo "FAIL: Kopf des Deltas nennt die include-Zeile nicht"; exit 1; }
+          sed -i "s|^\([[:space:]]*listen \[::\]:443 ssl;\)\$|\1\n    $inc|" h3/sites/shopware.conf
+          [ "$(grep -cF "$inc" h3/sites/shopware.conf)" = "1" ] || { echo "FAIL: include nicht genau einmal im vHost"; exit 1; }
+          cat > h3/nginx.conf <<'CONF'
+          user www-data;
+          events {}
+          http {
+              include /etc/nginx/mime.types;
+              include /etc/nginx/sites-enabled/*;
+          }
+          CONF
+          echo '<?php echo "PROTO=", $_SERVER["SERVER_PROTOCOL"], "\n";' > h3/www/index.php
+          cat > h3/check.sh <<'CHECK'
+          set -u
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get -qq update > /dev/null && apt-get -qq install -y curl > /dev/null
+          fail=0
+          R=shop.example.com:443
+          U=https://shop.example.com/
+          for ip in 127.0.0.1 '[::1]'; do
+              out="$(curl -sk --http3-only --max-time 10 --resolve "$R:$ip" -w 'V=%{http_version}' "$U" || true)"
+              echo "HTTP/3 ueber $ip: $(echo $out)"
+              case "$out" in *"PROTO=HTTP/3.0"*"V=3") ;; *) echo "FAIL: kein HTTP/3 ueber $ip"; fail=1 ;; esac
+          done
+          curl -sk -D - -o /dev/null --resolve "$R:127.0.0.1" "$U" > /tmp/h
+          grep -qi '^alt-svc: h3=":443"' /tmp/h || { echo "FAIL: Alt-Svc fehlt auf der Seite"; fail=1; }
+          v="$(curl -sk -o /dev/null -w '%{http_code} %{http_version}' --tlsv1.2 --tls-max 1.2 --resolve "$R:127.0.0.1" "$U" || true)"
+          [ "$v" = "200 2" ] || { echo "FAIL: TLS 1.2 ueber TCP: $v"; fail=1; }
+          # Wie ein Browser: erster Abruf ueber TCP, danach per Alt-Svc ueber QUIC.
+          rm -f /tmp/as
+          v1="$(curl -sk --alt-svc /tmp/as -o /dev/null -w '%{http_version}' --resolve "$R:127.0.0.1" "$U")"
+          v2="$(curl -sk --alt-svc /tmp/as -o /dev/null -w '%{http_version}' --resolve "$R:127.0.0.1" "$U")"
+          [ "$v1 $v2" = "2 3" ] || { echo "FAIL: Alt-Svc-Wechsel $v1 -> $v2 statt 2 -> 3"; fail=1; }
+          exit $fail
+          CHECK
+
+          docker run -d --name h3-fpm \
+            -v "$PWD/h3/run:/run/php" \
+            -v "$PWD/h3/www:/var/www/shopware/public:ro" \
+            -v "$PWD/h3/pool.conf:/usr/local/etc/php-fpm.d/shopware.conf:ro" \
+            php:8.3-fpm sh -c 'rm -f /usr/local/etc/php-fpm.d/www.conf /usr/local/etc/php-fpm.d/zz-docker.conf /usr/local/etc/php-fpm.d/docker.conf; mkdir -p /var/log/php-fpm; chown www-data /var/log/php-fpm; exec php-fpm -F' > /dev/null
+          # IPv6 im Container einschalten: Anhang C und das Delta hoeren auf [::]:443.
+          docker run -d --name h3-ng --sysctl net.ipv6.conf.all.disable_ipv6=0 \
+            -v "$PWD/h3/nginx.conf:/etc/nginx/nginx.conf:ro" \
+            -v "$PWD/h3/sites:/etc/nginx/sites-enabled:ro" \
+            -v "$PWD/h3/snippets:/etc/nginx/snippets:ro" \
+            -v "$PWD/h3/le:/etc/letsencrypt/live/shop.example.com:ro" \
+            -v "$PWD/h3/www:/var/www/shopware/public:ro" \
+            -v "$PWD/h3/run:/run/php" \
+            nginx:1.27 > /dev/null
+          for i in $(seq 1 20); do [ -S h3/run/php8.3-fpm-shopware.sock ] && break; sleep 1; done
+          sleep 2
+          fail=0
+          if [ "$(docker inspect -f '{{.State.Running}}' h3-ng)" != "true" ]; then
+            docker logs h3-ng 2>&1 | tail -5
+            echo "FAIL: nginx laeuft mit dem Delta nicht"; fail=1
+          else
+            # Der Pruefbefehl aus dem Kopf des Deltas muss leer bleiben.
+            chk="$(docker exec h3-ng nginx -t 2>&1 | grep -E 'emerg|conflicting server name' || true)"
+            [ -z "$chk" ] || { echo "FAIL: nginx -t: $chk"; fail=1; }
+            docker run --rm --network container:h3-ng -v "$PWD/h3/check.sh:/check.sh:ro" \
+              python:3.12-slim bash /check.sh || fail=1
+          fi
+          docker rm -f h3-ng h3-fpm > /dev/null
+          exit $fail
+
       - name: Counter-check the conf.d readability claim
         run: |
           # Gegenprobe zu MEM-280. Kapitel 22 und die Companion-Vorlage haben
