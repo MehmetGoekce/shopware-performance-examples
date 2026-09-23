@@ -43,6 +43,16 @@ while [[ $# -gt 1 ]]; do
     esac
 done
 
+case "${QUARTER}" in
+    Q1|Q2|Q3|Q4) ;;
+    *) echo "Usage: $(basename "$0") Q1|Q2|Q3|Q4 [--year JJJJ] [--output DATEI]" >&2; exit 1 ;;
+esac
+
+if ! command -v bc >/dev/null 2>&1; then
+    echo "Fehler: bc fehlt (apt install bc)" >&2
+    exit 2
+fi
+
 # Farben
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -125,11 +135,13 @@ CLS_END=0.06
 calc_improvement() {
     local start=$1
     local end=$2
-    echo "scale=1; ((${start} - ${end}) / ${start}) * 100" | bc
+    # erst multiplizieren, dann teilen: scale=1 vor dem *100 schnitte ab (20.0 statt 23.4)
+    LC_ALL=C printf '%.1f' "$(echo "scale=4; (${start} - ${end}) * 100 / ${start}" | bc)"
 }
 
 LCP_IMPROVEMENT=$(calc_improvement ${LCP_START} ${LCP_END})
 INP_IMPROVEMENT=$(calc_improvement ${INP_START} ${INP_END})
+CLS_IMPROVEMENT=$(calc_improvement ${CLS_START} ${CLS_END})
 
 cat >> "${REPORT_FILE}" << EOF
 ### Core Web Vitals Performance
@@ -138,13 +150,13 @@ cat >> "${REPORT_FILE}" << EOF
 |--------|---------------|--------------|--------------|
 | LCP (p75) | ${LCP_START}ms | ${LCP_END}ms | **${LCP_IMPROVEMENT}%** ↓ |
 | INP (p75) | ${INP_START}ms | ${INP_END}ms | **${INP_IMPROVEMENT}%** ↓ |
-| CLS (p75) | ${CLS_START} | ${CLS_END} | **50%** ↓ |
+| CLS (p75) | ${CLS_START} | ${CLS_END} | **${CLS_IMPROVEMENT}%** ↓ |
 
 **Bewertung**:
 EOF
 
 # Bewertung
-if [[ "${LCP_END}" -le 2500 ]] && [[ "${INP_END}" -le 200 ]]; then
+if [[ "${LCP_END}" -le 2500 ]] && [[ "${INP_END}" -le 200 ]] && [[ "$(echo "${CLS_END} <= 0.1" | bc)" -eq 1 ]]; then
     echo "Alle Core Web Vitals im 'Good' Bereich." >> "${REPORT_FILE}"
 else
     echo "Verbesserungen nötig bei einzelnen Metriken." >> "${REPORT_FILE}"
@@ -239,7 +251,7 @@ cat >> "${REPORT_FILE}" << EOF
 |--------|---------------|--------------|-------|
 | Backlog Items | 18 | 12 | ↓ 33% |
 | Geschätzte Stunden | 240h | 160h | ↓ 33% |
-| Tech Debt Score | 45 | 32 | ↓ Healthy |
+| Tech Debt Score (Severity-Punkte, Kapitel 15) | 410 | 230 | ↓ attention (< 200 gesund) |
 
 ### Resolved Tech Debt
 
@@ -265,10 +277,10 @@ cat >> "${REPORT_FILE}" << EOF
 
 | Kategorie | Geplant | Ausgegeben | Varianz |
 |-----------|---------|------------|---------|
-| Tooling | CHF 3.750 | CHF 3.550 | -5% |
-| Infrastructure | CHF 5.000 | CHF 5.500 | +10% |
-| Training | CHF 2.500 | CHF 2.075 | -17% |
-| **Total Q** | **CHF 12.500** | **CHF 12.875** | **+3%** |
+| Tooling | CHF 3'750 | CHF 3'550 | -5% |
+| Infrastructure | CHF 5'000 | CHF 5'500 | +10% |
+| Training | CHF 2'500 | CHF 2'075 | -17% |
+| **Total Q** | **CHF 11'250** | **CHF 11'125** | **-1%** |
 
 **Jahres-Budget Status**: 48% verbraucht (Ziel: 50%)
 
@@ -293,7 +305,7 @@ cat >> "${REPORT_FILE}" << EOF
 
 2. **Champion-Programm gestartet**
    - 2 neue Champions ausgebildet
-   - Wöchentliche Brown Bags etabliert
+   - Monatliche Brown Bags etabliert
 
 3. **Zero P0 Incidents**
    - Kein kritischer Performance-Incident
@@ -348,7 +360,7 @@ cat >> "${REPORT_FILE}" << EOF
 ### Fokus-Themen
 
 1. **INP < 150ms**
-   - Google Core Update macht INP wichtiger
+   - INP ist seit März 2024 Core Web Vital (statt FID)
    - Ziel: p75 < 150ms auf allen kritischen Seiten
 
 2. **Automatisierung**

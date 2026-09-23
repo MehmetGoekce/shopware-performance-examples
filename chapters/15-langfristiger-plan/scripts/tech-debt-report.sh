@@ -18,9 +18,14 @@
 #   ./tech-debt-report.sh --json
 #
 # Voraussetzungen:
-#   - jq (für JSON-Output)
+#   - jq (jede Ausgabeform)
 
 set -e
+
+if ! command -v jq >/dev/null 2>&1; then
+    echo "Fehler: jq fehlt (apt install jq)" >&2
+    exit 2
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SHOW_TREND=false
@@ -59,7 +64,7 @@ NC='\033[0m'
 DATA_NOTE="BEISPIELDATEN aus dem Skript, keine Messung"
 
 # Tech Debt Items (JSON), severity: critical|high|medium|low,
-# effort: trivial (<2h)|small (<1 Tag)|medium (1-3 Tage)|large|xlarge
+# effort: trivial (<2h)|small (<1 Tag)|medium (1-5 Tage)|large|xlarge
 TECH_DEBT_DATA='[
     {
         "id": "TD-001",

@@ -18,7 +18,7 @@ teardown() {
 }
 
 @test "tech-debt-report: Text nennt Beispieldaten und die Kapitel-Skala" {
-    command -v jq >/dev/null 2>&1 || skip "jq fehlt (Image localhost/bats-ubuntu-jq:24.04)"
+    command -v jq >/dev/null 2>&1 || skip "jq fehlt (Image localhost/bats-ubuntu-jq-bc:24.04)"
     run bash "$DIR/tech-debt-report.sh"
     [ "$status" -eq 0 ]
     [[ "$output" == *"HINWEIS: BEISPIELDATEN aus dem Skript, keine Messung"* ]]
@@ -27,7 +27,7 @@ teardown() {
 }
 
 @test "tech-debt-report: JSON nennt Beispieldaten, Score und Prioritaet wie Kapitel 15" {
-    command -v jq >/dev/null 2>&1 || skip "jq fehlt (Image localhost/bats-ubuntu-jq:24.04)"
+    command -v jq >/dev/null 2>&1 || skip "jq fehlt (Image localhost/bats-ubuntu-jq-bc:24.04)"
     run bash "$DIR/tech-debt-report.sh" --json
     [ "$status" -eq 0 ]
     [ "$(jq -r '.data_source' <<<"$output")" = "BEISPIELDATEN aus dem Skript, keine Messung" ]
@@ -38,7 +38,7 @@ teardown() {
 }
 
 @test "tech-debt-report: Sprint-Empfehlung bleibt im 25-%-Budget (20 h)" {
-    command -v jq >/dev/null 2>&1 || skip "jq fehlt (Image localhost/bats-ubuntu-jq:24.04)"
+    command -v jq >/dev/null 2>&1 || skip "jq fehlt (Image localhost/bats-ubuntu-jq-bc:24.04)"
     run bash "$DIR/tech-debt-report.sh"
     [ "$status" -eq 0 ]
     [[ "$output" == *"Synchrone Third-Party Scripts (8h)"* ]]

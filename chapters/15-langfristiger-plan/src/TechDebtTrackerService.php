@@ -28,7 +28,7 @@ class TechDebtTrackerService
     private const EFFORT_POINTS = [
         'trivial' => 1,    // < 2 Stunden
         'small' => 2,      // < 1 Tag
-        'medium' => 5,     // 1-3 Tage
+        'medium' => 5,     // 1-5 Tage
         'large' => 13,     // 1-2 Wochen
         'xlarge' => 21,    // > 2 Wochen
     ];
@@ -46,7 +46,8 @@ class TechDebtTrackerService
         $severity = self::SEVERITY_POINTS[$item['severity']] ?? 10;
         $effort = self::EFFORT_POINTS[$item['effort']] ?? 5;
 
-        // WSJF-ähnliche Priorisierung: Wert / Aufwand
+        // WSJF-ähnliche Priorisierung: Wert / Aufwand. Critical-Items
+        // (SLA < 1 Sprint) laufen ausserhalb dieser Rangliste
         return $severity / $effort;
     }
 
@@ -69,7 +70,7 @@ class TechDebtTrackerService
         }
 
         // Score: Je höher, desto mehr Schulden
-        // Richtwert: < 200 = gesund, 200-500 = Aufmerksamkeit, > 500 = kritisch
+        // Richtwert: < 200 = gesund, 200-499 = Aufmerksamkeit, ab 500 = kritisch
         return [
             'total_score' => $totalPoints,
             'status' => $this->getStatus($totalPoints),

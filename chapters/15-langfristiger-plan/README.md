@@ -34,6 +34,8 @@ Ausgabe. Für eigene Daten ersetzen Sie die Datenblöcke am Skriptanfang.
 
 - **kpi-targets.yaml** - KPI-Zielwerte für 3 Jahre; `current_baseline` ist
   leer und wartet auf Ihre eigene Messung
+- **maintenance-workflow.yml** - GitHub-Actions-Workflow für die wöchentliche
+  Wartung (composer audit, Lighthouse-Baseline, Issue bei Fehlern)
 
 ## Verwendung
 

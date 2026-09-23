@@ -31,7 +31,7 @@ STUB
 }
 
 need_jq() {
-    command -v jq >/dev/null 2>&1 || skip "jq fehlt (Image localhost/bats-ubuntu-jq:24.04)"
+    command -v jq >/dev/null 2>&1 || skip "jq fehlt (Image localhost/bats-ubuntu-jq-bc:24.04)"
 }
 
 teardown() {

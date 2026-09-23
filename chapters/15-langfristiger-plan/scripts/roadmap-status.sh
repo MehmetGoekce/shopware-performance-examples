@@ -24,8 +24,11 @@ ALERTS_ONLY=false
 while [[ $# -gt 0 ]]; do
     case $1 in
         --quarter)
-            CURRENT_QUARTER="$2"
-            shift 2
+            # nur die Anzeige; die Beispiel-Milestones gelten fuer alle Quartale
+            case "${2:-}" in
+                Q1|Q2|Q3|Q4) CURRENT_QUARTER="$2"; shift 2 ;;
+                *) echo "Fehler: --quarter braucht Q1, Q2, Q3 oder Q4" >&2; exit 1 ;;
+            esac
             ;;
         --alerts-only)
             ALERTS_ONLY=true
@@ -68,14 +71,16 @@ NC='\033[0m'
 # In Realität aus Roadmap-File und Tracking-System
 # ============================================================
 
-# Milestones mit Status
+# Milestones mit Status. Zieldaten relativ zu heute, damit das Beispiel
+# jeden Zweig zeigt (erledigt, laufend, gefaehrdet, offen, ueberfaellig)
+rel() { date -d "$1 days" +%Y-%m-%d; }
 declare -A MILESTONES
-MILESTONES["M-Q1-1"]="completed|2025-01-28|RUM Dashboard vollständig"
-MILESTONES["M-Q1-2"]="completed|2025-02-25|Top 10 Pages optimiert"
-MILESTONES["M-Q1-3"]="in_progress|2025-03-15|Performance Champion Program gestartet"
-MILESTONES["M-Q2-1"]="pending|2025-04-30|Checkout LCP < 2s"
-MILESTONES["M-Q2-2"]="pending|2025-05-31|Mobile CWV alle 'Good'"
-MILESTONES["M-Q2-3"]="at_risk|2025-06-15|Redis Cluster produktiv"
+MILESTONES["M-1"]="completed|$(rel -60)|RUM-Auswertung eingerichtet (rum:report, Kapitel 12)"
+MILESTONES["M-2"]="completed|$(rel -30)|Top 10 Pages optimiert"
+MILESTONES["M-3"]="in_progress|$(rel 10)|Performance Champion Program gestartet"
+MILESTONES["M-4"]="pending|$(rel -5)|Checkout LCP < 2s"
+MILESTONES["M-5"]="pending|$(rel 45)|Mobile CWV alle 'Good'"
+MILESTONES["M-6"]="at_risk|$(rel 20)|Redis produktiv (Kapitel 7)"
 
 # Risiken
 declare -A RISKS

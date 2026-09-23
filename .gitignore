@@ -58,3 +58,6 @@ chapters/16-shopware-themes/PerformanceTheme/src/Resources/app/storefront/dist/
 # Python-Bytecode
 __pycache__/
 *.pyc
+
+# Reports der Kapitel-15-Skripte (quarterly-review.sh)
+chapters/15-langfristiger-plan/reports/

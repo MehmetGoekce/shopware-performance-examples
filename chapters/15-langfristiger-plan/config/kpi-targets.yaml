@@ -108,7 +108,7 @@ leading_indicators:
     tech_debt_score:
       # Skala von Kapitel 15 (src/TechDebtTrackerService.php): Summe der
       # Severity-Punkte offener Items, critical 100, high 40, medium 10, low 2.
-      # Unter 200 gesund, 200-500 Aufmerksamkeit, ab 500 kritisch.
+      # Unter 200 gesund, 200-499 Aufmerksamkeit, ab 500 kritisch.
       description: "Summe der Severity-Punkte, niedriger = besser"
       unit: "points"
       targets:
@@ -312,7 +312,7 @@ tracking:
       channel: "pagerduty"
 
     # Stufen wie templates/error-budget-policy.yaml aus Kapitel 14
-    # (scripts/error-budget.php): unter 50 % yellow, unter 20 % orange,
+    # (scripts/error-budget.php): bis 50 % yellow, unter 20 % orange,
     # unter 0 % red = p75 nicht mehr gut
     - metric: "error_budget_remaining"
       condition: "< 20"
