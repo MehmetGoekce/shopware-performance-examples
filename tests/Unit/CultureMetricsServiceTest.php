@@ -156,11 +156,12 @@ class CultureMetricsServiceTest extends TestCase
 
     public function testSurveyScaleOneToFiveMapsToZeroToHundred(): void
     {
-        foreach ([1.0 => 0.0, 3.0 => 50.0, 5.0 => 100.0] as $average => $score) {
+        // 0.5 liegt unter der Skala 1-5 und wird auf 1 begrenzt, nicht negativ
+        foreach (['0.5' => 0.0, '1.0' => 0.0, '3.0' => 50.0, '5.0' => 100.0] as $average => $score) {
             $service = new CultureMetricsService(self::source(
                 null,
                 null,
-                ['date' => '2026-09-01', 'average_score' => $average, 'response_rate' => 1.0],
+                ['date' => '2026-09-01', 'average_score' => (float) $average, 'response_rate' => 1.0],
                 null
             ));
 

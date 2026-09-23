@@ -80,3 +80,37 @@ STUB
         [[ "$output" != *"Basis zu gro"* && "$output" != *"value too great"* ]]
     done
 }
+
+@test "roadmap-status: listet alle sechs Milestones, gruppiert nach Quartal des Zieldatums" {
+    run bash "$DIR/roadmap-status.sh"
+    [ "$status" -eq 0 ]
+    for id in M-1 M-2 M-3 M-4 M-5 M-6; do
+        [[ "$output" == *"[$id]"* ]]
+    done
+    # Beispieldaten relativ zu heute: jeder Zweig kommt vor, M-6 liegt 20 Tage voraus
+    [[ "$output" == *"At Risk:"*"1"* ]]
+    [[ "$output" == *"(20d remaining)"* ]]
+    [[ "$output" == *"(5d overdue)"* ]]
+}
+
+@test "roadmap-status: --quarter ohne gueltigen Wert ist Exit 1 mit Meldung" {
+    run bash "$DIR/roadmap-status.sh" --quarter
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"--quarter braucht"* ]]
+}
+
+@test "quarterly-review: Verbesserung und Budgetsummen stimmen" {
+    command -v bc >/dev/null 2>&1 || skip "bc fehlt"
+    OUTPUT_DIR="$TMP" run bash "$DIR/quarterly-review.sh" Q2
+    [ "$status" -eq 0 ]
+    # (3200 - 2450) / 3200 = 23.4375 %, (220 - 175) / 220 = 20.45 %
+    [[ "$output" == *"CWV Improvement: LCP 23.4%, INP 20.5%"* ]]
+    run grep -F "| **Total Q** | **CHF 11'250** | **CHF 11'125** | **-1%** |" "$TMP"/quarterly-review-Q2-*.md
+    [ "$status" -eq 0 ]
+}
+
+@test "quarterly-review: unbekanntes Quartal ist Exit 1" {
+    run bash "$DIR/quarterly-review.sh" Q9
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"Usage:"* ]]
+}

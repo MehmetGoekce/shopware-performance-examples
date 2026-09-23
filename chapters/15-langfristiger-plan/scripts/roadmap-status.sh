@@ -137,7 +137,8 @@ check_overdue() {
 days_until() {
     local target_date=$1
     target_ts=$(date -d "${target_date}" +%s 2>/dev/null || echo "0")
-    today_ts=$(date +%s)
+    # ab Mitternacht zaehlen, sonst wird aus "in 20 Tagen" durch die Uhrzeit 19
+    today_ts=$(date -d "$(date +%Y-%m-%d)" +%s)
     diff=$(( (target_ts - today_ts) / 86400 ))
     echo "${diff}"
 }
@@ -244,19 +245,28 @@ echo "  Alle Milestones"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-# Nach Quartal gruppieren
-for q in Q1 Q2 Q3 Q4; do
+# Nach dem Quartal des Zieldatums gruppieren (JJJJ-Qn)
+milestone_quarter() {
+    local month=$((10#${1:5:2}))
+    echo "${1:0:4}-Q$(( (month - 1) / 3 + 1 ))"
+}
+
+PERIODS=$(for key in "${!MILESTONES[@]}"; do
+    IFS='|' read -r _ date _ <<< "${MILESTONES[${key}]}"
+    milestone_quarter "${date}"
+done | sort -u)
+
+for q in ${PERIODS}; do
     has_items=false
 
     for key in $(echo "${!MILESTONES[@]}" | tr ' ' '\n' | sort); do
-        if [[ ${key} == *"${q}"* ]]; then
+        IFS='|' read -r status date title <<< "${MILESTONES[${key}]}"
+        if [[ "$(milestone_quarter "${date}")" == "${q}" ]]; then
             if [[ "${has_items}" = false ]]; then
-                echo -e "  ${BLUE}${q} ${YEAR}${NC}"
+                echo -e "  ${BLUE}${q}${NC}"
                 echo "  ──────────"
                 has_items=true
             fi
-
-            IFS='|' read -r status date title <<< "${MILESTONES[${key}]}"
 
             # Status aktualisieren wenn overdue
             if [[ "$(check_overdue "${date}" "${status}")" == "true" ]]; then
