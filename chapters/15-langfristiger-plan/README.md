@@ -14,19 +14,26 @@ Praktische Implementierungen für nachhaltiges Performance-Management:
 
 ### Services (`src/`)
 
-- **TechDebtTrackerService.php** - Technical Debt Tracking und Priorisierung
-- **AnnualReportService.php** - Jahresberichte und KPI-Aggregation
-- **OkrProgressService.php** - OKR-Fortschritts-Tracking
+- **TechDebtTrackerService.php** + **TechDebtRepository.php** - Tech-Debt-Score
+  und Priorisierung wie im Buch, lauffähig und getestet
+  (`tests/Unit/TechDebtTrackerServiceTest.php`)
+- **AnnualPerformanceReportService.php** - Jahresbericht, **Skizze** (nicht lauffähig)
+- **OkrProgressService.php** - OKR-Fortschritts-Tracking, **Skizze** (nicht lauffähig)
 
 ### Scripts (`scripts/`)
 
-- **quarterly-review.sh** - Automatisiertes Quarterly Review
-- **tech-debt-report.sh** - Tech-Debt-Bericht generieren
-- **roadmap-status.sh** - Roadmap-Status prüfen
+Alle drei Skripte laufen mit **Beispieldaten, die im Skript stehen**. Sie
+zeigen den Aufbau eines Reports, keine Messung, und sagen das in ihrer
+Ausgabe. Für eigene Daten ersetzen Sie die Datenblöcke am Skriptanfang.
+
+- **quarterly-review.sh** - Quarterly-Review-Report (Markdown)
+- **tech-debt-report.sh** - Tech-Debt-Bericht, Skala wie im Buch
+- **roadmap-status.sh** - Roadmap-Status mit Milestones und Risiken
 
 ### Config (`config/`)
 
-- **kpi-targets.yaml** - KPI-Zielwerte für 3 Jahre
+- **kpi-targets.yaml** - KPI-Zielwerte für 3 Jahre; `current_baseline` ist
+  leer und wartet auf Ihre eigene Messung
 
 ## Verwendung
 
@@ -40,37 +47,35 @@ cp templates/roadmap.yaml config/roadmap-2025.yaml
 vi config/roadmap-2025.yaml
 ```
 
-### OKRs tracken
+### Tech Debt bewerten
+
+Score = Summe der Severity-Punkte aller offenen Items (critical 100, high 40,
+medium 10, low 2), ohne Obergrenze: unter 200 gesund, 200-499 Aufmerksamkeit,
+ab 500 kritisch. Priorität = Severity-Punkte / Aufwandspunkte (trivial 1,
+small 2, medium 5, large 13, xlarge 21). Die Items liefert eine eigene Klasse,
+die `TechDebtRepository` implementiert (Jira, GitHub Issues, Tabelle).
 
 ```php
-use App\Service\OkrProgressService;
+use App\Service\TechDebtTrackerService;
 
-$okrService = new OkrProgressService($repository);
+$score = (new TechDebtTrackerService(new MyJiraTechDebtRepository()))->getTechDebtScore();
 
-// Aktuellen Fortschritt berechnen
-$progress = $okrService->calculateQuarterProgress('Q1-2025');
-
-// Status: on_track, at_risk, off_track
-echo $progress['status'];
+echo $score['total_score'], ' ', $score['status'];   // z. B. "230 attention"
 ```
 
-### Tech-Debt-Report
+### Tech-Debt-Report (Beispieldaten)
 
 ```bash
-# Tech-Debt-Bericht erstellen
-./scripts/tech-debt-report.sh
-
-# Mit Trend-Analyse
-./scripts/tech-debt-report.sh --trend
+./scripts/tech-debt-report.sh            # Text
+./scripts/tech-debt-report.sh --trend    # mit Beispielverlauf
+./scripts/tech-debt-report.sh --json     # "data_source" nennt die Beispieldaten
 ```
 
-### Quarterly Review
+### Quarterly Review (Beispieldaten)
 
 ```bash
-# Quarterly Review vorbereiten
 ./scripts/quarterly-review.sh Q1
-
-# Output: Markdown-Report mit allen KPIs
+# Output: Markdown-Report in reports/, mit Hinweis auf die Beispieldaten
 ```
 
 ## Wartungskalender
@@ -89,19 +94,29 @@ Das Template `maintenance-calendar.yaml` definiert:
 
 ### Mit Kapitel 12 (RUM)
 
-```php
-// RUM-Daten für Jahresbericht
-$rumService = new RumDashboardService(...);
-$yearData = $rumService->getYearlyTrends();
+Das Plugin `RumMonitoring` hat keine Lese-API und behält die Logs 30 Tage
+(Monolog, eine Datei pro Tag). Für Jahresverläufe legen Sie jeden Monat die
+Ausgabe ab und werten die zwölf Monatsdateien aus:
+
+```bash
+bin/console rum:report --hours=672 > reports/rum-$(date +%Y-%m).txt
 ```
+
+Den Monatsbericht mit Error Budget baut
+`chapters/14-performance-kultur/scripts/generate-report.sh monthly`
+(Wartungskalender M-1).
 
 ### Mit Kapitel 14 (Kultur)
 
 ```php
-// Culture Score in Jahresbericht
-$cultureService = new CultureMetricsService(...);
-$cultureScore = $cultureService->calculateCultureScore();
+use PerformanceKultur\CultureMetricsService;
+use PerformanceKultur\PerformanceBudgetService;
+
+$budget = PerformanceBudgetService::calculate($records);
+$culture = (new CultureMetricsService(new MyTeamDataSource()))->calculateCultureScore($budget);
 ```
+
+Details: `chapters/14-performance-kultur/README.md`.
 
 ## Referenzen
 

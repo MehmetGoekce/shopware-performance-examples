@@ -9,8 +9,11 @@ use Psr\Log\LoggerInterface;
 /**
  * OKR Progress Tracking Service
  *
- * Trackt Fortschritt von Performance-OKRs über Quartale.
- * Integriert mit RUM-Daten für automatisches Key Result Tracking.
+ * SKIZZE, nicht lauffaehig: OkrRepository und RumDataRepository gibt es im
+ * Companion nicht, sie stehen fuer Ihre eigene Ablage. Das Plugin aus
+ * Kapitel 12 liefert keine Lese-API; Key Results zu Core Web Vitals lesen Sie
+ * aus "bin/console rum:report" (p75 der letzten Stunden, hoechstens 29 Tage).
+ * Die Bewertungsstufen (0.7 = Erfolg) folgen der OKR-Praxis aus Kapitel 15.
  */
 class OkrProgressService
 {

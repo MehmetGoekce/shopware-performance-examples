@@ -7,6 +7,11 @@
 #   - Als Referenz für OKR-Planung
 #   - Für automatisiertes Tracking
 #   - Als Basis für Reporting
+#
+# current_baseline: Ihr eigener Messwert vor dem Start. Hier bewusst leer
+# (null) - tragen Sie ein, was Sie gemessen haben (CWV: rum:report aus
+# Kapitel 12, Tech Debt: TechDebtTrackerService, Kultur: CultureMetricsService
+# aus Kapitel 14). Die Zielwerte sind Beispiele, keine Branchenwerte.
 
 ---
 meta:
@@ -34,7 +39,7 @@ leading_indicators:
         year_1: 2500
         year_2: 2200
         year_3: 2000
-      current_baseline: 3200
+      current_baseline: null
 
     inp_p75:
       unit: "ms"
@@ -45,7 +50,7 @@ leading_indicators:
         year_1: 200
         year_2: 175
         year_3: 150
-      current_baseline: 250
+      current_baseline: null
 
     cls_p75:
       unit: "score"
@@ -56,7 +61,7 @@ leading_indicators:
         year_1: 0.1
         year_2: 0.08
         year_3: 0.05
-      current_baseline: 0.15
+      current_baseline: null
 
   # CWV Good Rate (Prozent der Page Views im "Good" Bereich)
   cwv_good_rate:
@@ -65,7 +70,7 @@ leading_indicators:
       year_1: 75
       year_2: 85
       year_3: 95
-    current_baseline: 60
+    current_baseline: null
 
   # Process Metrics
   process_metrics:
@@ -77,7 +82,7 @@ leading_indicators:
         year_1: 80
         year_2: 90
         year_3: 95
-      current_baseline: 50
+      current_baseline: null
 
     ci_performance_gates:
       description: "Prozent der Pipelines mit Performance-Checks"
@@ -86,7 +91,7 @@ leading_indicators:
         year_1: 100
         year_2: 100
         year_3: 100
-      current_baseline: 30
+      current_baseline: null
 
     performance_champion_ratio:
       description: "Champions pro 10 Developers"
@@ -95,19 +100,22 @@ leading_indicators:
         year_1: 1
         year_2: 2
         year_3: 2
-      current_baseline: 0
+      current_baseline: null
 
   # Tech Debt
   tech_debt:
 
     tech_debt_score:
-      description: "Score 0-100, niedriger = besser"
-      unit: "score"
+      # Skala von Kapitel 15 (src/TechDebtTrackerService.php): Summe der
+      # Severity-Punkte offener Items, critical 100, high 40, medium 10, low 2.
+      # Unter 200 gesund, 200-500 Aufmerksamkeit, ab 500 kritisch.
+      description: "Summe der Severity-Punkte, niedriger = besser"
+      unit: "points"
       targets:
-        year_1: 40
-        year_2: 30
-        year_3: 25
-      current_baseline: 55
+        year_1: "<500"
+        year_2: "<200"
+        year_3: "<200"
+      current_baseline: null
 
     tech_debt_resolution_rate:
       description: "Prozent des 25% Budgets genutzt"
@@ -116,7 +124,7 @@ leading_indicators:
         year_1: 80
         year_2: 90
         year_3: 95
-      current_baseline: 40
+      current_baseline: null
 
   # Error Budget
   error_budget:
@@ -128,7 +136,7 @@ leading_indicators:
         year_1: ">50"
         year_2: ">60"
         year_3: ">70"
-      current_baseline: 35
+      current_baseline: null
 
     budget_policy:
       description: "Häufigste Policy-Farbe"
@@ -137,7 +145,7 @@ leading_indicators:
         year_1: "green_or_yellow"
         year_2: "mostly_green"
         year_3: "always_green"
-      current_baseline: "yellow"
+      current_baseline: null
 
 # ============================================================
 # LAGGING INDICATORS
@@ -156,7 +164,7 @@ lagging_indicators:
         year_1: 3.0
         year_2: 3.5
         year_3: 4.0
-      current_baseline: 2.5
+      current_baseline: null
 
     bounce_rate:
       description: "Bounce Rate (niedriger = besser)"
@@ -165,7 +173,7 @@ lagging_indicators:
         year_1: 35
         year_2: 30
         year_3: 25
-      current_baseline: 45
+      current_baseline: null
 
     pages_per_session:
       description: "Durchschnittliche Seitenaufrufe pro Session"
@@ -174,7 +182,7 @@ lagging_indicators:
         year_1: 4.0
         year_2: 4.5
         year_3: 5.0
-      current_baseline: 3.2
+      current_baseline: null
 
     session_duration:
       description: "Durchschnittliche Session-Dauer"
@@ -183,7 +191,7 @@ lagging_indicators:
         year_1: 180
         year_2: 210
         year_3: 240
-      current_baseline: 150
+      current_baseline: null
 
   # SEO Metrics
   seo:
@@ -195,7 +203,7 @@ lagging_indicators:
         year_1: 8
         year_2: 5
         year_3: 3
-      current_baseline: 12
+      current_baseline: null
 
     organic_traffic_growth:
       description: "YoY Wachstum organischer Traffic"
@@ -204,7 +212,7 @@ lagging_indicators:
         year_1: 20
         year_2: 25
         year_3: 30
-      current_baseline: 10
+      current_baseline: null
 
   # Reliability Metrics
   reliability:
@@ -216,7 +224,7 @@ lagging_indicators:
         year_1: 99.9
         year_2: 99.95
         year_3: 99.99
-      current_baseline: 99.5
+      current_baseline: null
 
     p0_incidents_per_year:
       description: "Kritische Performance-Incidents pro Jahr"
@@ -225,7 +233,7 @@ lagging_indicators:
         year_1: 2
         year_2: 1
         year_3: 0
-      current_baseline: 5
+      current_baseline: null
 
     mttr:
       description: "Mean Time to Recovery (Stunden)"
@@ -234,7 +242,7 @@ lagging_indicators:
         year_1: 2
         year_2: 1
         year_3: 0.5
-      current_baseline: 4
+      current_baseline: null
 
 # ============================================================
 # TEAM & CULTURE METRICS
@@ -249,7 +257,7 @@ team_culture:
       year_1: 70
       year_2: 80
       year_3: 90
-    current_baseline: 55
+    current_baseline: null
 
   developer_satisfaction:
     description: "Survey Score zu Performance-Tooling (1-5)"
@@ -258,7 +266,7 @@ team_culture:
       year_1: 3.5
       year_2: 4.0
       year_3: 4.5
-    current_baseline: 2.8
+    current_baseline: null
 
   knowledge_sharing_score:
     description: "Brown Bags, Wiki Updates, Slack Activity"
@@ -267,7 +275,7 @@ team_culture:
       year_1: 60
       year_2: 75
       year_3: 85
-    current_baseline: 40
+    current_baseline: null
 
 # ============================================================
 # TRACKING CONFIGURATION
@@ -285,7 +293,7 @@ tracking:
 
   # Datenquellen
   data_sources:
-    cwv: "rum_api"
+    cwv: "rum:report (Plugin RumMonitoring, Kapitel 12; Logs der letzten 29 Tage)"
     conversion: "analytics_api"
     tech_debt: "jira_api"
     culture: "survey + slack + wiki"
@@ -303,13 +311,16 @@ tracking:
       severity: "critical"
       channel: "pagerduty"
 
+    # Stufen wie templates/error-budget-policy.yaml aus Kapitel 14
+    # (scripts/error-budget.php): unter 50 % yellow, unter 20 % orange,
+    # unter 0 % red = p75 nicht mehr gut
     - metric: "error_budget_remaining"
-      condition: "< 30"
+      condition: "< 20"
       severity: "warning"
       channel: "slack"
 
     - metric: "error_budget_remaining"
-      condition: "< 10"
+      condition: "< 0"
       severity: "critical"
       channel: "pagerduty"
 

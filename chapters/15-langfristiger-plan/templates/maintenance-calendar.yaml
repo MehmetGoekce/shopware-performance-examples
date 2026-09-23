@@ -83,7 +83,8 @@ weekly:
         - "Wie viele PRs diese Woche?"
         - "Wie viele mit Performance-Review?"
         - "Rate > 80%?"
-      script: "./scripts/pr-stats.sh --days 7"
+      # Pfade ab Wurzel des Companion-Repos
+      script: "chapters/14-performance-kultur/scripts/pr-stats.sh --days 7"
 
     - id: W-3
       name: "RUM Data Analysis"
@@ -133,7 +134,9 @@ monthly:
       description: "Detaillierter Monatsbericht erstellen"
       time: "2 hours"
       week: "First week"
-      script: "./scripts/generate-report.sh monthly"
+      # Kapitel 14 (es gibt ein gleichnamiges Skript in Kapitel 22); als
+      # Benutzer des Webservers, siehe chapters/14-performance-kultur/README.md
+      script: "SHOPWARE_DIR=/var/www/shop chapters/14-performance-kultur/scripts/generate-report.sh monthly"
       recipients:
         - "Engineering Leadership"
         - "Product Management"
@@ -283,7 +286,11 @@ annually:
       description: "Jahresbericht Performance"
       time: "1 day"
       month: "December"
-      script: "./scripts/annual-report.sh"
+      # Kein Skript: Aufbau als Skizze in
+      # chapters/15-langfristiger-plan/src/AnnualPerformanceReportService.php,
+      # Datengrundlage sind die zwoelf Monatsberichte aus M-1 (die RUM-Logs
+      # reichen nur 29 Tage zurueck)
+      source: "Monatsberichte M-1"
       content:
         - "Year in Review"
         - "Key Achievements"
