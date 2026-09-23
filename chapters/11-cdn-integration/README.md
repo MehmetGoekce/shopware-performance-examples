@@ -100,25 +100,31 @@ Query-String versioniert; Medien haben den Upload-Timestamp im Pfad **und**
 ## Early Hints
 
 Cloudflare sendet ein `103 Early Hints` nur mit `Link`-Headern, die es vorher an
-einer Antwort des Shops gesehen hat. Shopware setzt keinen, und
-`symfony/web-link` gehört nicht zu Shopware (in 6.6.10.6 nicht installiert,
-in 6.5 bis 6.7 keine Abhängigkeit von `shopware/core`): Der oft zitierte
-`GenericLinkProvider`-Code endet mit `Class … not found`.
+einer Antwort des Shops gesehen hat, und nur für URIs ohne Dateiendung oder mit
+`.html`/`.htm`/`.php`. Ob Varianten-URLs wie `/Variant-product/SWDEMO10005.1`
+als «Endung» zählen, dokumentiert Cloudflare nicht. Shopware setzt keinen
+solchen Header, und `symfony/web-link` gehört nicht zu Shopware (in 6.6.10.6
+nicht installiert, in 6.5 bis 6.7 keine Abhängigkeit von `shopware/core`): Der
+oft zitierte `GenericLinkProvider`-Code endet mit `Class … not found`.
 
 Ein fester Header funktioniert nicht: Theme-CSS liegt unter
-`/theme/<seed>/css/all.css?<version>`, Theme-JS unter
-`/theme/<seed>/js/storefront/storefront.js?<version>`, und der Seed wechselt
-bei jedem `theme:compile`. `EarlyHintsLinkSubscriber` nimmt deshalb die URLs,
-die Shopware gerade in den `<head>` geschrieben hat.
+`/theme/<hash>/css/all.css?<version>`, Theme-JS unter
+`/theme/<hash>/js/storefront/storefront.js?<version>`, und der Hash wechselt
+bei jedem `theme:compile`. `EarlyHintsLinkSubscriber` nimmt deshalb genau diese
+beiden URLs so, wie Shopware sie gerade in den `<head>` geschrieben hat.
+Plugin-Skripte (`/theme/<hash>/js/<plugin>/…`) und ab 6.7.11 das Modul-Skript
+und Komponenten-CSS aus `/bundles/` bleiben draussen.
 
-Gemessen an 6.6.10.6 (Dockware, prod, eingebauter HTTP-Cache):
+Gemessen an 6.6.10.6 (Dockware, prod, eingebauter HTTP-Cache), und zwar am
+`Link`-Header der 200-Antwort, ohne CDN:
 
 - Header bei MISS und HIT, keiner bei 404, 302 oder 204.
-- Nach `theme:compile` zeigt er sofort auf den neuen Seed.
+- Nach `theme:compile` zeigt er sofort auf den neuen Hash.
 - Chromium lädt `all.css` und `storefront.js` je einmal, ohne «preloaded but
   not used». Ohne den Versions-Parameter lädt er beide doppelt.
-- Liegt das Theme auf einer CDN-Domain, zeigt der Header dorthin und wirkt
-  genauso.
+  `storefront.js` lädt über den Hint mit Priorität High statt Low.
+- Liegt das Theme auf einer anderen Domain, auch mit Pfad davor
+  (`http://cdn.localhost/shop1`), zeigt der Header dorthin.
 
 ```bash
 curl -s -D - -o /dev/null https://ihr-shop.de/ | grep -i '^link'

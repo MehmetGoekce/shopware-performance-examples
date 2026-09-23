@@ -8,7 +8,8 @@ declare(strict_types=1);
  *
  * Cloudflare sendet ein 103 Early Hints nur, wenn es vorher an einer Antwort
  * mit Status 200, 301 oder 302 einen Link-Header mit preload oder preconnect
- * gesehen hat. Shopware setzt einen solchen Header nie, und
+ * gesehen hat, und nur fuer URIs ohne Dateiendung oder mit .html/.htm/.php.
+ * Shopware setzt einen solchen Header nie, und
  * symfony/web-link (GenericLinkProvider, AddLinkHeaderListener) gehoert nicht
  * zu Shopware: in 6.6.10.6 nicht installiert, in 6.5 bis 6.7 keine
  * Abhaengigkeit von shopware/core. Dieser Subscriber liefert den Header
@@ -16,11 +17,16 @@ declare(strict_types=1);
  * PreloadLinkBuilder.
  *
  * kernel.response laeuft im inneren Kernel, also bevor Shopwares HTTP-Cache
- * die Antwort speichert: Der Header wird mitgespeichert und kommt auch bei
- * einem Cache-Treffer mit. Gemessen an Shopware 6.6.10.6 (Dockware, prod).
+ * oder ein Reverse Proxy die Antwort speichert: Der Header wird mitgespeichert
+ * und kommt auch bei einem Cache-Treffer mit. Gemessen an Shopware 6.6.10.6
+ * (Dockware, prod, eingebauter HTTP-Cache).
  *
- * Kein Header bei: Sub-Requests (ESI), Status != 200, anderem Content-Type als
- * text/html, gestreamten Antworten.
+ * Kein Header bei: Status != 200, anderem Content-Type als text/html,
+ * gestreamten Antworten, Sub-Requests aus PHP (forward/render). ESI-Fragmente
+ * kommen als Main Request an, haben aber kein </head> und bleiben so ohne
+ * Header. Den Content-Type setzt Shopwares Storefront-Controller selbst; eine
+ * Antwort, die ihn erst durch Symfonys ResponseListener bekommt (eigener
+ * Controller mit new Response($html)), bleibt ebenfalls ohne Header.
  *
  * @see https://github.com/MehmetGoekce/shopware-performance-examples
  */
