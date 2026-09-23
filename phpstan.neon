@@ -156,8 +156,5 @@ parameters:
 
         # Return type mismatches (relaxed for book examples)
         -
-            message: '#Method .+::get.+ should return#'
-            reportUnmatched: false
-        -
             message: '#Method .+ never returns .+ so it can be removed#'
             reportUnmatched: false
