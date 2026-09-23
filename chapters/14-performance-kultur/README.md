@@ -27,7 +27,8 @@ Dieses Kapitel behandelt die organisatorischen Aspekte von Performance:
 │   └── new-hire-performance.md      # Onboarding neue Mitarbeiter
 ├── src/
 │   ├── PerformanceBudgetService.php # Error Budget aus den RUM-Logs (Kapitel 12)
-│   └── CultureMetricsService.php    # Kultur-Metriken
+│   ├── CultureDataSource.php        # Schnittstelle zu Ihren Datenquellen
+│   └── CultureMetricsService.php    # Performance Culture Score
 └── scripts/
     ├── error-budget.php             # Error Budget je Core Web Vital
     ├── generate-report.sh           # Performance-Report Generator
@@ -161,16 +162,44 @@ Slack-Versand ist gescheitert.
 
 ### Performance-Kultur Score
 
+`src/CultureMetricsService.php` rechnet fuenf Komponenten zu je 0-100 Punkten:
+
 ```
-Score = (PRs mit Review × 0.3) +
-        (Budget Compliance × 0.3) +
-        (MTTR Score × 0.2) +
-        (DevEx Survey × 0.2)
+Score = Code Review × 0.25 + Budget × 0.25 + Incidents × 0.20
+      + Developer Satisfaction × 0.15 + Knowledge Sharing × 0.15
 ```
+
+| Komponente | Punkte | Quelle |
+|---|---|---|
+| Code Review | Anteil der PRs mit Performance-Review (30 Tage) | GitHub/GitLab |
+| Budget | green 100, yellow 60, orange 30, red 0 | `PerformanceBudgetService::calculate()` |
+| Incidents | MTTR bis 2 h 100, bis 4 h 75, bis 8 h 50, sonst 25; +10 ab 80 % Postmortems | Incident-Tracker (90 Tage) |
+| Developer Satisfaction | Survey-Durchschnitt 1-5 linear auf 0-100 | `templates/developer-survey.yaml` |
+| Knowledge Sharing | je Quartal 6 Brown Bags, 12 Wiki-Updates, 100 Nachrichten | Kalender, Wiki, Slack |
+
+Gewichte, Stufen und Zielwerte sind Vorgaben dieses Beispiels, keine
+Branchenwerte. Die Rohdaten liefert eine eigene Klasse, die
+`CultureDataSource` implementiert (die Werkzeuge sind in jedem Team andere).
+Gibt eine Quelle `null` zurueck, bleibt die Komponente ohne Bewertung: Sie
+steht in `unrated`, und der Score ist der gewichtete Durchschnitt der
+uebrigen. Ohne jede Quelle ist der Score `null`, nicht 50.
+
+```php
+use PerformanceKultur\CultureMetricsService;
+use PerformanceKultur\PerformanceBudgetService;
+
+$budget = PerformanceBudgetService::calculate($records);   // Log-Kontexte wie in error-budget.php
+$result = (new CultureMetricsService(new MyTeamDataSource()))->calculateCultureScore($budget, $lastScore);
+
+echo $result['overall_score'], ' ', $result['trend'], ' ohne Daten: ', implode(', ', $result['unrated']);
+```
+
+Die Tests in `tests/Unit/CultureMetricsServiceTest.php` zeigen jede Stufe
+mit Zahlen.
 
 ### Tracking
 
-- PRs mit Performance-Review: `pr-stats.sh`
+- PRs mit Performance-Review: `scripts/pr-stats.sh`
 - Error Budget: `scripts/error-budget.php` (rechnet mit `src/PerformanceBudgetService.php`)
 - Incident MTTR: Aus Incident-Tracker
 - Developer Satisfaction: Quarterly Survey

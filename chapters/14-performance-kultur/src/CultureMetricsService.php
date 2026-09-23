@@ -2,255 +2,261 @@
 
 declare(strict_types=1);
 
-namespace App\Service;
+namespace PerformanceKultur;
 
 /**
- * Performance Culture Metrics Service
+ * Performance Culture Score aus fuenf Komponenten, je 0-100 Punkte.
  *
- * Sammelt und berechnet Metriken zur Performance-Kultur im Team.
- * Hilft Champions und Leads, den Kulturstatus zu tracken.
+ * Score = Code Review × 0.25 + Budget × 0.25 + Incidents × 0.20
+ *       + Developer Satisfaction × 0.15 + Knowledge Sharing × 0.15
+ *
+ * Die Rohdaten liefert ein CultureDataSource, das Sie fuer Ihre Werkzeuge
+ * schreiben. Das Error Budget kommt aus PerformanceBudgetService::calculate()
+ * (RUM-Logs aus Kapitel 12), siehe scripts/error-budget.php.
+ *
+ * Komponenten ohne Daten zaehlen nicht mit: Der Score ist dann der gewichtete
+ * Durchschnitt der bewerteten Komponenten, und "unrated" nennt die fehlenden.
+ * Gewichte, Punktestufen und Zielwerte sind Vorgaben dieses Beispiels, keine
+ * Branchenwerte. Passen Sie sie an Ihr Team an.
  */
-class CultureMetricsService
+final class CultureMetricsService
 {
+    public const WEIGHTS = [
+        'code_review' => 0.25,
+        'budget_compliance' => 0.25,
+        'incident_response' => 0.20,
+        'developer_satisfaction' => 0.15,
+        'knowledge_sharing' => 0.15,
+    ];
+
+    /** Punkte je Stufe von PerformanceBudgetService::overall() */
+    public const BUDGET_POINTS = [
+        'green' => 100,
+        'yellow' => 60,
+        'orange' => 30,
+        'red' => 0,
+    ];
+
+    /** Zielwerte je Quartal (90 Tage) fuer Knowledge Sharing */
+    public const KNOWLEDGE_TARGETS = [
+        'brown_bags' => 6,       // etwa 2 pro Monat
+        'wiki_updates' => 12,    // etwa 1 pro Woche
+        'slack_messages' => 100,
+    ];
+
+    /** Unter diesem Wert schlaegt der Service fuer die Komponente etwas vor */
+    public const RECOMMENDATION_BELOW = 60;
+
     public function __construct(
-        private readonly GitHubApiService $gitHub,
-        private readonly IncidentTrackerService $incidentTracker,
-        private readonly SurveyService $surveyService,
-        private readonly PerformanceBudgetService $budgetService
-    ) {}
+        private readonly CultureDataSource $source
+    ) {
+    }
 
     /**
-     * Berechnet den Performance Culture Score
+     * @param array<string, array{policy: string, remaining_percent: float|null}> $budget
+     *        Ergebnis von PerformanceBudgetService::calculate()
+     * @param float|null $previousScore Score der letzten Berechnung, fuer den Trend
      *
      * @return array{
-     *     overall_score: float,
-     *     components: array,
+     *     overall_score: float|null,
+     *     components: array<string, array{score: float|null, metrics: array<string, mixed>, target: string}>,
+     *     unrated: list<string>,
      *     trend: string,
-     *     recommendations: array
+     *     recommendations: list<string>
      * }
      */
-    public function calculateCultureScore(): array
+    public function calculateCultureScore(array $budget, ?float $previousScore = null): array
     {
         $components = [
-            'code_review' => $this->getCodeReviewMetrics(),
-            'budget_compliance' => $this->getBudgetComplianceScore(),
-            'incident_response' => $this->getIncidentResponseScore(),
-            'developer_satisfaction' => $this->getDeveloperSatisfactionScore(),
-            'knowledge_sharing' => $this->getKnowledgeSharingScore(),
+            'code_review' => $this->codeReview(),
+            'budget_compliance' => $this->budgetCompliance($budget),
+            'incident_response' => $this->incidentResponse(),
+            'developer_satisfaction' => $this->developerSatisfaction(),
+            'knowledge_sharing' => $this->knowledgeSharing(),
         ];
 
-        // Gewichteter Durchschnitt
-        $weights = [
-            'code_review' => 0.25,
-            'budget_compliance' => 0.25,
-            'incident_response' => 0.20,
-            'developer_satisfaction' => 0.15,
-            'knowledge_sharing' => 0.15,
-        ];
-
-        $overallScore = 0;
+        $weighted = 0.0;
+        $weightSum = 0.0;
+        $unrated = [];
         foreach ($components as $key => $component) {
-            $overallScore += $component['score'] * $weights[$key];
+            if ($component['score'] === null) {
+                $unrated[] = $key;
+                continue;
+            }
+            $weighted += $component['score'] * self::WEIGHTS[$key];
+            $weightSum += self::WEIGHTS[$key];
         }
 
+        $overall = $weightSum > 0 ? round($weighted / $weightSum, 1) : null;
+
         return [
-            'overall_score' => round($overallScore, 1),
+            'overall_score' => $overall,
             'components' => $components,
-            'trend' => $this->calculateTrend($overallScore),
-            'recommendations' => $this->generateRecommendations($components),
-            'calculated_at' => (new \DateTimeImmutable())->format('c'),
+            'unrated' => $unrated,
+            'trend' => self::trend($overall, $previousScore),
+            'recommendations' => self::recommendations($components),
         ];
     }
 
     /**
-     * Code Review Metriken
+     * Anteil der PRs mit Performance-Review, 100 % = 100 Punkte
+     *
+     * @return array{score: float|null, metrics: array<string, mixed>, target: string}
      */
-    private function getCodeReviewMetrics(): array
+    private function codeReview(): array
     {
-        $days = 30;
+        $counts = $this->source->pullRequestCounts(30);
+        $target = 'Ziel: 80 %+ der PRs mit Performance-Review';
 
-        // PRs mit Performance-Review Label/Kommentar
-        $totalPRs = $this->gitHub->getPRCount($days);
-        $perfReviewedPRs = $this->gitHub->getPRsWithLabel('performance-reviewed', $days);
-        $perfCommentPRs = $this->gitHub->getPRsWithPerformanceComments($days);
-
-        $reviewedCount = max($perfReviewedPRs, $perfCommentPRs);
-        $reviewRate = $totalPRs > 0 ? ($reviewedCount / $totalPRs) * 100 : 0;
-
-        // Score: 100% reviewed = 100 Punkte
-        $score = min($reviewRate, 100);
-
-        return [
-            'score' => round($score, 1),
-            'metrics' => [
-                'total_prs' => $totalPRs,
-                'performance_reviewed' => $reviewedCount,
-                'review_rate_percent' => round($reviewRate, 1),
-            ],
-            'target' => 'Ziel: 80%+ PRs mit Performance-Review',
-        ];
-    }
-
-    /**
-     * Budget Compliance Score
-     */
-    private function getBudgetComplianceScore(): array
-    {
-        $budget = $this->budgetService->calculateRemainingBudget();
-
-        // Score basiert auf verbleibendem Budget
-        $score = match ($budget['policy']) {
-            'green' => 100,
-            'yellow' => 60,
-            'orange' => 30,
-            'red' => 0,
-            default => 50,
-        };
-
-        return [
-            'score' => $score,
-            'metrics' => [
-                'remaining_budget' => $budget['remaining_percent'],
-                'policy' => $budget['policy'],
-                'violations' => $budget['violations'],
-            ],
-            'target' => 'Ziel: Budget > 50%',
-        ];
-    }
-
-    /**
-     * Incident Response Score
-     */
-    private function getIncidentResponseScore(): array
-    {
-        $incidents = $this->incidentTracker->getPerformanceIncidents(days: 90);
-
-        if (empty($incidents)) {
-            return [
-                'score' => 100,
-                'metrics' => [
-                    'incident_count' => 0,
-                    'mttr_hours' => 0,
-                    'postmortems_completed' => 0,
-                ],
-                'target' => 'Keine Incidents in den letzten 90 Tagen',
-            ];
+        if ($counts === null || $counts['total'] === 0) {
+            return ['score' => null, 'metrics' => ['total_prs' => $counts['total'] ?? null], 'target' => $target];
         }
 
-        // MTTR (Mean Time to Recovery)
-        $totalRecoveryHours = array_sum(array_column($incidents, 'recovery_time_hours'));
-        $mttr = $totalRecoveryHours / count($incidents);
+        $rate = min($counts['performance_reviewed'] / $counts['total'] * 100, 100.0);
 
-        // Postmortem Completion Rate
-        $withPostmortem = count(array_filter($incidents, fn($i) => $i['postmortem_completed']));
-        $postmortemRate = ($withPostmortem / count($incidents)) * 100;
+        return [
+            'score' => round($rate, 1),
+            'metrics' => [
+                'total_prs' => $counts['total'],
+                'performance_reviewed' => $counts['performance_reviewed'],
+                'review_rate_percent' => round($rate, 1),
+            ],
+            'target' => $target,
+        ];
+    }
 
-        // Score: MTTR < 2h = 100, < 4h = 75, < 8h = 50, sonst 25
-        // Plus Bonus für Postmortems
-        $mttrScore = match (true) {
+    /**
+     * Punkte aus der schlechtesten bewerteten Core-Web-Vital-Stufe
+     *
+     * @param array<string, array{policy: string, remaining_percent: float|null}> $budget
+     *
+     * @return array{score: float|null, metrics: array<string, mixed>, target: string}
+     */
+    private function budgetCompliance(array $budget): array
+    {
+        $overall = PerformanceBudgetService::overall($budget);
+        $remaining = [];
+        foreach ($budget as $metric => $row) {
+            $remaining[$metric] = $row['remaining_percent'];
+        }
+
+        return [
+            'score' => isset(self::BUDGET_POINTS[$overall]) ? (float) self::BUDGET_POINTS[$overall] : null,
+            'metrics' => [
+                'policy' => $overall,
+                'remaining_percent' => $remaining,
+                'unrated_metrics' => PerformanceBudgetService::unrated($budget),
+            ],
+            'target' => 'Ziel: jede Metrik ueber 50 % Budget uebrig (green)',
+        ];
+    }
+
+    /**
+     * MTTR der letzten 90 Tage plus Bonus fuer Postmortems
+     *
+     * @return array{score: float|null, metrics: array<string, mixed>, target: string}
+     */
+    private function incidentResponse(): array
+    {
+        $incidents = $this->source->performanceIncidents(90);
+        $target = 'Ziel: MTTR unter 2 h, Postmortem zu jedem Incident';
+
+        if ($incidents === null) {
+            return ['score' => null, 'metrics' => [], 'target' => $target];
+        }
+
+        if ($incidents === []) {
+            return ['score' => 100.0, 'metrics' => ['incident_count' => 0], 'target' => $target];
+        }
+
+        $count = \count($incidents);
+        $mttr = array_sum(array_column($incidents, 'recovery_time_hours')) / $count;
+        $withPostmortem = \count(array_filter($incidents, static fn (array $i): bool => $i['postmortem_completed']));
+        $postmortemRate = $withPostmortem / $count * 100;
+
+        $mttrPoints = match (true) {
             $mttr <= 2 => 100,
             $mttr <= 4 => 75,
             $mttr <= 8 => 50,
             default => 25,
         };
-
-        $postmortemBonus = $postmortemRate >= 80 ? 10 : 0;
-        $score = min($mttrScore + $postmortemBonus, 100);
+        $bonus = $postmortemRate >= 80 ? 10 : 0;
 
         return [
-            'score' => round($score, 1),
+            'score' => (float) min($mttrPoints + $bonus, 100),
             'metrics' => [
-                'incident_count' => count($incidents),
+                'incident_count' => $count,
                 'mttr_hours' => round($mttr, 1),
                 'postmortems_completed' => $withPostmortem,
                 'postmortem_rate' => round($postmortemRate, 1),
             ],
-            'target' => 'Ziel: MTTR < 2h, 100% Postmortems',
+            'target' => $target,
         ];
     }
 
     /**
-     * Developer Satisfaction Score (aus Survey)
+     * Survey-Durchschnitt 1-5, linear auf 0-100
+     *
+     * @return array{score: float|null, metrics: array<string, mixed>, target: string}
      */
-    private function getDeveloperSatisfactionScore(): array
+    private function developerSatisfaction(): array
     {
-        $latestSurvey = $this->surveyService->getLatestPerformanceSurvey();
+        $survey = $this->source->latestSurvey();
+        $target = 'Ziel: Durchschnitt ueber 4.0 (von 5)';
 
-        if ($latestSurvey === null) {
-            return [
-                'score' => 50,  // Neutral wenn keine Daten
-                'metrics' => [
-                    'message' => 'Kein Survey-Daten verfügbar',
-                    'recommendation' => 'Quarterly Developer Survey durchführen',
-                ],
-                'target' => 'Nächster Survey planen',
-            ];
+        if ($survey === null) {
+            return ['score' => null, 'metrics' => [], 'target' => $target];
         }
 
-        // Survey-Score auf 0-100 normalisieren (angenommen 1-5 Skala)
-        $avgScore = $latestSurvey['average_score'];
-        $normalizedScore = (($avgScore - 1) / 4) * 100;
+        $average = max(1.0, min(5.0, $survey['average_score']));
 
         return [
-            'score' => round($normalizedScore, 1),
+            'score' => round(($average - 1) / 4 * 100, 1),
             'metrics' => [
-                'survey_date' => $latestSurvey['date'],
-                'response_rate' => $latestSurvey['response_rate'],
-                'average_score' => round($avgScore, 2),
-                'key_feedback' => $latestSurvey['top_concerns'] ?? [],
+                'survey_date' => $survey['date'],
+                'response_rate' => $survey['response_rate'],
+                'average_score' => round($survey['average_score'], 2),
             ],
-            'target' => 'Ziel: Durchschnitt > 4.0 (von 5)',
+            'target' => $target,
         ];
     }
 
     /**
-     * Knowledge Sharing Score
+     * Brown Bags, Wiki-Updates und Slack-Nachrichten gegen die Zielwerte je Quartal
+     *
+     * @return array{score: float|null, metrics: array<string, mixed>, target: string}
      */
-    private function getKnowledgeSharingScore(): array
+    private function knowledgeSharing(): array
     {
-        $days = 90;
+        $counts = $this->source->knowledgeSharingCounts(90);
+        $target = 'Ziel je Quartal: 6 Brown Bags, 12 Wiki-Updates, 100 Nachrichten in #performance';
 
-        // Metriken sammeln
-        $brownBags = $this->getEventCount('brown_bag', $days);
-        $wikiUpdates = $this->getWikiUpdateCount($days);
-        $slackActivity = $this->getSlackChannelActivity($days);
+        if ($counts === null) {
+            return ['score' => null, 'metrics' => [], 'target' => $target];
+        }
 
-        // Erwartete Werte pro Quartal
-        $expectedBrownBags = 6;  // ~2 pro Monat
-        $expectedWikiUpdates = 12;  // ~1 pro Woche
-        $expectedSlackMessages = 100;
-
-        // Score berechnen
-        $brownBagScore = min(($brownBags / $expectedBrownBags) * 100, 100);
-        $wikiScore = min(($wikiUpdates / $expectedWikiUpdates) * 100, 100);
-        $slackScore = min(($slackActivity / $expectedSlackMessages) * 100, 100);
-
-        $score = ($brownBagScore + $wikiScore + $slackScore) / 3;
+        $points = 0.0;
+        foreach (self::KNOWLEDGE_TARGETS as $key => $expected) {
+            $points += min($counts[$key] / $expected * 100, 100.0);
+        }
 
         return [
-            'score' => round($score, 1),
-            'metrics' => [
-                'brown_bags' => $brownBags,
-                'wiki_updates' => $wikiUpdates,
-                'slack_messages' => $slackActivity,
-            ],
-            'target' => 'Ziel: Aktives Knowledge Sharing',
+            'score' => round($points / \count(self::KNOWLEDGE_TARGETS), 1),
+            'metrics' => $counts,
+            'target' => $target,
         ];
     }
 
     /**
-     * Trend berechnen
+     * Mehr als 5 Punkte Abstand zur letzten Berechnung zaehlen als Trend
      */
-    private function calculateTrend(float $currentScore): string
+    public static function trend(?float $current, ?float $previous): string
     {
-        // Vorherigen Score laden (vereinfacht - in Realität aus DB)
-        $previousScore = $this->getPreviousScore();
-
-        if ($previousScore === null) {
+        if ($current === null || $previous === null) {
             return 'unknown';
         }
 
-        $diff = $currentScore - $previousScore;
+        $diff = $current - $previous;
 
         return match (true) {
             $diff > 5 => 'improving',
@@ -260,55 +266,31 @@ class CultureMetricsService
     }
 
     /**
-     * Empfehlungen generieren
+     * @param array<string, array{score: float|null}> $components
+     *
+     * @return list<string>
      */
-    private function generateRecommendations(array $components): array
+    private static function recommendations(array $components): array
     {
         $recommendations = [];
 
         foreach ($components as $key => $component) {
-            if ($component['score'] < 60) {
+            if ($component['score'] === null) {
+                $recommendations[] = 'Keine Daten fuer ' . $key . ': Datenquelle anbinden';
+                continue;
+            }
+            if ($component['score'] < self::RECOMMENDATION_BELOW) {
                 $recommendations[] = match ($key) {
-                    'code_review' => 'Code Review Rate verbessern: Performance-Checklist in PR-Template integrieren',
-                    'budget_compliance' => 'Error Budget kritisch: Performance-Sprint planen',
-                    'incident_response' => 'MTTR verbessern: Runbooks und Alerting überprüfen',
-                    'developer_satisfaction' => 'Developer Survey durchführen und Feedback adressieren',
+                    'code_review' => 'Code-Review-Rate verbessern: Performance-Checkliste ins PR-Template',
+                    'budget_compliance' => 'Error Budget knapp: Performance-Sprint planen',
+                    'incident_response' => 'MTTR verbessern: Runbooks und Alerting pruefen',
+                    'developer_satisfaction' => 'Developer Survey auswerten und Feedback adressieren',
                     'knowledge_sharing' => 'Mehr Brown Bags und Wiki-Dokumentation planen',
                     default => 'Bereich verbessern: ' . $key,
                 };
             }
         }
 
-        if (empty($recommendations)) {
-            $recommendations[] = 'Kultur ist gesund. Weiter so!';
-        }
-
         return $recommendations;
-    }
-
-    // Hilfsmethoden (Stubs - in Realität implementieren)
-
-    private function getEventCount(string $type, int $days): int
-    {
-        // Aus Kalender/Event-System laden
-        return 0;
-    }
-
-    private function getWikiUpdateCount(int $days): int
-    {
-        // Aus Confluence/Notion API
-        return 0;
-    }
-
-    private function getSlackChannelActivity(int $days): int
-    {
-        // Aus Slack API
-        return 0;
-    }
-
-    private function getPreviousScore(): ?float
-    {
-        // Aus Datenbank laden
-        return null;
     }
 }
