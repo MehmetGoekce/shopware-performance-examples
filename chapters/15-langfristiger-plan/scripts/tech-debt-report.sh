@@ -5,6 +5,13 @@
 # Generiert einen Report über Performance-bezogene Technical Debt.
 # Zeigt priorisierte Backlog-Items und Empfehlungen.
 #
+# BEISPIELDATEN: Die Items unten sind erfunden und stehen im Skript. Die
+# Ausgabe sagt das in jeder Form (Text und JSON). Eigene Items tragen Sie in
+# TECH_DEBT_DATA ein. Skala wie Kapitel 15 (src/TechDebtTrackerService.php):
+# Score = Summe der Severity-Punkte offener Items, critical 100, high 40,
+# medium 10, low 2; < 200 gesund, 200-499 Aufmerksamkeit, ab 500 kritisch.
+# Priorität = Severity-Punkte / Aufwandspunkte (WSJF-ähnlich).
+#
 # Verwendung:
 #   ./tech-debt-report.sh
 #   ./tech-debt-report.sh --trend
@@ -45,17 +52,21 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 # ============================================================
-# Simulierte Tech Debt Daten
-# In Realität aus Datenbank/API laden
+# Beispieldaten (erfunden, keine Messung)
+# In Realität aus Ihrem Tracker laden
 # ============================================================
 
-# Tech Debt Items (JSON)
+DATA_NOTE="BEISPIELDATEN aus dem Skript, keine Messung"
+
+# Tech Debt Items (JSON), severity: critical|high|medium|low,
+# effort: trivial (<2h)|small (<1 Tag)|medium (1-3 Tage)|large|xlarge
 TECH_DEBT_DATA='[
     {
         "id": "TD-001",
         "title": "Legacy jQuery Event Handlers",
         "category": "frontend",
-        "priority_score": 85,
+        "severity": "high",
+        "effort": "medium",
         "estimated_hours": 16,
         "affected_pages": ["checkout", "cart"],
         "status": "backlog"
@@ -64,7 +75,8 @@ TECH_DEBT_DATA='[
         "id": "TD-002",
         "title": "Synchrone Third-Party Scripts",
         "category": "frontend",
-        "priority_score": 92,
+        "severity": "high",
+        "effort": "small",
         "estimated_hours": 8,
         "affected_pages": ["all"],
         "status": "backlog"
@@ -73,7 +85,8 @@ TECH_DEBT_DATA='[
         "id": "TD-003",
         "title": "N+1 Queries in Produktliste",
         "category": "database",
-        "priority_score": 78,
+        "severity": "critical",
+        "effort": "medium",
         "estimated_hours": 24,
         "affected_pages": ["category", "search"],
         "status": "backlog"
@@ -82,7 +95,8 @@ TECH_DEBT_DATA='[
         "id": "TD-004",
         "title": "Fehlende Cache-Invalidierung",
         "category": "backend",
-        "priority_score": 65,
+        "severity": "medium",
+        "effort": "medium",
         "estimated_hours": 12,
         "affected_pages": ["product"],
         "status": "backlog"
@@ -91,19 +105,25 @@ TECH_DEBT_DATA='[
         "id": "TD-005",
         "title": "Unoptimierte Produktbilder",
         "category": "infrastructure",
-        "priority_score": 88,
+        "severity": "high",
+        "effort": "small",
         "estimated_hours": 8,
         "affected_pages": ["product", "category"],
         "status": "in_progress"
     }
 ]'
 
-# Historische Daten für Trend
+# Beispiel-Verlauf für --trend (erfunden). Eigene Werte: Score jeden Monat ablegen
 HISTORICAL_DATA='[
-    {"month": "2024-10", "score": 52, "items": 18, "hours": 280},
-    {"month": "2024-11", "score": 45, "items": 15, "hours": 220},
-    {"month": "2024-12", "score": 38, "items": 12, "hours": 180}
+    {"month": "Monat 1", "score": 410, "items": 9, "hours": 150},
+    {"month": "Monat 2", "score": 330, "items": 7, "hours": 110},
+    {"month": "Monat 3", "score": 230, "items": 5, "hours": 68}
 ]'
+
+# Punkte wie in Kapitel 15, unbekannte Werte zählen wie medium
+JQ_DEFS='def points: ({"critical": 100, "high": 40, "medium": 10, "low": 2}[.severity] // 10);
+def prio: (points / ({"trivial": 1, "small": 2, "medium": 5, "large": 13, "xlarge": 21}[.effort] // 5) * 10 | round / 10);
+def open_items: [.[] | select(.status != "resolved")];'
 
 # ============================================================
 # Statistiken berechnen
@@ -113,20 +133,16 @@ TOTAL_ITEMS=$(echo "${TECH_DEBT_DATA}" | jq 'length')
 BACKLOG_ITEMS=$(echo "${TECH_DEBT_DATA}" | jq '[.[] | select(.status == "backlog")] | length')
 IN_PROGRESS=$(echo "${TECH_DEBT_DATA}" | jq '[.[] | select(.status == "in_progress")] | length')
 TOTAL_HOURS=$(echo "${TECH_DEBT_DATA}" | jq '[.[] | select(.status == "backlog") | .estimated_hours] | add')
-AVG_PRIORITY=$(echo "${TECH_DEBT_DATA}" | jq '[.[] | select(.status == "backlog") | .priority_score] | add / length | floor')
 
-# Tech Debt Score (vereinfacht)
-TECH_DEBT_SCORE=$(echo "scale=0; (${BACKLOG_ITEMS} * 3) + (${TOTAL_HOURS} / 10)" | bc)
+# Tech Debt Score: Summe der Severity-Punkte offener Items (Kapitel 15)
+TECH_DEBT_SCORE=$(echo "${TECH_DEBT_DATA}" | jq "${JQ_DEFS} open_items | map(points) | add // 0")
 
 # Health Status
-if [[ "${TECH_DEBT_SCORE}" -le 25 ]]; then
+if [[ "${TECH_DEBT_SCORE}" -lt 200 ]]; then
     HEALTH="healthy"
     HEALTH_COLOR=${GREEN}
-elif [[ "${TECH_DEBT_SCORE}" -le 50 ]]; then
-    HEALTH="manageable"
-    HEALTH_COLOR=${YELLOW}
-elif [[ "${TECH_DEBT_SCORE}" -le 75 ]]; then
-    HEALTH="concerning"
+elif [[ "${TECH_DEBT_SCORE}" -lt 500 ]]; then
+    HEALTH="attention"
     HEALTH_COLOR=${YELLOW}
 else
     HEALTH="critical"
@@ -142,6 +158,7 @@ if [[ "${OUTPUT_FORMAT}" == "json" ]]; then
     cat << EOF
 {
     "generated_at": "$(date -Iseconds)",
+    "data_source": "${DATA_NOTE}",
     "summary": {
         "total_items": ${TOTAL_ITEMS},
         "backlog_items": ${BACKLOG_ITEMS},
@@ -152,7 +169,7 @@ if [[ "${OUTPUT_FORMAT}" == "json" ]]; then
     },
     "items": ${TECH_DEBT_DATA},
     "by_category": $(echo "${TECH_DEBT_DATA}" | jq 'group_by(.category) | map({category: .[0].category, count: length})'),
-    "top_priority": $(echo "${TECH_DEBT_DATA}" | jq 'sort_by(-.priority_score) | .[0:3]')
+    "top_priority": $(echo "${TECH_DEBT_DATA}" | jq "${JQ_DEFS} open_items | map(. + {priority: prio}) | sort_by(-.priority) | .[0:3]")
 }
 EOF
     exit 0
@@ -164,17 +181,17 @@ echo "  Technical Debt Report"
 echo "================================================"
 echo ""
 echo "Datum: $(date)"
+echo -e "${YELLOW}HINWEIS: ${DATA_NOTE}${NC}"
 echo ""
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  Zusammenfassung"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-echo -e "Tech Debt Score:    ${HEALTH_COLOR}${TECH_DEBT_SCORE}${NC} (${HEALTH})"
+echo -e "Tech Debt Score:    ${HEALTH_COLOR}${TECH_DEBT_SCORE}${NC} Punkte (${HEALTH}; < 200 gesund, ab 500 kritisch)"
 echo "Backlog Items:      ${BACKLOG_ITEMS}"
 echo "In Progress:        ${IN_PROGRESS}"
-echo "Geschätzte Stunden: ${TOTAL_HOURS}h"
-echo "Ø Priority Score:   ${AVG_PRIORITY}"
+echo "Geschätzte Stunden: ${TOTAL_HOURS}h (Backlog)"
 echo ""
 
 # By Category
@@ -192,8 +209,8 @@ echo "  Top Priority Items"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-echo "${TECH_DEBT_DATA}" | jq -r 'sort_by(-.priority_score) | .[0:5] | .[] |
-    "[\(.id)] \(.title)\n    Category: \(.category) | Priority: \(.priority_score) | Hours: \(.estimated_hours)h\n"'
+echo "${TECH_DEBT_DATA}" | jq -r "${JQ_DEFS}"' open_items | map(. + {priority: prio}) | sort_by(-.priority) | .[0:5] | .[] |
+    "[\(.id)] \(.title)\n    Category: \(.category) | Severity: \(.severity) | Priority: \(.priority) | Hours: \(.estimated_hours)h\n"'
 
 # Sprint Recommendation
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -212,13 +229,15 @@ echo ""
 
 # Items die ins Budget passen
 ACCUMULATED=0
-echo "${TECH_DEBT_DATA}" | jq -r --argjson budget "${TECH_DEBT_BUDGET}" '
-    sort_by(-.priority_score) |
+echo "${TECH_DEBT_DATA}" | jq -r "${JQ_DEFS}"'
+    map(. + {priority: prio}) |
+    sort_by(-.priority) |
     .[] |
     select(.status == "backlog") |
     "  ☐ \(.title) (\(.estimated_hours)h)"
 ' | while read -r line; do
-    hours=$(echo "${line}" | grep -oP '\(\K[0-9]+(?=h\))')
+    hours="${line##*(}"
+    hours="${hours%h)}"
     new_total=$((ACCUMULATED + hours))
     if [[ ${new_total} -le ${TECH_DEBT_BUDGET} ]]; then
         echo "${line}"
@@ -231,7 +250,7 @@ echo ""
 # Trend (optional)
 if [[ "${SHOW_TREND}" = true ]]; then
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  Trend (letzte 3 Monate)"
+    echo "  Trend (Beispielverlauf, keine Messung)"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
 
@@ -268,15 +287,10 @@ if [[ "${HEALTH}" == "critical" ]]; then
     echo "  - Dedizierter Sprint für Tech Debt"
     echo "  - Feature Freeze erwägen"
     echo "  - Root Cause Analysis durchführen"
-elif [[ "${HEALTH}" == "concerning" ]]; then
-    echo -e "${YELLOW}ACHTUNG: Tech Debt wächst.${NC}"
+elif [[ "${HEALTH}" == "attention" ]]; then
+    echo -e "${YELLOW}ACHTUNG: Tech Debt braucht Aufmerksamkeit.${NC}"
     echo "  - 25% Regel strikt einhalten"
     echo "  - Priorisierung überprüfen"
-    echo "  - Mehr Automatisierung"
-elif [[ "${HEALTH}" == "manageable" ]]; then
-    echo -e "${YELLOW}OK: Tech Debt unter Kontrolle.${NC}"
-    echo "  - Weiter 25% Regel anwenden"
-    echo "  - Regelmässig reviewen"
 else
     echo -e "${GREEN}GUT: Tech Debt minimal.${NC}"
     echo "  - Weiter so!"

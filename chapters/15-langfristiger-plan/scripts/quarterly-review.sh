@@ -10,10 +10,13 @@
 #   ./quarterly-review.sh Q1 --year 2025
 #   ./quarterly-review.sh Q1 --output /path/to/report.md
 #
+# BEISPIELDATEN: Alle Zahlen im Report (CWV, OKRs, Incidents, Tech Debt) sind
+# erfunden und stehen im Skript. Konsole und Report sagen das. Eigene Werte:
+# rum:report (Kapitel 12), scripts/error-budget.php (Kapitel 14), Ihr
+# OKR- und Incident-Tracker.
+#
 # Voraussetzungen:
-#   - jq
-#   - curl
-#   - Zugang zu RUM/OKR APIs
+#   - bc
 
 set -e
 
@@ -47,12 +50,15 @@ RED='\033[0;31m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
+DATA_NOTE="BEISPIELDATEN aus dem Skript, keine Messung"
+
 echo "================================================"
 echo "  Quarterly Performance Review"
 echo "================================================"
 echo ""
 echo "Quartal: ${QUARTER} ${YEAR}"
 echo "Datum: $(date)"
+echo -e "${YELLOW}HINWEIS: ${DATA_NOTE}${NC}"
 echo ""
 
 # Output-Verzeichnis erstellen
@@ -91,6 +97,8 @@ cat > "${REPORT_FILE}" << EOF
 **Quartal**: ${QUARTER} ${YEAR}
 **Zeitraum**: ${START_DATE} bis ${END_DATE}
 **Erstellt**: $(date '+%Y-%m-%d %H:%M')
+
+> **${DATA_NOTE}.** Die Zahlen zeigen nur den Aufbau des Reports.
 
 ---
 
@@ -373,7 +381,7 @@ echo "================================================"
 echo ""
 
 # Zusammenfassung anzeigen
-echo "Quick Summary:"
+echo "Quick Summary (${DATA_NOTE}):"
 echo "  - CWV Improvement: LCP ${LCP_IMPROVEMENT}%, INP ${INP_IMPROVEMENT}%"
 echo "  - OKR Score: 0.97 (Exceptional)"
 echo "  - Incidents: 0 P0, 1 P1"

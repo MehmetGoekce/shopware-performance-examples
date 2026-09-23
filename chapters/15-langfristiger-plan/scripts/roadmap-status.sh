@@ -10,8 +10,8 @@
 #   ./roadmap-status.sh --quarter Q1
 #   ./roadmap-status.sh --alerts-only
 #
-# Voraussetzungen:
-#   - yq oder jq für YAML/JSON Parsing
+# BEISPIELDATEN: Milestones und Risiken sind erfunden und stehen im Skript,
+# die Ausgabe sagt das in beiden Modi. ROADMAP_FILE wird noch nicht gelesen.
 
 set -e
 
@@ -40,7 +40,8 @@ done
 
 # Aktuelles Quartal bestimmen
 if [[ -z "${CURRENT_QUARTER}" ]]; then
-    MONTH=$(date +%m)
+    # 10#: "08" und "09" sonst als Oktalzahl gelesen (Fehler, dann Q4)
+    MONTH=$((10#$(date +%m)))
     if [[ "${MONTH}" -le 3 ]]; then
         CURRENT_QUARTER="Q1"
     elif [[ "${MONTH}" -le 6 ]]; then
@@ -140,6 +141,8 @@ days_until() {
 # Ausgabe
 # ============================================================
 
+echo -e "${YELLOW}HINWEIS: BEISPIELDATEN aus dem Skript, keine Messung${NC}"
+
 if [[ "${ALERTS_ONLY}" = false ]]; then
     echo "================================================"
     echo "  Roadmap Status Check"
@@ -165,11 +168,11 @@ for key in "${!MILESTONES[@]}"; do
     fi
 
     case ${status} in
-        completed) ((COMPLETED++)) ;;
-        in_progress) ((IN_PROGRESS++)) ;;
-        at_risk) ((AT_RISK++)) ;;
-        overdue) ((OVERDUE++)) ;;
-        pending) ((PENDING++)) ;;
+        completed) COMPLETED=$((COMPLETED + 1)) ;;
+        in_progress) IN_PROGRESS=$((IN_PROGRESS + 1)) ;;
+        at_risk) AT_RISK=$((AT_RISK + 1)) ;;
+        overdue) OVERDUE=$((OVERDUE + 1)) ;;
+        pending) PENDING=$((PENDING + 1)) ;;
     esac
 done
 
