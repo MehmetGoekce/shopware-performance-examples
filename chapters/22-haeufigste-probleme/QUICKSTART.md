@@ -47,7 +47,10 @@ Existiert eine `.env.local.php` (aus `composer dump-env prod`), hat sie
 ./scripts/check-http-cache.sh https://ihr-shop.example /var/www/shopware
 ```
 
-**Erwartet:** ein `Age`-Header, der über zwei Requests hinweg wächst.
+**Erwartet:** «Der HTTP-Cache arbeitet»: `Age` wächst über zwei Requests
+um mindestens die Pause, und `Date` bleibt gleich. Wächst `Age`, `Date` aber
+auch, meldet das Skript «nicht eindeutig» (ESI-Fragment oder ein Proxy, der
+`Date` neu setzt) und nennt den Weg zur Klärung.
 
 **Nicht erwartet:** `Cache-Control: public, max-age=…`. Eine
 Shopware-6.6-Storefront antwortet dem Browser immer mit

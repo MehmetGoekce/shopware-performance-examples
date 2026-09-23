@@ -10,13 +10,30 @@
 # "Cache-Control: no-cache, private" — und zwar auch dann, wenn der HTTP-Cache
 # laeuft und gerade einen Treffer ausliefert. Shopware setzt intern
 # setSharedMaxAge(), also "public, s-maxage=<ttl>" fuer den Shared Cache;
-# was beim Browser ankommt, ueberschreibt Symfonys AbstractSessionListener.
+# was beim Browser ankommt, ueberschreibt Shopwares CacheControlListener
+# (ausser mit shopware.http_cache.reverse_proxy.enabled).
 # "public, max-age=..." bekommt man an einer Storefront-URL nie zu sehen.
 #
-# Das belastbare Merkmal ist deshalb der Age-Header:
-#   Age fehlt          -> kein Shared Cache im Spiel
-#   Age vorhanden      -> ein Shared Cache antwortet
-#   Age waechst        -> die Antwort kam aus dem Cache (Treffer)
+# Das Skript vergleicht deshalb zwei GET-Abrufe im Abstand von PAUSE Sekunden:
+#   Age fehlt beide Male      -> kein Shared Cache im Spiel
+#   X-Symfony-Cache vorhanden -> entscheidet: "fresh" (oder "valid") beim
+#                                2. Abruf = Treffer. Symfonys HttpCache gibt
+#                                ihn nur im Debug-Modus aus oder mit
+#                                framework.http_cache.trace_level: short.
+#   Age waechst um mindestens die Pause UND Date bleibt gleich -> Treffer.
+#                                Nur eine gespeicherte Kopie traegt beim
+#                                2. Abruf dasselbe Date wie beim 1.
+#   Age waechst, Date aber auch -> nicht eindeutig, kein Treffer:
+#       - Die Seite wurde neu gerendert und bindet ein gecachtes ESI-Fragment
+#         ein. Symfony setzt das Age der Seite dann auf das des aeltesten
+#         Fragments (ResponseCacheStrategy). Shopware 6.7 laedt Header und
+#         Footer immer per ESI, 6.6 nur mit dem Feature-Flag CACHE_REWORK.
+#       - Oder ein Proxy davor (nginx mit proxy_pass, CDN) setzt Date neu.
+#   Age > 0 allein und "Age waechst um 1" sind kein Treffer: Symfony setzt
+#   beim Speichern Age = Sekunden seit Date, schon ein MISS ueber eine
+#   Sekundengrenze traegt Age 1. Zwei MISS koennen so 0 -> 1 zeigen.
+#   Die Antwortzeit (TTFB) taugt nicht als zweites Merkmal: Direkt nach
+#   cache:clear ist der erste Abruf auch ohne Treffer viel langsamer.
 #
 # Verwendung:
 #   ./check-http-cache.sh [SHOP_URL] [SHOP_PATH]
@@ -24,7 +41,7 @@
 #
 # Exit-Codes:
 #   0 = HTTP-Cache arbeitet
-#   1 = kein Hinweis auf einen aktiven HTTP-Cache
+#   1 = kein Treffer nachgewiesen (kein Cache, zwei MISS oder nicht eindeutig)
 #   64 = Aufruffehler
 
 set -euo pipefail
@@ -41,8 +58,9 @@ Argumente:
               um SHOPWARE_HTTP_CACHE_ENABLED aus .env/.env.local zu lesen.
 
 Der Test schickt zwei GET-Requests im Abstand von zwei Sekunden und
-vergleicht den Age-Header. HEAD (curl -I) ist dafuer nicht geeignet: manche
-Setups beantworten HEAD anders als GET.
+vergleicht Age, Date und, falls vorhanden, X-Symfony-Cache. Treffer heisst:
+Age waechst um mindestens die Pause, und Date bleibt gleich. HEAD (curl -I)
+ist dafuer nicht geeignet: manche Setups beantworten HEAD anders als GET.
 USAGE
 }
 
@@ -58,6 +76,10 @@ fi
 
 SHOP_URL="${1:-http://localhost}"
 SHOP_PATH="${2:-}"
+# Pause zwischen den Abrufen. Bei einem Treffer waechst Age um mindestens
+# diesen Wert. Nicht 1: zwei MISS koennen sich durch die Rundung auf ganze
+# Sekunden um 1 unterscheiden.
+PAUSE=2
 
 # Header per GET holen, Body verwerfen.
 fetch_headers() {
@@ -86,9 +108,13 @@ fi
 STATUS_1=$(printf '%s\n' "${HEADERS_1}" | grep -c '^HTTP/' || true)
 CACHE_CONTROL=$(header_value "${HEADERS_1}" "cache-control")
 AGE_1=$(header_value "${HEADERS_1}" "age")
+DATE_1=$(header_value "${HEADERS_1}" "date")
+TRACE_1=$(header_value "${HEADERS_1}" "x-symfony-cache")
 
 echo "   Cache-Control: ${CACHE_CONTROL:-(nicht gesetzt)}"
 echo "   Age:           ${AGE_1:-(nicht gesetzt)}"
+echo "   Date:          ${DATE_1:-(nicht gesetzt)}"
+[[ -n "${TRACE_1}" ]] && echo "   X-Symfony-Cache: ${TRACE_1}"
 if [[ "${STATUS_1}" -gt 1 ]]; then
     echo "   Hinweis: die URL hat weitergeleitet, geprueft wurde das Ziel."
 fi
@@ -104,11 +130,15 @@ case "${CACHE_CONTROL}" in
 esac
 
 echo
-echo "2. Zweiter Request (nach 2 s)..."
-sleep 2
+echo "2. Zweiter Request (nach ${PAUSE} s)..."
+sleep "${PAUSE}"
 HEADERS_2=$(fetch_headers "${SHOP_URL}")
 AGE_2=$(header_value "${HEADERS_2}" "age")
-echo "   Age: ${AGE_2:-(nicht gesetzt)}"
+DATE_2=$(header_value "${HEADERS_2}" "date")
+TRACE_2=$(header_value "${HEADERS_2}" "x-symfony-cache")
+echo "   Age:           ${AGE_2:-(nicht gesetzt)}"
+echo "   Date:          ${DATE_2:-(nicht gesetzt)}"
+[[ -n "${TRACE_2}" ]] && echo "   X-Symfony-Cache: ${TRACE_2}"
 
 echo
 echo "3. Fremde Cache-Schichten..."
@@ -176,18 +206,91 @@ HINT
     exit 1
 fi
 
-if [[ -n "${AGE_2}" && -n "${AGE_1}" && "${AGE_2}" -gt "${AGE_1}" ]]; then
-    echo "Ein Shared Cache liefert diese Seite aus (Age ${AGE_1} -> ${AGE_2})."
-    echo "Der HTTP-Cache arbeitet."
-    exit 0
+# Symfonys Trace entscheidet, wenn er da ist. Er nennt zuerst die Hauptanfrage
+# ("fresh" im Format short, "GET /: fresh; GET /_esi/...: ..." im Format
+# full); ESI-Fragmente dahinter zaehlen nicht.
+if [[ -n "${TRACE_2}" ]]; then
+    MAIN_TRACE="${TRACE_2%%;*}"
+    MAIN_TRACE="${MAIN_TRACE##*: }"
+    HIT=0
+    for token in ${MAIN_TRACE//[\/,]/ }; do
+        [[ "${token}" == "fresh" || "${token}" == "valid" ]] && HIT=1
+    done
+    if [[ "${HIT}" -eq 1 ]]; then
+        echo "Symfony meldet fuer den 2. Abruf \"${MAIN_TRACE}\": Treffer (Age ${AGE_1:--} -> ${AGE_2:--})."
+        echo "Der HTTP-Cache arbeitet."
+        exit 0
+    fi
+    echo "Symfony meldet fuer den 2. Abruf \"${MAIN_TRACE}\": kein Treffer."
+    if [[ "${TRACE_2}" == *": "* ]]; then
+        echo "Der ausfuehrliche Trace (GET /: ...) erscheint ab Werk nur im Debug-Modus."
+        echo "Laeuft der Shop in dev? Dort ist cache.app ein ArrayAdapter, und jeder"
+        echo "Abruf ist ein MISS."
+    fi
+    exit 1
 fi
 
-echo "Age-Header vorhanden (${AGE_1:-0} -> ${AGE_2:-0}), aber nicht gewachsen."
-echo "Moegliche Gruende: der Eintrag wurde gerade erst erzeugt, die TTL ist"
-echo "abgelaufen, oder jeder Request erzeugt einen eigenen Cache-Key"
-echo "(z. B. durch Tracking-Parameter — siehe shopware.http_cache.ignored_url_parameters)."
+AGE_OK=0
+if [[ "${AGE_1}" =~ ^[0-9]+$ && "${AGE_2}" =~ ^[0-9]+$ ]]; then
+    AGE_OK=1
+fi
+
+if [[ "${AGE_OK}" -eq 1 && $((AGE_2 - AGE_1)) -ge "${PAUSE}" ]]; then
+    if [[ -n "${DATE_1}" && "${DATE_1}" == "${DATE_2}" ]]; then
+        echo "Ein Shared Cache liefert diese Seite aus (Age ${AGE_1} -> ${AGE_2}, Date unveraendert)."
+        echo "Der HTTP-Cache arbeitet."
+        exit 0
+    fi
+    if [[ -z "${DATE_1}" || -z "${DATE_2}" ]]; then
+        DATE_NOTE="aber ohne Date-Header laesst sich nicht pruefen, ob es eine gespeicherte Kopie ist."
+    else
+        DATE_NOTE="aber Date hat sich ebenfalls geaendert."
+    fi
+    cat <<HINT
+Age ist um die Pause gewachsen (${AGE_1} -> ${AGE_2}),
+${DATE_NOTE}
+Das ist KEIN Nachweis fuer einen Treffer:
+
+  - Die Seite wurde neu gerendert und bindet ein gecachtes ESI-Fragment ein.
+    Dann traegt sie das Age des aeltesten Fragments. Shopware 6.7 laedt
+    Header und Footer immer per ESI; ein nie gecachter Warenkorb zeigt dort
+    genauso ein wachsendes Age.
+  - Oder ein Proxy vor dem Shop (nginx mit proxy_pass, CDN) setzt Date neu.
+    Dann kann es trotzdem ein Treffer sein.
+
+Eindeutig wird es mit Symfonys Trace-Header. In config/packages/ eine Datei
+mit
+
+    framework:
+        http_cache:
+            trace_level: short
+
+anlegen, bin/console cache:clear, dann erneut pruefen: "fresh" ist ein
+Treffer, "miss" keiner. Die Datei danach wieder entfernen. Oder den Shop
+unter Umgehung des Proxys direkt abfragen.
+HINT
+    exit 1
+fi
+
+if [[ "${AGE_OK}" -eq 1 && "${AGE_2}" -lt "${AGE_1}" ]]; then
+    echo "Age gesunken (${AGE_1} -> ${AGE_2}): Der 1. Abruf kam aus dem Cache, der"
+    echo "Eintrag ist danach abgelaufen oder wurde invalidiert. Erneut pruefen."
+    exit 1
+fi
+
+if [[ "${AGE_OK}" -eq 0 ]]; then
+    echo "Age nur bei einem der beiden Abrufe (${AGE_1:--} -> ${AGE_2:--}). Erneut pruefen."
+    exit 1
+fi
+
+echo "Age-Header vorhanden (${AGE_1} -> ${AGE_2}), aber nicht um die Pause gewachsen."
+echo "Kein Treffer. Age > 0 allein und ein Zuwachs um 1 kommen auch bei einem"
+echo "MISS vor: Symfony setzt beim Speichern Age = Sekunden seit dem Date-Header."
 echo
-echo "Der zweite Fall ist die zweite Ursache aus Problem 2 und waere ein"
-echo "echter Fund. Dieser Lauf kann die drei Faelle nicht auseinanderhalten:"
-echo "zwei Abrufe mit laengerer Pause wiederholen."
+echo "Moegliche Gruende: der Eintrag wurde gerade erst erzeugt, der Shop laeuft"
+echo "in dev (jeder Abruf ein MISS), oder jeder Request erzeugt einen eigenen"
+echo "Cache-Key (z. B. durch Tracking-Parameter — siehe"
+echo "shopware.http_cache.ignored_url_parameters). Der letzte Fall ist die zweite"
+echo "Ursache aus Problem 2 und waere ein echter Fund. Zum Unterscheiden erneut"
+echo "pruefen: arbeitet der Cache, ist der 2. Lauf ein Treffer."
 exit 1

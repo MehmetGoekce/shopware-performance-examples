@@ -34,15 +34,19 @@
 # Browser mit "Cache-Control: no-cache, private" — auch dann, wenn der Cache
 # läuft und gerade einen Treffer ausliefert. Shopware setzt intern
 # setSharedMaxAge() für den Shared Cache; was beim Browser ankommt,
-# überschreibt Symfonys AbstractSessionListener. "public, max-age=3600"
+# überschreibt Shopwares CacheControlListener. "public, max-age=3600"
 # bekommt man an einer Storefront-URL nie zu sehen.
 #
-# Das belastbare Merkmal ist der Age-Header: vorhanden heisst, ein Shared
-# Cache antwortet; wachsend heisst, die Antwort kam aus dem Cache.
+# Belastbar ist erst der Vergleich zweier Abrufe mit 2 s Pause: Ein Treffer
+# zeigt ein Age, das um mindestens die Pause wächst, UND beim 2. Abruf
+# dasselbe Date. Ein wachsendes Age allein genügt nicht: Schon ein MISS
+# trägt Age 1, und mit ESI (6.7: Header und Footer immer) trägt eine neu
+# gerenderte Seite das Age ihres ältesten Fragments.
 #
-#   curl -s -o /dev/null -D - https://shop/ | grep -i '^age'
+#   curl -s -o /dev/null -D - https://shop/ | grep -iE '^(age|date):'
 #
 # (curl -I sendet HEAD; manche Setups beantworten HEAD anders als GET.)
+# Die ganze Auswertung macht scripts/check-http-cache.sh.
 
 shopware:
     http_cache:
