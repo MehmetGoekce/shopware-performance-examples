@@ -6,28 +6,29 @@
 # ob die zweite Antwort aus dem Cache kommt. Erkennt drei Fälle:
 #   1. Varnish mit config/varnish.vcl  -> Header "X-Cache: HIT/MISS"
 #   2. Anderer Reverse Proxy / CDN     -> "Cache-Control: public, s-maxage=..." vom Backend
-#   3. Eingebauter Shopware-Cache      -> Browser sieht immer "no-cache, private";
-#                                         Treffer nur daran erkennbar, dass Age
-#                                         zwischen den Aufrufen um mindestens die
-#                                         Pause wächst. Age > 0 allein reicht nicht:
-#                                         Symfony setzt beim Speichern Age = Sekunden
-#                                         seit dem Date-Header, und Shopware erzeugt
-#                                         die Response vor dem Twig-Rendern. Ein MISS
-#                                         trägt so Age 1 über eine Sekundengrenze und
-#                                         mehr bei langsamem Rendern, aber immer
-#                                         weniger als seine TTFB + 1 s.
-#                                         Mit ESI trägt die Seite das Age des ältesten
-#                                         Fragments (Symfony ResponseCacheStrategy):
-#                                         Age wächst dann auch, wenn die Seite selbst
-#                                         neu gerendert wird. Deshalb gilt als Treffer
-#                                         nur: Age wächst um mindestens die Pause UND der 2. Aufruf
-#                                         ist deutlich schneller.
+#   3. Eingebauter Shopware-Cache      -> Browser sieht immer "no-cache, private".
+#      Treffer: Age wächst zwischen den Aufrufen um mindestens die Pause UND
+#      Date bleibt gleich. Nur eine gespeicherte Kopie wiederholt ihr Date.
+#      Gibt Symfony X-Symfony-Cache aus (dev oder framework.http_cache.trace_level),
+#      entscheidet der Header: nur "fresh" beim 2. Aufruf ist ein Treffer.
+#      Age allein reicht nicht:
+#        - Symfony setzt beim Speichern Age = Sekunden seit Date, und Shopware
+#          erzeugt die Response vor dem Twig-Rendern. Ein MISS trägt so Age 1
+#          über eine Sekundengrenze und mehr bei langsamem Rendern.
+#        - Mit ESI trägt die Seite das Age des ältesten Fragments (Symfony
+#          ResponseCacheStrategy), Date bleibt das der neu gerenderten Seite.
+#          Shopware 6.7 lädt Header und Footer immer per ESI (6.6 nur mit
+#          CACHE_REWORK): Dort wächst Age auch am nie gecachten Warenkorb und
+#          bei abgeschaltetem Cache.
+#      Wächst Age, Date aber auch, ist es nicht entscheidbar: ESI-Fragment oder
+#      ein Proxy davor, der Date neu setzt (nginx proxy_pass ohne
+#      "proxy_pass_header Date;"). Die TTFB wird nur angezeigt: Direkt nach
+#      cache:clear ist auch ohne Treffer der 1. Aufruf viel langsamer.
 #
 # Umgebungsvariablen:
 #   CACHE_DEBUG_WAIT  Pause zwischen den Aufrufen in ganzen Sekunden (Default und
 #                     Minimum: 2). Bei einem Treffer wächst Age um mindestens
-#                     diesen Wert. Das Age zweier MISS kann sich durch die
-#                     Rundung auf Sekunden um 1 unterscheiden, deshalb nicht 1.
+#                     diesen Wert.
 #   CURL_CMD          curl-Befehl (Default: curl, für Tests austauschbar)
 #
 # Verwendung (im Ordner chapters/06-http-cache):
@@ -90,12 +91,15 @@ analyze_url() {
     sleep "${CACHE_DEBUG_WAIT}"
     second=$(fetch "${url}")
 
-    local status cache_control x_cache age1 age set_cookie ttfb1 ttfb2
+    local status cache_control x_cache age1 age date1 date2 trace set_cookie ttfb1 ttfb2
     status=$(echo "${second}" | grep -i "^HTTP" | tail -1 | awk '{print $2}')
     cache_control=$(header_value "${second}" "cache-control")
     x_cache=$(header_value "${second}" "x-cache")
     age1=$(header_value "${first}" "age")
     age=$(header_value "${second}" "age")
+    date1=$(header_value "${first}" "date")
+    date2=$(header_value "${second}" "date")
+    trace=$(header_value "${second}" "x-symfony-cache")
     set_cookie=$(echo "${first}" | grep -ci "^set-cookie:" || true)
     ttfb1=$(echo "${first}" | sed -n 's/^TTFB=//p')
     ttfb2=$(echo "${second}" | sed -n 's/^TTFB=//p')
@@ -104,6 +108,8 @@ analyze_url() {
     echo "Cache-Control:  ${cache_control:-(nicht gesetzt)}"
     [[ -n "${x_cache}" ]] && echo "X-Cache:        ${x_cache}"
     [[ -n "${age1}${age}" ]] && echo "Age:            1. Aufruf ${age1:--}, 2. Aufruf ${age:--} (Pause ${CACHE_DEBUG_WAIT} s)"
+    [[ -n "${date1}${date2}" ]] && echo "Date:           1. Aufruf ${date1:--}, 2. Aufruf ${date2:--}"
+    [[ -n "${trace}" ]] && echo "X-Symfony-Cache: ${trace} (2. Aufruf)"
     awk -v a="${ttfb1}" -v b="${ttfb2}" 'BEGIN { printf "TTFB:           1. Aufruf %.0f ms, 2. Aufruf %.0f ms\n", a * 1000, b * 1000 }'
     [[ "${set_cookie}" -gt 0 ]] && echo "Set-Cookie:     ${set_cookie}x beim 1. Aufruf"
 
@@ -119,26 +125,47 @@ analyze_url() {
     elif [[ "${cache_control}" == *public* && "${cache_control}" == *s-maxage* ]]; then
         echo -e "${GREEN}Backend liefert cachebar für Reverse Proxy/CDN${NC} (Cache-Status beim Proxy prüfen)"
     elif [[ "${cache_control}" == *private* ]]; then
-        # Age wächst um mindestens die Pause, und Age >= TTFB + 1 s (das erreicht kein MISS)
-        local aged=0
+        local aged=0 main_trace="" trace_hit=0 token
         if [[ "${age1}" =~ ^[0-9]+$ && "${age}" =~ ^[0-9]+$ ]] \
-            && [[ $((age - age1)) -ge "${CACHE_DEBUG_WAIT}" ]] \
-            && awk -v g="${age}" -v b="${ttfb2}" 'BEGIN { exit !(g >= b + 1) }'; then
+            && [[ $((age - age1)) -ge "${CACHE_DEBUG_WAIT}" ]]; then
             aged=1
         fi
-        if [[ "${aged}" -eq 1 ]] && awk -v a="${ttfb1}" -v b="${ttfb2}" 'BEGIN { exit !(b * 2 < a) }'; then
-            echo -e "${GREEN}Eingebauter Shopware-Cache: 2. Aufruf aus dem Cache${NC} (Age um $((age - age1)) s gewachsen, TTFB deutlich kürzer)"
+        # Der Trace nennt zuerst die Hauptanfrage ("fresh" im Format short,
+        # "GET /: fresh; GET /_esi/...: ..." im Format full). Nur "fresh" zählt,
+        # "valid" heisst: das Backend hat die Seite neu gerendert.
+        if [[ -n "${trace}" ]]; then
+            main_trace="${trace%%;*}"
+            main_trace="${main_trace##*: }"
+            for token in ${main_trace//[\/,]/ }; do
+                [[ "${token}" == "fresh" ]] && trace_hit=1
+            done
+        fi
+        if [[ -n "${trace}" && "${trace_hit}" -eq 1 ]]; then
+            echo -e "${GREEN}Eingebauter Shopware-Cache: 2. Aufruf aus dem Cache${NC} (X-Symfony-Cache: ${main_trace})"
+        elif [[ -n "${trace}" ]]; then
+            echo -e "${YELLOW}Kein Treffer: X-Symfony-Cache meldet \"${main_trace}\"${NC}"
+            echo "                \"miss\" ohne \"store\": Route ohne _httpCache oder Cache aus."
+            echo "                \"miss/store\" auch beim 2. Aufruf: der Eintrag überlebt nicht (APP_ENV=dev?)."
+        elif [[ "${aged}" -eq 1 && -n "${date1}" && "${date1}" == "${date2}" ]]; then
+            echo -e "${GREEN}Eingebauter Shopware-Cache: 2. Aufruf aus dem Cache${NC} (Age um $((age - age1)) s gewachsen, Date unverändert)"
         elif [[ "${aged}" -eq 1 ]]; then
-            echo -e "${YELLOW}Age wächst um mindestens die Pause, die TTFB sinkt aber nicht${NC}"
-            echo "                Kam schon der 1. Aufruf aus dem Cache? Oder bindet die Seite ESI-Fragmente ein"
-            echo "                (dann stammt Age vom ältesten Fragment, die Seite selbst wurde neu gerendert)?"
-            echo "                Eindeutig: bin/console cache:pool:clear cache.http, dann erneut prüfen."
+            if [[ -z "${date1}" || -z "${date2}" ]]; then
+                echo -e "${YELLOW}Nicht entscheidbar: Age wächst um die Pause, aber ohne Date-Header${NC}"
+            else
+                echo -e "${YELLOW}Nicht entscheidbar: Age wächst um die Pause, Date aber auch${NC}"
+            fi
+            echo "                Entweder bindet die neu gerenderte Seite ein gecachtes ESI-Fragment ein (ab 6.7"
+            echo "                Header und Footer, auch am nie gecachten Warenkorb), oder ein Proxy davor setzt"
+            echo "                Date neu (nginx proxy_pass ohne \"proxy_pass_header Date;\")."
+            echo "                Eindeutig: framework.http_cache.trace_level: short setzen (Kapitel 6.8)."
         elif [[ "${age1}" =~ ^[0-9]+$ && "${age}" =~ ^[0-9]+$ && "${age}" -lt "${age1}" ]]; then
-            echo -e "${YELLOW}Age gesunken: 1. Aufruf aus dem Cache, Eintrag danach abgelaufen oder invalidiert${NC}"
+            echo -e "${YELLOW}Kein Treffer erkennbar: Age gesunken${NC} (1. Aufruf aus dem Cache und Eintrag danach"
+            echo "                abgelaufen oder invalidiert, oder zwei MISS, ab 6.7 auch bei abgeschaltetem Cache)"
         elif [[ "${age}" =~ ^[0-9]+$ && ! "${age1}" =~ ^[0-9]+$ ]]; then
             echo -e "${YELLOW}Kein Treffer erkennbar: Age nur beim 2. Aufruf${NC} (erneut prüfen)"
         elif [[ "${age}" =~ ^[0-9]+$ ]]; then
             echo -e "${YELLOW}Kein Treffer erkennbar: Age nicht um die Pause gewachsen${NC} (zwei MISS? Route mit _httpCache? APP_ENV=prod?)"
+            echo "                Ab 6.7 trägt jede Seite ein Age (ESI), auch wenn der Cache abgeschaltet ist."
         elif awk -v a="${ttfb1}" -v b="${ttfb2}" 'BEGIN { exit !(b * 3 < a) }'; then
             echo -e "${YELLOW}2. Aufruf deutlich schneller, aber ohne Age${NC} (Warmlaufen statt Cache? APP_ENV=prod?)"
         else

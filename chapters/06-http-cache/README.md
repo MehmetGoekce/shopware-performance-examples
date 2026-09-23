@@ -44,9 +44,11 @@ Beides beim Übernehmen in ein eigenes Plugin anpassen; die Twig-Templates selbs
 - **`stale_while_revalidate`/`stale_if_error`** sind ab Werk nicht gesetzt. Sie wirken im eingebauten Cache;
   Varnish kennt `stale-if-error` nicht, und `config/varnish.vcl` setzt Grace selbst.
 - **Ohne Reverse Proxy** sieht der Browser immer `Cache-Control: no-cache, private`. Der eingebaute
-  Cache arbeitet trotzdem, erkennbar nur an `Age`, das zwischen zwei Aufrufen um die Pause wächst
-  (`Age` > 0 allein zeigt auch ein langsamer MISS), und an der Antwortzeit. Mit ESI trägt die Seite
-  das `Age` des ältesten Fragments; `scripts/cache-debug.sh` verlangt deshalb beides.
+  Cache arbeitet trotzdem, erkennbar an `Age`, das zwischen zwei Aufrufen um die Pause wächst, während
+  `Date` gleich bleibt: Nur eine gespeicherte Kopie wiederholt ihr `Date`. `Age` allein reicht nicht
+  (ein langsamer MISS trägt `Age` > 0; mit ESI, ab 6.7 immer, trägt die Seite das `Age` des ältesten
+  Fragments). Wächst `Date` mit, meldet `scripts/cache-debug.sh` «nicht entscheidbar»; eindeutig wird
+  es mit `framework.http_cache.trace_level: short` (Header `X-Symfony-Cache`, Kapitel 6.8).
 
 ## Schnellstart: eingebauter Cache
 
@@ -58,7 +60,7 @@ APP_ENV=prod
 
 bin/console cache:clear
 
-# Prüfen: zweiter Aufruf deutlich schneller?
+# Prüfen: Age wächst um die Pause, Date bleibt gleich?
 ./scripts/cache-debug.sh https://ihr-shop.ch / /kategorie/
 ```
 

@@ -130,12 +130,18 @@ STUB
     mkdir -p "$FIXTURES"
 }
 
-# Header-Fixtures fuer cache-debug.sh: headers <datei> <status> <age|-> <ttfb>
+# Header-Fixtures fuer cache-debug.sh:
+#   headers <datei> <status> <age|-> <ttfb> [<date|->] [<x-symfony-cache>]
 headers() {
-    local age=""
+    local age="" date="" trace=""
     [[ "$3" != "-" ]] && age="Age: $3\r\n"
-    printf "HTTP/1.1 $2 X\r\nCache-Control: no-cache, private\r\n${age}TTFB=$4\n" > "$FIXTURES/$1.headers"
+    [[ -n "${5:-}" && "${5:-}" != "-" ]] && date="Date: $5\r\n"
+    [[ -n "${6:-}" ]] && trace="X-Symfony-Cache: $6\r\n"
+    printf "HTTP/1.1 $2 X\r\nCache-Control: no-cache, private\r\n${age}${date}${trace}TTFB=$4\n" > "$FIXTURES/$1.headers"
 }
+
+D1='Wed, 23 Sep 2026 18:00:00 GMT'
+D2='Wed, 23 Sep 2026 18:00:03 GMT'
 
 debug() {
     CURL_CMD="$TMP/curl" CACHE_DEBUG_WAIT="$1" run "$DIR/cache-debug.sh" http://shop.test /
@@ -143,24 +149,33 @@ debug() {
 
 @test "cache-debug.sh does not report a hit for Age: 0 (MISS stored, e.g. APP_ENV=dev)" {
     make_curl_stub
-    headers first 200 0 0.120; headers second 200 0 0.110
+    headers first 200 0 0.120 "$D1"; headers second 200 0 0.110 "$D2"
     debug 2
     [ "$status" -eq 0 ]
     [[ "$output" != *"2. Aufruf aus dem Cache"* ]]
     [[ "$output" == *"Kein Treffer erkennbar"* ]]
 }
 
-@test "cache-debug.sh reports the built-in cache when Age grows by the pause and TTFB drops" {
+@test "cache-debug.sh reports the built-in cache when Age grows by the pause and Date stays" {
     make_curl_stub
-    headers first 200 0 0.130; headers second 200 2 0.010
+    headers first 200 0 0.130 "$D1"; headers second 200 2 0.010 "$D1"
     debug 2
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Eingebauter Shopware-Cache: 2. Aufruf aus dem Cache"* ]]
+    [[ "$output" == *"Eingebauter Shopware-Cache: 2. Aufruf aus dem Cache"*"(Age um 2 s gewachsen, Date unverändert)"* ]]
+    [[ "$output" == *"Date:           1. Aufruf $D1, 2. Aufruf $D1"* ]]
+}
+
+# MEM-316 F12: ein warmer Cache (Treffer -> Treffer) hat keine kuerzere TTFB
+@test "cache-debug.sh reports a warm cache (hit -> hit, same TTFB) as a hit" {
+    make_curl_stub
+    headers first 200 40 0.010 "$D1"; headers second 200 42 0.010 "$D1"
+    debug 2
+    [[ "$output" == *"2. Aufruf aus dem Cache"* ]]
 }
 
 @test "cache-debug.sh waits the pause between the two requests" {
     make_curl_stub
-    headers first 200 0 0.130; headers second 200 2 0.010
+    headers first 200 0 0.130 "$D1"; headers second 200 2 0.010 "$D1"
     debug 2
     t1=$(sed -n 1p "$FIXTURES/times"); t2=$(sed -n 2p "$FIXTURES/times")
     [ $((t2 - t1)) -ge 2 ]
@@ -170,7 +185,7 @@ debug() {
 # erzeugt die Response vor dem Twig-Rendern. Zwei langsame MISS tragen je Age 3.
 @test "cache-debug.sh does not count the Age of two slow misses as a hit" {
     make_curl_stub
-    headers first 200 3 3.100; headers second 200 3 3.050
+    headers first 200 3 3.100 "$D1"; headers second 200 3 3.050 "$D2"
     debug 2
     [[ "$output" != *"2. Aufruf aus dem Cache"* ]]
     [[ "$output" == *"Kein Treffer erkennbar"* ]]
@@ -179,47 +194,109 @@ debug() {
 # Grenze mit Pause 3: Age waechst genau um die Pause -> Treffer, um eins weniger -> keiner
 @test "cache-debug.sh counts Age growth equal to the pause, not one less" {
     make_curl_stub
-    headers first 200 0 0.100; headers second 200 3 0.010
+    headers first 200 0 0.100 "$D1"; headers second 200 3 0.010 "$D1"
     debug 3
     [[ "$output" == *"2. Aufruf aus dem Cache"* ]]
     rm -f "$FIXTURES/count" "$FIXTURES/times"
-    headers second 200 2 0.010
+    headers second 200 2 0.010 "$D1"
     debug 3
     [[ "$output" != *"2. Aufruf aus dem Cache"* ]]
     [[ "$output" == *"Kein Treffer erkennbar"* ]]
 }
 
-# Ein MISS traegt immer Age < TTFB + 1 s
-@test "cache-debug.sh does not count a second response whose Age is below TTFB + 1 s" {
+# MEM-316 T4: 6.7-Warenkorb direkt nach cache:clear. Age vom Header-Fragment,
+# Date neu, 2. Aufruf viel schneller. Die alte TTFB-Regel meldete das gruen.
+@test "cache-debug.sh does not count a much faster 2nd call with a new Date as a hit" {
     make_curl_stub
-    headers first 200 0 4.000; headers second 200 2 1.500
+    headers first 200 0 0.990 "$D1"; headers second 200 2 0.230 "$D2"
     debug 2
     [[ "$output" != *"2. Aufruf aus dem Cache"* ]]
+    [[ "$output" == *"Nicht entscheidbar: Age wächst um die Pause, Date aber auch"* ]]
 }
 
 # Mit ESI setzt Symfony das Age der Seite auf das des aeltesten Fragments.
-@test "cache-debug.sh does not report a hit when Age grows but TTFB stays (ESI fragment)" {
+@test "cache-debug.sh: Age grows but Date is new (ESI fragment or proxy) = not decidable" {
     make_curl_stub
-    headers first 200 4 0.113; headers second 200 6 0.115
+    headers first 200 4 0.113 "$D1"; headers second 200 6 0.115 "$D2"
     debug 2
     [[ "$output" != *"2. Aufruf aus dem Cache"* ]]
-    [[ "$output" == *"TTFB sinkt aber nicht"* ]]
+    [[ "$output" == *"Nicht entscheidbar"* ]]
     [[ "$output" == *"ESI"* ]]
+    [[ "$output" == *"proxy_pass_header Date;"* ]]
+    [[ "$output" == *"trace_level: short"* ]]
 }
 
-@test "cache-debug.sh reports an entry that expired between the requests" {
+@test "cache-debug.sh: Age grows but no Date header = not decidable" {
     make_curl_stub
-    headers first 200 2 0.010; headers second 200 0 0.120
+    headers first 200 0 0.130; headers second 200 2 0.010
+    debug 2
+    [[ "$output" != *"2. Aufruf aus dem Cache"* ]]
+    [[ "$output" == *"Nicht entscheidbar: Age wächst um die Pause, aber ohne Date-Header"* ]]
+}
+
+@test "cache-debug.sh: Date only on the 1st response is not the same Date" {
+    make_curl_stub
+    headers first 200 0 0.130 "$D1"; headers second 200 2 0.010
+    debug 2
+    [[ "$output" != *"2. Aufruf aus dem Cache"* ]]
+    [[ "$output" == *"Nicht entscheidbar"* ]]
+}
+
+@test "cache-debug.sh reports an Age that dropped as no hit" {
+    make_curl_stub
+    headers first 200 2 0.010 "$D1"; headers second 200 0 0.120 "$D2"
     debug 2
     [[ "$output" == *"Age gesunken"* ]]
+    [[ "$output" != *"2. Aufruf aus dem Cache"* ]]
 }
 
 @test "cache-debug.sh needs both Age values for a hit" {
     make_curl_stub
-    headers first 200 - 0.300; headers second 200 5 0.010
+    headers first 200 - 0.300 "$D1"; headers second 200 5 0.010 "$D1"
     debug 2
     [[ "$output" != *"2. Aufruf aus dem Cache"* ]]
     [[ "$output" == *"Age nur beim 2. Aufruf"* ]]
+}
+
+@test "cache-debug.sh: X-Symfony-Cache fresh on the 2nd call is a hit, even without Age growth" {
+    make_curl_stub
+    headers first 200 0 0.130 "$D1" "miss/store"; headers second 200 0 0.010 "$D1" "fresh"
+    debug 2
+    [[ "$output" == *"2. Aufruf aus dem Cache"*"(X-Symfony-Cache: fresh)"* ]]
+}
+
+@test "cache-debug.sh: the trace decides over Age and Date" {
+    make_curl_stub
+    headers first 200 0 0.130 "$D1" "miss/store"; headers second 200 2 0.010 "$D1" "miss/store"
+    debug 2
+    [[ "$output" != *"2. Aufruf aus dem Cache"* ]]
+    [[ "$output" == *'Kein Treffer: X-Symfony-Cache meldet "miss/store"'* ]]
+}
+
+@test "cache-debug.sh: only the trace of the 2nd call counts" {
+    make_curl_stub
+    headers first 200 0 0.130 "$D1" "fresh"; headers second 200 0 0.130 "$D2" "miss"
+    debug 2
+    [[ "$output" == *'Kein Treffer: X-Symfony-Cache meldet "miss"'* ]]
+}
+
+@test "cache-debug.sh: full trace format - the main request decides, not an ESI fragment" {
+    make_curl_stub
+    headers first 200 4 0.130 "$D1"; headers second 200 6 0.130 "$D2" "GET /: miss, store; GET /_esi/global/header: fresh"
+    debug 2
+    [[ "$output" != *"2. Aufruf aus dem Cache"* ]]
+    [[ "$output" == *'Kein Treffer: X-Symfony-Cache meldet "miss, store"'* ]]
+    rm -f "$FIXTURES/count" "$FIXTURES/times"
+    headers second 200 0 0.010 "$D1" "GET /: fresh; GET /_esi/global/header: miss"
+    debug 2
+    [[ "$output" == *"2. Aufruf aus dem Cache"* ]]
+}
+
+@test "cache-debug.sh: trace valid (revalidated, re-rendered) is not a hit" {
+    make_curl_stub
+    headers first 200 0 0.130 "$D1"; headers second 200 2 0.010 "$D1" "stale, valid, store"
+    debug 2
+    [[ "$output" != *"2. Aufruf aus dem Cache"* ]]
 }
 
 @test "cache-debug.sh treats a redirect as a redirect, even with growing Age" {
