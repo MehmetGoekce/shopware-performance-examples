@@ -47,6 +47,13 @@ parameters:
         - chapters/20-ab-testing/AbTesting/src/AbTesting.php
         - chapters/20-ab-testing/AbTesting/src/Log/ExperimentLogProcessor.php
 
+        # Skizzen, ausdruecklich nicht lauffaehig (Kopfkommentar der Dateien):
+        # Datenquellen, die jedes Team selbst anbindet. Nur diese zwei Dateien -
+        # eine pauschale Ausnahme fuer App\Service verdeckte frueher Aufrufe
+        # auf Methoden, die es nicht gibt (MEM-317)
+        - chapters/15-langfristiger-plan/src/AnnualPerformanceReportService.php
+        - chapters/15-langfristiger-plan/src/OkrProgressService.php
+
     reportUnmatchedIgnoredErrors: false
 
     ignoreErrors:
@@ -71,20 +78,6 @@ parameters:
         # Doctrine DBAL not installed
         -
             message: '#Doctrine\\DBAL\\#'
-            reportUnmatched: false
-
-        # App\Service placeholder classes (book examples - not implemented)
-        -
-            message: '#unknown class App\\Service\\#'
-            reportUnmatched: false
-        -
-            message: '#invalid type App\\Service\\#'
-            reportUnmatched: false
-        -
-            message: '#on an unknown class App\\Service\\#'
-            reportUnmatched: false
-        -
-            message: '#Instantiated class App\\Service\\#'
             reportUnmatched: false
 
         # Properties used in book examples (may appear unused)
