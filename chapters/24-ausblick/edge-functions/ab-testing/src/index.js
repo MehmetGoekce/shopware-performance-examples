@@ -67,7 +67,9 @@ export default {
             assignments[testName] = variant;
         }
 
-        // Request an Origin mit Varianten-Headern
+        // Request an Origin mit Varianten-Headern. [...request.headers] liefert
+        // die Paare [Name, Wert] und behält alle Header; {...request.headers}
+        // ergäbe {} (Headers hat keine eigenen Properties)
         const modifiedRequest = new Request(request, {
             headers: new Headers([
                 ...request.headers,

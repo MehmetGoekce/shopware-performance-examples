@@ -10,7 +10,7 @@ Code-Beispiele und Konfigurationen für zukunftsweisende Performance-Technologie
 | Edge Computing | `edge-functions/` | Cloudflare Workers Beispiele |
 | Anomalie-Erkennung | `scripts/detect-anomalies.py` | ML-basierte Performance-Überwachung |
 | INP-Optimierung | `scripts/analyze-inp.js` | Browser-Script für INP-Analyse |
-| Green IT | `scripts/measure-carbon.sh` | CO2-Fußabdruck messen |
+| Green IT | `scripts/measure-carbon.sh` | CO2 je Seitenaufruf schätzen (Website Carbon, SWDM v4) |
 
 ## Voraussetzungen
 
@@ -65,7 +65,23 @@ cp wrangler.toml.example wrangler.toml
 wrangler deploy
 ```
 
-### 3. Performance-Anomalien erkennen
+### 3. CO2 je Seitenaufruf schätzen
+
+Der Endpoint `/site` der Website Carbon API (URL rein, Messung dort) ist seit
+dem 14.07.2025 nicht mehr öffentlich (HTTP 401). Das Skript fragt `/data` mit
+der übertragenen Seitengrösse ab; die messen Sie mit Lighthouse:
+
+```bash
+lighthouse https://shop.example.com --output=json --output-path=lh.json
+./scripts/measure-carbon.sh --views 100000 lh.json      # oder direkt: 1500000 (Bytes)
+./scripts/measure-carbon.sh --green lh.json             # Hosting mit erneuerbarer Energie
+```
+
+Braucht `curl` und `jq`. Exit-Codes: `0` Ergebnis, `1` Aufruffehler, `2` API
+oder Werkzeug gescheitert. SWDM v4 rechnet linear in Bytes: Das Ergebnis ist
+eine Modellschätzung, keine Messung.
+
+### 4. Performance-Anomalien erkennen
 
 ```bash
 # Historische Daten sammeln (7 Tage empfohlen)
@@ -85,15 +101,17 @@ chapters/24-ausblick/
 │   └── quic-tuning.conf        # QUIC-Optimierungen
 ├── edge-functions/
 │   ├── ab-testing/             # A/B-Testing auf der Edge
-│   │   ├── src/index.js
+│   │   ├── src/index.js        # mehrere Tests, Gewichtung
+│   │   ├── src/minimal.js      # Fassung aus dem Buch
 │   │   └── wrangler.toml.example
 │   └── geo-routing/            # Geo-basiertes Routing
-│       ├── src/index.js
+│       ├── src/index.js        # Währung, Sprache, Override-Cookie
+│       ├── src/minimal.js      # Fassung aus dem Buch
 │       └── wrangler.toml.example
 └── scripts/
     ├── detect-anomalies.py     # ML Anomalie-Erkennung
     ├── analyze-inp.js          # INP-Analyse im Browser
-    ├── measure-carbon.sh       # CO2-Messung
+    ├── measure-carbon.sh       # CO2-Schätzung aus übertragenen Bytes
     └── collect-metrics.sh      # Metrik-Sammlung für ML
 ```
 
@@ -106,13 +124,13 @@ chapters/24-ausblick/
 | HTTP/3 | ✅ Produktionsreif | Cloudflare aktivieren |
 | INP (statt FID) | ✅ Seit März 2024 | Unbedingt messen |
 | Edge Computing | ✅ Produktionsreif | Für A/B, Geo, Bot-Schutz |
-| AVIF-Bilder | ✅ Browser-Support 90%+ | Aktivieren |
+| AVIF-Bilder | ✅ rund 94 % der Browser ([caniuse](https://caniuse.com/avif), Safari ab 16.4) | Erst messen: im Test-Shop von Kapitel 4 war AVIF etwa so gross wie JPEG (Encoder-abhängig) |
 
 ### Was beobachtet werden sollte
 
 | Technologie | Status | Ausblick |
 |-------------|--------|----------|
-| WebAssembly für E-Commerce | 🔄 Experimentell | 2025-2026 |
+| WebAssembly | ✅ in allen aktuellen Browsern ([caniuse](https://caniuse.com/wasm)) und in Cloudflare Workers | Kein Standardfall im Shop-Frontend, nur für rechenintensive Teile |
 | AI-gestützte Optimierung | 🔄 Frühe Phase | Anomalie-Erkennung jetzt möglich |
 | Composable Commerce | 🔄 Enterprise-only | Für große Shops relevant |
 

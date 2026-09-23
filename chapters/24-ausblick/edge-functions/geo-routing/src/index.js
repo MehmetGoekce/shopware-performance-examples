@@ -61,19 +61,18 @@ export default {
         const city = request.cf?.city || 'Unknown';
         const continent = request.cf?.continent || 'EU';
 
-        // Konfiguration für dieses Land
-        const config = GEO_CONFIG[country] || GEO_CONFIG['DEFAULT'];
-
-        // Cookie prüfen: Nutzer hat manuell Land gewählt?
+        // Cookie prüfen: Nutzer hat manuell Land gewählt? Dann gilt dessen
+        // Konfiguration. GEO_CONFIG nie verändern: Ein Worker-Isolate bedient
+        // viele Requests, eine Änderung gälte für alle folgenden Besucher.
         const cookies = parseCookies(request.headers.get('Cookie') || '');
         const overrideCountry = cookies['geo_override'];
+        const config = (overrideCountry && GEO_CONFIG[overrideCountry])
+            || GEO_CONFIG[country]
+            || GEO_CONFIG['DEFAULT'];
 
-        if (overrideCountry && GEO_CONFIG[overrideCountry]) {
-            // Manuelle Auswahl respektieren
-            Object.assign(config, GEO_CONFIG[overrideCountry]);
-        }
-
-        // Request an Origin mit Geo-Headern
+        // Request an Origin mit Geo-Headern. [...request.headers] liefert die
+        // Paare [Name, Wert] und behält alle Header; {...request.headers}
+        // ergäbe {} (Headers hat keine eigenen Properties)
         const modifiedRequest = new Request(request, {
             headers: new Headers([
                 ...request.headers,
