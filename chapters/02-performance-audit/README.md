@@ -31,7 +31,7 @@ Als der Benutzer aufrufen, unter dem der Shop läuft:
 sudo -u www-data ./chapters/02-performance-audit/scripts/audit.sh /var/www/shopware
 
 # Mit Abruf-Test gegen die laufende Seite (zwei Abrufe als Gast; Treffer, wenn Age
-# um mindestens die Pause wächst - beim MISS steht in Age die Renderdauer)
+# um mindestens die Pause wächst UND Date gleich bleibt - Kapitel 6)
 SHOP_URL=https://ihr-shop.ch sudo -E -u www-data \
   ./chapters/02-performance-audit/scripts/audit.sh /var/www/shopware
 ```
@@ -48,8 +48,10 @@ Was das Skript anders macht als die naheliegenden Einzeiler:
 - `ps aux | grep messenger:consume` findet sich selbst. Das Skript liest
   `ps -eo args` und zählt nur Zeilen, die mit dem PHP-Aufruf beginnen (auch
   mit BusyBox, dessen `pgrep` kein `-c` kennt). Es sieht nur diesen Host.
-- `debug:dotenv` kennt nur Variablen aus `.env`-Dateien. Steht ein Schalter
-  nur in der Umgebung, sagt das Skript das, statt eine Vorgabe zu behaupten;
+- `debug:dotenv` kennt nur Variablen aus `.env`-Dateien (auch `.env.prod.local`).
+  Steht ein Schalter nur in der Umgebung des Webservers (FPM `env[]`, Apache
+  `SetEnv`), sagt das Skript das, statt eine Vorgabe zu behaupten, und nennt
+  die Administration (Einstellungen > System > Caches & Indizes) als Web-Sicht;
   nur der Wert `0` schaltet den Cache ab (`false` gilt als an).
 - `php-fpm -i` als `www-data` übergeht ini-Dateien, die nur root lesen darf;
   das Skript meldet sie (Kapitel 9).

@@ -196,33 +196,75 @@ code_lines() {
     [ "$output" = "0" ]
 }
 
-# curl-Stub: Age-Werte je Abruf aus $FIX/ages (eine Zeile je Abruf)
-age_curl() {
-    printf '%s\n' "$@" > "$FIX/ages"
+# curl-Stub: je Abruf eine Zeile "Age|Date|X-Symfony-Cache" aus $FIX/resp.
+# Leere Felder lassen den Header weg. Danach viel Ballast (Regel 42).
+resp_curl() {
+    printf '%s\n' "$@" > "$FIX/resp"
     cat > "$TMP/curl" <<'EOF'
 #!/bin/bash
 n=$(( $(cat "$FIX/calls" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$FIX/calls"
-printf 'HTTP/1.1 200 OK\r\ncache-control: no-cache, private\r\nage: %s\r\n\r\nttfb: 0.010\n' "$(sed -n "${n}p" "$FIX/ages")"
+date +%s >> "$FIX/times"
+IFS='|' read -r age date trace <<< "$(sed -n "${n}p" "$FIX/resp")"
+printf 'HTTP/1.1 200 OK\r\ncache-control: no-cache, private\r\n'
+[[ -n "$age" ]] && printf 'Age: %s\r\n' "$age"
+[[ -n "$date" ]] && printf 'date: %s\r\n' "$date"
+[[ -n "$trace" ]] && printf 'X-Symfony-Cache: %s\r\n' "$trace"
+printf 'x-filler: %s\r\n' $(seq 1 200)
+printf '\r\nttfb: 0.010\n'
 EOF
     chmod +x "$TMP/curl"
 }
 
-@test "audit.sh reports a hit when Age grows by at least the pause" {
-    age_curl 0 2
+D1='Wed, 23 Sep 2026 18:00:00 GMT'
+D2='Wed, 23 Sep 2026 18:00:03 GMT'
+
+@test "audit.sh reports a hit when Age grows by the pause and Date stays" {
+    resp_curl "0|$D1|" "2|$D1|"
     AUDIT_WAIT=2 CURL_CMD="$TMP/curl" SHOP_URL="http://shop.test" run "$DIR/audit.sh" "$TMP/shop"
-    [[ "$output" == *"Abruf 2 (Gast, ohne Cookies): TTFB 0.010 s, Age 2"* ]]
-    [[ "$output" == *"Treffer: Age ist um mindestens die Pause (2 s) gewachsen."* ]]
+    [[ "$output" == *"Abruf 2 (Gast, ohne Cookies): TTFB 0.010 s, Age 2, Date $D1"* ]]
+    [[ "$output" == *"Treffer: Age ist um mindestens die Pause (2 s) gewachsen, Date unverändert."* ]]
+    [[ "$output" != *"Kein Treffer"* && "$output" != *"Nicht entscheidbar"* ]]
+}
+
+@test "audit.sh waits the pause between the two requests" {
+    resp_curl "0|$D1|" "2|$D1|"
+    AUDIT_WAIT=2 CURL_CMD="$TMP/curl" SHOP_URL="http://shop.test" run "$DIR/audit.sh" "$TMP/shop"
+    t1=$(sed -n 1p "$FIX/times"); t2=$(sed -n 2p "$FIX/times")
+    [ $((t2 - t1)) -ge 2 ]
+}
+
+@test "audit.sh: Age grows by the pause but Date is new (ESI on 6.7) = not decidable" {
+    # nie gecachter Warenkorb auf 6.7: Age vom Header-Fragment, Date neu
+    resp_curl "0|$D1|" "2|$D2|"
+    AUDIT_WAIT=2 CURL_CMD="$TMP/curl" SHOP_URL="http://shop.test" run "$DIR/audit.sh" "$TMP/shop"
+    [[ "$output" == *"Nicht entscheidbar: Age ist um die Pause gewachsen, Date aber nicht gleich geblieben."* ]]
+    [[ "$output" == *"proxy_pass_header Date"* ]]
+    [[ "$output" != *"Treffer: Age ist"* ]]
+}
+
+@test "audit.sh: Age grows but no Date header = not decidable" {
+    resp_curl "0||" "2||"
+    AUDIT_WAIT=2 CURL_CMD="$TMP/curl" SHOP_URL="http://shop.test" run "$DIR/audit.sh" "$TMP/shop"
+    [[ "$output" == *"Nicht entscheidbar"* ]]
+    [[ "$output" != *"Treffer: Age ist"* ]]
+}
+
+@test "audit.sh: Age grows by one less than the pause with the same Date = no hit" {
+    resp_curl "0|$D1|" "2|$D1|"
+    AUDIT_WAIT=3 CURL_CMD="$TMP/curl" SHOP_URL="http://shop.test" run "$DIR/audit.sh" "$TMP/shop"
+    [[ "$output" == *"Kein Treffer erkennbar"* ]]
+    [[ "$output" != *"Treffer: Age ist"* ]]
 }
 
 @test "audit.sh does not count Age 0 as a hit" {
-    age_curl 0 0
+    resp_curl "0|$D1|" "0|$D2|"
     CURL_CMD="$TMP/curl" SHOP_URL="http://shop.test" run "$DIR/audit.sh" "$TMP/shop"
     [[ "$output" == *"Kein Treffer erkennbar"* ]]
-    [[ "$output" != *"Treffer: Age"* ]]
+    [[ "$output" != *"Treffer: Age ist"* ]]
 }
 
 @test "audit.sh does not count Age 0 -> 1 as a hit with a 2 s pause" {
-    age_curl 0 1
+    resp_curl "0|$D1|" "1|$D2|"
     AUDIT_WAIT=2 CURL_CMD="$TMP/curl" SHOP_URL="http://shop.test" run "$DIR/audit.sh" "$TMP/shop"
     [[ "$output" == *"Kein Treffer erkennbar"* ]]
 }
@@ -234,10 +276,53 @@ EOF
 
 @test "audit.sh does not count the Age of two slow misses as a hit" {
     # Symfony setzt beim Speichern Age = Renderdauer: zwei MISS mit je 3 s
-    age_curl 3 3
+    resp_curl "3|$D1|" "3|$D2|"
     AUDIT_WAIT=2 CURL_CMD="$TMP/curl" SHOP_URL="http://shop.test" run "$DIR/audit.sh" "$TMP/shop"
     [[ "$output" == *"Kein Treffer erkennbar"* ]]
-    [[ "$output" != *"Treffer: Age"* ]]
+    [[ "$output" != *"Treffer: Age ist"* ]]
+}
+
+@test "audit.sh: X-Symfony-Cache fresh on the 2nd request is a hit even without Age growth" {
+    resp_curl "0|$D1|miss/store" "0|$D1|fresh"
+    AUDIT_WAIT=2 CURL_CMD="$TMP/curl" SHOP_URL="http://shop.test" run "$DIR/audit.sh" "$TMP/shop"
+    [[ "$output" == *'Treffer: X-Symfony-Cache meldet "fresh" für den 2. Abruf.'* ]]
+    [[ "$output" != *"Kein Treffer"* ]]
+}
+
+@test "audit.sh: the trace decides over Age and Date" {
+    # Age und Date sähen nach Treffer aus, der Trace sagt miss
+    resp_curl "0|$D1|miss/store" "2|$D1|miss/store"
+    AUDIT_WAIT=2 CURL_CMD="$TMP/curl" SHOP_URL="http://shop.test" run "$DIR/audit.sh" "$TMP/shop"
+    [[ "$output" == *'Kein Treffer: X-Symfony-Cache meldet "miss/store" für den 2. Abruf.'* ]]
+    [[ "$output" != *"Treffer: Age ist"* ]]
+}
+
+@test "audit.sh: only the trace of the 2nd request counts" {
+    resp_curl "0|$D1|fresh" "0|$D2|miss"
+    AUDIT_WAIT=2 CURL_CMD="$TMP/curl" SHOP_URL="http://shop.test" run "$DIR/audit.sh" "$TMP/shop"
+    [[ "$output" == *'Kein Treffer: X-Symfony-Cache meldet "miss"'* ]]
+}
+
+@test "audit.sh: full trace format - the main request decides, not an ESI fragment" {
+    resp_curl "0|$D1|GET /: miss, store; GET /_esi/global/header: fresh" "2|$D2|GET /: miss, store; GET /_esi/global/header: fresh"
+    AUDIT_WAIT=2 CURL_CMD="$TMP/curl" SHOP_URL="http://shop.test" run "$DIR/audit.sh" "$TMP/shop"
+    [[ "$output" == *'Kein Treffer: X-Symfony-Cache meldet "miss, store"'* ]]
+    resp_curl "0|$D1|GET /: fresh; GET /_esi/global/header: miss" "2|$D1|GET /: fresh; GET /_esi/global/header: miss"
+    rm -f "$FIX/calls"
+    AUDIT_WAIT=2 CURL_CMD="$TMP/curl" SHOP_URL="http://shop.test" run "$DIR/audit.sh" "$TMP/shop"
+    [[ "$output" == *'Treffer: X-Symfony-Cache meldet "fresh"'* ]]
+    [[ "$output" != *"Kein Treffer"* ]]
+}
+
+@test "audit.sh: trace valid (revalidated, re-rendered) is not a hit" {
+    resp_curl "0|$D1|stale, valid, store" "2|$D1|stale, valid, store"
+    AUDIT_WAIT=2 CURL_CMD="$TMP/curl" SHOP_URL="http://shop.test" run "$DIR/audit.sh" "$TMP/shop"
+    [[ "$output" == *"Kein Treffer: X-Symfony-Cache"* ]]
+}
+
+@test "audit.sh names the web view of the cache switch" {
+    run "$DIR/audit.sh" "$TMP/shop"
+    [[ "$output" == *"Einstellungen > System > Caches & Indizes"* ]]
 }
 
 @test "audit.sh exits 2 on an invalid AUDIT_WAIT" {

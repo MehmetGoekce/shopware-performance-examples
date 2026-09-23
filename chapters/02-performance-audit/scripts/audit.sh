@@ -13,12 +13,19 @@
 #      plugin:list --active gibt es nicht, plugin:list | wc -l zählt Tabellenrahmen.
 #   3. HTTP-Cache: SHOPWARE_HTTP_CACHE_ENABLED/_DEFAULT_TTL über debug:dotenv,
 #      mit SHOP_URL zusätzlich zwei Abrufe als Gast. Treffer = Age wächst um
-#      mindestens die Pause. Age > 0 allein reicht nicht: Symfony setzt beim
-#      Speichern Age = Sekunden seit dem Date-Header, schon ein MISS über eine
-#      Sekundengrenze trägt Age 1, ein langsamer mehr.
+#      mindestens die Pause UND Date bleibt gleich: Nur eine gespeicherte Kopie
+#      wiederholt ihr Date. Gibt Symfony X-Symfony-Cache aus (dev oder
+#      framework.http_cache.trace_level), entscheidet der Header, nur "fresh"
+#      ist ein Treffer. Age allein reicht nicht: Symfony setzt beim Speichern
+#      Age = Sekunden seit Date, und ab 6.7 trägt jede Seite das Age ihres
+#      ältesten ESI-Fragments (Header, Footer), auch der nie gecachte Warenkorb.
+#      Wächst Age, Date aber auch, ist es nicht entscheidbar: ESI-Fragment oder
+#      ein Proxy davor, der Date neu setzt (nginx proxy_pass).
 #      debug:config bricht in APP_ENV=prod mit "frozen ParameterBag" ab.
-#      debug:dotenv kennt nur Variablen aus .env-Dateien; eine Variable, die nur
-#      in der Umgebung steht, sieht es nicht.
+#      debug:dotenv kennt nur Variablen aus .env-Dateien (auch .env.prod.local);
+#      eine Variable, die nur in der Umgebung steht (FPM env[], Apache SetEnv),
+#      sieht es nicht. Die Sicht des Webservers zeigt die Administration unter
+#      Einstellungen > System > Caches & Indizes.
 #   4. OPcache der FPM-SAPI über php-fpmX.Y -i. php -i liest die CLI-Konfiguration.
 #      Als www-data fehlen ini-Dateien, die nur root lesen darf - das Skript
 #      meldet sie. Pool-Werte (php_admin_value) zeigt -i nicht.
@@ -110,6 +117,16 @@ ini_value() {
 # Ein leerer Wert verschiebt die Spalten; dann steht in Spalte 2 "n/a".
 dotenv_value() {
     awk -v name="$1" '$1 == name { v = ($2 == "n/a") ? "" : $2; print "gesetzt|" v; exit }' <<< "$2"
+}
+
+# Wert eines Antwort-Headers (Name ohne Doppelpunkt, gross/klein egal), ohne CR
+response_header() {
+    awk -v key="$1" '{
+        i = index($0, ":")
+        if (i > 1 && tolower(substr($0, 1, i - 1)) == key) {
+            v = substr($0, i + 1); sub(/^[ \t]+/, "", v); sub(/[ \t\r]+$/, "", v); print v; exit
+        }
+    }' <<< "$2"
 }
 
 # Shopware übergibt den Wert ohne bool:-Prozessor an einen bool-Parameter;
@@ -217,26 +234,55 @@ else
         echo "SHOPWARE_HTTP_DEFAULT_TTL:   ${ttl:-leer (Vorgabe 7200)}"
     fi
 fi
-echo "Das ist die Sicht der CLI. Setzt der Webserver die Variable selbst (FPM-Pool,"
-echo "Container-Umgebung), gilt dort ein anderer Wert - der Abruf-Test zeigt die Wirkung."
+echo "Das ist die Sicht der CLI. Setzt der Webserver die Variable selbst (FPM env[],"
+echo "Apache SetEnv, Container-Umgebung), gilt dort ein anderer Wert. Die Sicht des"
+echo "Webservers: Administration > Einstellungen > System > Caches & Indizes (HTTP-Cache An/Aus)."
 
 if [[ -n "${SHOP_URL}" ]]; then
     url="${SHOP_URL%/}/"
     ages=()
+    dates=()
+    trace=""
     for i in 1 2; do
         sleep "${AUDIT_WAIT}"
         headers=$("${CURL[@]}" -s -o /dev/null -D - -w 'ttfb: %{time_starttransfer}\n' "$url" 2>/dev/null) || headers=""
         ttfb=$(awk 'tolower($1) == "ttfb:" { print $2; exit }' <<< "$headers")
-        age=$(awk 'tolower($1) == "age:" { gsub(/\r/, "", $2); print $2; exit }' <<< "$headers")
-        echo "Abruf ${i} (Gast, ohne Cookies): TTFB ${ttfb:-?} s, Age ${age:--}"
+        age=$(response_header age "$headers")
+        date_hdr=$(response_header date "$headers")
+        trace=$(response_header x-symfony-cache "$headers")
+        echo "Abruf ${i} (Gast, ohne Cookies): TTFB ${ttfb:-?} s, Age ${age:--}, Date ${date_hdr:--}${trace:+, X-Symfony-Cache ${trace}}"
         ages+=("${age}")
+        dates+=("${date_hdr}")
     done
+    # Symfonys Trace entscheidet, wenn er da ist. Er nennt zuerst die Hauptanfrage,
+    # ESI-Fragmente folgen nach ";". Nur "fresh" zählt: "valid" hat die Seite neu gerendert.
+    main_trace="${trace%%;*}"
+    main_trace="${main_trace##*: }"
+    trace_hit=0
+    for token in ${main_trace//[\/,]/ }; do
+        [[ "${token}" == "fresh" ]] && trace_hit=1
+    done
+    aged=0
     if [[ "${ages[0]}" =~ ^[0-9]+$ && "${ages[1]}" =~ ^[0-9]+$ ]] \
         && [[ $((ages[1] - ages[0])) -ge "${AUDIT_WAIT}" ]]; then
-        echo "Treffer: Age ist um mindestens die Pause (${AUDIT_WAIT} s) gewachsen."
+        aged=1
+    fi
+    if [[ -n "${trace}" && "${trace_hit}" -eq 1 ]]; then
+        echo "Treffer: X-Symfony-Cache meldet \"fresh\" für den 2. Abruf."
+    elif [[ -n "${trace}" ]]; then
+        echo "Kein Treffer: X-Symfony-Cache meldet \"${main_trace}\" für den 2. Abruf."
+        echo "Einstellung und Messung des Caches: Kapitel 6."
+    elif [[ "${aged}" -eq 1 && -n "${dates[0]}" && "${dates[0]}" == "${dates[1]}" ]]; then
+        echo "Treffer: Age ist um mindestens die Pause (${AUDIT_WAIT} s) gewachsen, Date unverändert."
+    elif [[ "${aged}" -eq 1 ]]; then
+        echo "Nicht entscheidbar: Age ist um die Pause gewachsen, Date aber nicht gleich geblieben."
+        echo "Entweder bindet die neu gerenderte Seite ein gecachtes ESI-Fragment ein (ab 6.7"
+        echo "Header und Footer, dann trägt sie dessen Age), oder ein Proxy davor setzt Date neu"
+        echo "(nginx proxy_pass ohne proxy_pass_header Date). Eindeutig mit"
+        echo "framework.http_cache.trace_level: short (Kapitel 6)."
     else
         echo "Kein Treffer erkennbar. Age > 0 allein ist kein Treffer: beim MISS"
-        echo "steht dort die Zeit seit dem Date-Header, schon 1 s über eine Sekundengrenze."
+        echo "steht dort die Zeit seit dem Date-Header, ab 6.7 das Age der ESI-Fragmente."
         echo "Einstellung und Messung des Caches: Kapitel 6."
     fi
 else
