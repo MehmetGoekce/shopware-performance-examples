@@ -16,9 +16,14 @@ Code-Beispiele und Konfigurationen für zukunftsweisende Performance-Technologie
 
 ### HTTP/3 mit Nginx
 
-Braucht nginx ab 1.25.1 mit HTTP/3-Modul (nginx.org-Pakete, Ubuntu 26.04;
-Ubuntu 24.04 hat es nicht) und den vHost aus Anhang C. Die Datei ist kein
-eigener vHost, sondern ergänzt den aus Anhang C:
+Braucht nginx ab 1.25.1 mit HTTP/3-Modul und den vHost aus Anhang C. Ubuntu
+24.04 (nginx 1.24) hat das Modul nicht. Ubuntu 26.04 hat es, bringt aber PHP 8.5
+statt 8.3 (Pfade aus Kapitel 9 anpassen). Die nginx.org-Pakete haben es, aber
+weder `snippets/` noch `sites-available/`/`sites-enabled/`, und ihre
+`nginx.conf` liest nur `conf.d/`: dort die Ordner anlegen und
+`include /etc/nginx/sites-enabled/*;` in den http-Block setzen. Die Datei ist
+kein eigener vHost, sondern ergänzt den aus Anhang C. Eine frühere Fassung als
+eigener vHost muss vorher aus `sites-enabled/` raus:
 
 ```bash
 nginx -V 2>&1 | grep -o with-http_v3_module
@@ -61,7 +66,7 @@ python scripts/detect-anomalies.py --url https://shop.example.com
 Einfachste Variante - keine Server-Änderungen nötig:
 
 1. Domain zu Cloudflare hinzufügen
-2. Speed → Optimization → HTTP/3 aktivieren
+2. Speed → Settings → Protocol Optimization → HTTP/3 einschalten (Stand September 2026)
 3. Fertig
 
 ### 2. Edge-basiertes A/B-Testing
