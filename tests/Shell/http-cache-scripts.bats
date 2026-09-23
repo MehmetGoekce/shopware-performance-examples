@@ -201,7 +201,16 @@ debug() {
     headers second 200 2 0.010 "$D1"
     debug 3
     [[ "$output" != *"2. Aufruf aus dem Cache"* ]]
-    [[ "$output" == *"Kein Treffer erkennbar"* ]]
+    [[ "$output" == *"Nicht entscheidbar: Date gleich, Age aber nicht um die Pause gewachsen"* ]]
+}
+
+# MEM-325 Review B9: gleiches Date bei gesunkenem Age (aeltestes ESI-Fragment neu gespeichert)
+@test "cache-debug.sh: same Date with a dropped Age is not decidable, not a hit" {
+    make_curl_stub
+    headers first 200 30 0.010 "$D1"; headers second 200 2 0.010 "$D1"
+    debug 2
+    [[ "$output" != *"2. Aufruf aus dem Cache"* ]]
+    [[ "$output" == *"Nicht entscheidbar: Date gleich"* ]]
 }
 
 # MEM-316 T4: 6.7-Warenkorb direkt nach cache:clear. Age vom Header-Fragment,
@@ -223,6 +232,7 @@ debug() {
     [[ "$output" == *"Nicht entscheidbar"* ]]
     [[ "$output" == *"ESI"* ]]
     [[ "$output" == *"proxy_pass_header Date;"* ]]
+    [[ "$output" == *"Apache mit mod_php"* ]]
     [[ "$output" == *"trace_level: short"* ]]
 }
 
@@ -255,7 +265,11 @@ debug() {
     headers first 200 - 0.300 "$D1"; headers second 200 5 0.010 "$D1"
     debug 2
     [[ "$output" != *"2. Aufruf aus dem Cache"* ]]
-    [[ "$output" == *"Age nur beim 2. Aufruf"* ]]
+    [[ "$output" == *"Nicht entscheidbar: Age nur bei einem Aufruf"* ]]
+    rm -f "$FIXTURES/count" "$FIXTURES/times"
+    headers first 200 5 0.010 "$D1"; headers second 200 - 0.300 "$D1"
+    debug 2
+    [[ "$output" == *"Nicht entscheidbar: Age nur bei einem Aufruf"* ]]
 }
 
 @test "cache-debug.sh: X-Symfony-Cache fresh on the 2nd call is a hit, even without Age growth" {
@@ -294,9 +308,43 @@ debug() {
 
 @test "cache-debug.sh: trace valid (revalidated, re-rendered) is not a hit" {
     make_curl_stub
-    headers first 200 0 0.130 "$D1"; headers second 200 2 0.010 "$D1" "stale, valid, store"
+    headers first 200 0 0.130 "$D1"; headers second 200 2 0.010 "$D1" "stale/valid/store"
     debug 2
     [[ "$output" != *"2. Aufruf aus dem Cache"* ]]
+}
+
+@test "cache-debug.sh: trace stale-while-revalidate / stale-if-error is a hit (stale stored copy)" {
+    for t in "stale-while-revalidate" "stale/stale-if-error"; do
+        make_curl_stub; rm -f "$FIXTURES/count" "$FIXTURES/times"
+        headers first 200 0 0.130 "$D1" "miss/store"; headers second 200 0 0.130 "$D2" "$t"
+        debug 2
+        [[ "$output" == *"2. Aufruf aus dem Cache"* ]]
+    done
+}
+
+@test "cache-debug.sh: an error page is not evaluated as cache (MEM-325 Review B5)" {
+    make_curl_stub
+    headers first 400 4 0.100 "$D1"; headers second 400 6 0.100 "$D2"
+    debug 2
+    [[ "$output" == *"Fehlerseite (HTTP 400) - nicht bewertbar"* ]]
+    [[ "$output" != *"Nicht entscheidbar"* ]]
+}
+
+@test "cache-debug.sh: a no-store page is reported as not cacheable, not as undecidable" {
+    make_curl_stub
+    printf 'HTTP/1.1 200 OK\r\nCache-Control: no-store, private\r\nAge: 4\r\nDate: %s\r\nTTFB=0.100\n' "$D1" > "$FIXTURES/first.headers"
+    printf 'HTTP/1.1 200 OK\r\nCache-Control: no-store, private\r\nAge: 6\r\nDate: %s\r\nTTFB=0.100\n' "$D2" > "$FIXTURES/second.headers"
+    debug 2
+    [[ "$output" == *"Seite bewusst nicht cachebar (no-store)"* ]]
+    [[ "$output" != *"Nicht entscheidbar"* ]]
+}
+
+@test "cache-debug.sh: a failed 2nd request is reported and fails the run" {
+    make_curl_stub
+    headers first 200 0 0.100 "$D1"; : > "$FIXTURES/second.headers"
+    debug 2
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"2. Aufruf gescheitert"* ]]
 }
 
 @test "cache-debug.sh treats a redirect as a redirect, even with growing Age" {

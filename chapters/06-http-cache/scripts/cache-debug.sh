@@ -10,7 +10,8 @@
 #      Treffer: Age wächst zwischen den Aufrufen um mindestens die Pause UND
 #      Date bleibt gleich. Nur eine gespeicherte Kopie wiederholt ihr Date.
 #      Gibt Symfony X-Symfony-Cache aus (dev oder framework.http_cache.trace_level),
-#      entscheidet der Header: nur "fresh" beim 2. Aufruf ist ein Treffer.
+#      entscheidet der Header: "fresh" beim 2. Aufruf ist ein Treffer (ebenso
+#      stale-while-revalidate und stale-if-error: eine veraltete gespeicherte Kopie).
 #      Age allein reicht nicht:
 #        - Symfony setzt beim Speichern Age = Sekunden seit Date, und Shopware
 #          erzeugt die Response vor dem Twig-Rendern. Ein MISS trägt so Age 1
@@ -18,11 +19,13 @@
 #        - Mit ESI trägt die Seite das Age des ältesten Fragments (Symfony
 #          ResponseCacheStrategy), Date bleibt das der neu gerenderten Seite.
 #          Shopware 6.7 lädt Header und Footer immer per ESI (6.6 nur mit
-#          CACHE_REWORK): Dort wächst Age auch am nie gecachten Warenkorb und
-#          bei abgeschaltetem Cache.
+#          CACHE_REWORK): Dort trägt jede Seite ein Age, bei abgeschaltetem
+#          Cache 0 oder 1, und am nie gecachten Warenkorb wächst es mit.
 #      Wächst Age, Date aber auch, ist es nicht entscheidbar: ESI-Fragment oder
-#      ein Proxy davor, der Date neu setzt (nginx proxy_pass ohne
-#      "proxy_pass_header Date;"). Die TTFB wird nur angezeigt: Direkt nach
+#      ein Webserver davor, der Date neu setzt (nginx proxy_pass ohne
+#      "proxy_pass_header Date;", Apache mit mod_php). Bleibt Date gleich, ohne
+#      dass Age um die Pause wächst, ebenso (andere Cache-Schicht, neu
+#      gespeichertes Fragment). Die TTFB wird nur angezeigt: Direkt nach
 #      cache:clear ist auch ohne Treffer der 1. Aufruf viel langsamer.
 #
 # Umgebungsvariablen:
@@ -89,7 +92,10 @@ analyze_url() {
         return 1
     fi
     sleep "${CACHE_DEBUG_WAIT}"
-    second=$(fetch "${url}")
+    if ! second=$(fetch "${url}") || ! echo "${second}" | grep -q "^HTTP"; then
+        echo -e "${RED}Fehler: 2. Aufruf gescheitert, nicht bewertbar${NC}"
+        return 1
+    fi
 
     local status cache_control x_cache age1 age date1 date2 trace set_cookie ttfb1 ttfb2
     status=$(echo "${second}" | grep -i "^HTTP" | tail -1 | awk '{print $2}')
@@ -116,6 +122,8 @@ analyze_url() {
     echo -n "Bewertung:      "
     if [[ "${status}" =~ ^3 ]]; then
         echo -e "${YELLOW}Weiterleitung - Ziel-URL prüfen${NC}"
+    elif [[ ! "${status}" =~ ^2 ]]; then
+        echo -e "${YELLOW}Fehlerseite (HTTP ${status}) - nicht bewertbar, eine Kategorie- oder Produktseite angeben${NC}"
     elif [[ -n "${x_cache}" ]]; then
         if [[ "${x_cache}" == *HIT* ]]; then
             echo -e "${GREEN}Varnish: 2. Aufruf aus dem Cache${NC}"
@@ -124,6 +132,8 @@ analyze_url() {
         fi
     elif [[ "${cache_control}" == *public* && "${cache_control}" == *s-maxage* ]]; then
         echo -e "${GREEN}Backend liefert cachebar für Reverse Proxy/CDN${NC} (Cache-Status beim Proxy prüfen)"
+    elif [[ "${cache_control}" == *no-store* ]]; then
+        echo -e "${YELLOW}Seite bewusst nicht cachebar (no-store)${NC} (Checkout, Kundenkonto): eine Kategorie- oder Produktseite prüfen"
     elif [[ "${cache_control}" == *private* ]]; then
         local aged=0 main_trace="" trace_hit=0 token
         if [[ "${age1}" =~ ^[0-9]+$ && "${age}" =~ ^[0-9]+$ ]] \
@@ -131,13 +141,16 @@ analyze_url() {
             aged=1
         fi
         # Der Trace nennt zuerst die Hauptanfrage ("fresh" im Format short,
-        # "GET /: fresh; GET /_esi/...: ..." im Format full). Nur "fresh" zählt,
+        # "GET /: fresh; GET /_esi/...: ..." im Format full). "fresh" zählt, dazu
+        # die beiden Fälle, in denen Symfony eine veraltete Kopie ausliefert;
         # "valid" heisst: das Backend hat die Seite neu gerendert.
         if [[ -n "${trace}" ]]; then
             main_trace="${trace%%;*}"
             main_trace="${main_trace##*: }"
             for token in ${main_trace//[\/,]/ }; do
-                [[ "${token}" == "fresh" ]] && trace_hit=1
+                case "${token}" in
+                    fresh|stale-while-revalidate|stale-if-error) trace_hit=1 ;;
+                esac
             done
         fi
         if [[ -n "${trace}" && "${trace_hit}" -eq 1 ]]; then
@@ -155,14 +168,19 @@ analyze_url() {
                 echo -e "${YELLOW}Nicht entscheidbar: Age wächst um die Pause, Date aber auch${NC}"
             fi
             echo "                Entweder bindet die neu gerenderte Seite ein gecachtes ESI-Fragment ein (ab 6.7"
-            echo "                Header und Footer, auch am nie gecachten Warenkorb), oder ein Proxy davor setzt"
-            echo "                Date neu (nginx proxy_pass ohne \"proxy_pass_header Date;\")."
+            echo "                Header und Footer, auch am nie gecachten Warenkorb), oder der Webserver davor setzt"
+            echo "                Date neu (nginx proxy_pass ohne \"proxy_pass_header Date;\", Apache mit mod_php)."
+            echo "                Eindeutig: framework.http_cache.trace_level: short setzen (Kapitel 6.8)."
+        elif [[ "${age1}" =~ ^[0-9]+$ && "${age}" =~ ^[0-9]+$ && -n "${date1}" && "${date1}" == "${date2}" ]]; then
+            echo -e "${YELLOW}Nicht entscheidbar: Date gleich, Age aber nicht um die Pause gewachsen${NC}"
+            echo "                Eine gespeicherte Kopie, aber eine andere Cache-Schicht schreibt Age nicht fort"
+            echo "                (nginx proxy_cache), oder das älteste ESI-Fragment wurde neu gespeichert."
             echo "                Eindeutig: framework.http_cache.trace_level: short setzen (Kapitel 6.8)."
         elif [[ "${age1}" =~ ^[0-9]+$ && "${age}" =~ ^[0-9]+$ && "${age}" -lt "${age1}" ]]; then
             echo -e "${YELLOW}Kein Treffer erkennbar: Age gesunken${NC} (1. Aufruf aus dem Cache und Eintrag danach"
             echo "                abgelaufen oder invalidiert, oder zwei MISS, ab 6.7 auch bei abgeschaltetem Cache)"
-        elif [[ "${age}" =~ ^[0-9]+$ && ! "${age1}" =~ ^[0-9]+$ ]]; then
-            echo -e "${YELLOW}Kein Treffer erkennbar: Age nur beim 2. Aufruf${NC} (erneut prüfen)"
+        elif [[ "${age}" =~ ^[0-9]+$ && ! "${age1}" =~ ^[0-9]+$ ]] || [[ "${age1}" =~ ^[0-9]+$ && ! "${age}" =~ ^[0-9]+$ ]]; then
+            echo -e "${YELLOW}Nicht entscheidbar: Age nur bei einem Aufruf${NC} (erneut prüfen)"
         elif [[ "${age}" =~ ^[0-9]+$ ]]; then
             echo -e "${YELLOW}Kein Treffer erkennbar: Age nicht um die Pause gewachsen${NC} (zwei MISS? Route mit _httpCache? APP_ENV=prod?)"
             echo "                Ab 6.7 trägt jede Seite ein Age (ESI), auch wenn der Cache abgeschaltet ist."
