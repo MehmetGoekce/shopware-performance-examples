@@ -261,11 +261,45 @@ D2="Date: Wed, 23 Sep 2026 15:53:35 GMT"
     [[ "$output" == *"SHOPWARE_HTTP_CACHE_ENABLED=0"* ]]
 }
 
-@test "check-http-cache.sh: Grenze - Zuwachs Pause-1 bei gleichem Date ist kein Treffer" {
+@test "check-http-cache.sh: Grenze - Zuwachs Pause-1 bei gleichem Date ist kein Treffer, sondern nicht entscheidbar" {
+    # Gleiches Date = gespeicherte Kopie, aber Age nicht fortgeschrieben (MEM-325 Review B9)
     http_cache_stub "200|Age: 10|$D1" "200|Age: 11|$D1"
     PATH="$stub_dir:$PATH" run bash "$DIR/check-http-cache.sh" http://example.test
-    [ "$status" -eq 1 ]
+    [ "$status" -eq 69 ]
     [[ "$output" != *"Der HTTP-Cache arbeitet"* ]]
+    [[ "$output" == *"Date ist gleich geblieben, Age aber nicht um die Pause gewachsen (10 -> 11)"* ]]
+}
+
+@test "check-http-cache.sh: gleiches Date bei gesunkenem Age = nicht entscheidbar (ESI-Fragment neu gespeichert)" {
+    http_cache_stub "200|Age: 30|$D1" "200|Age: 2|$D1"
+    PATH="$stub_dir:$PATH" run bash "$DIR/check-http-cache.sh" http://example.test
+    [ "$status" -eq 69 ]
+    [[ "$output" == *"Date ist gleich geblieben"* ]]
+}
+
+@test "check-http-cache.sh: no-store-Seite ist ein Aufruffehler (64), nicht nicht entscheidbar" {
+    stub_dir="$BATS_TEST_TMPDIR/bin"; mkdir -p "$stub_dir"
+    printf '#!/bin/bash\nprintf "HTTP/1.1 200 X\\r\\nCache-Control: no-store, private\\r\\nAge: 4\\r\\n%s\\r\\n\\r\\n" "$D1"\n' > "$stub_dir/curl"
+    chmod +x "$stub_dir/curl"
+    D1="$D1" PATH="$stub_dir:$PATH" run bash "$DIR/check-http-cache.sh" http://example.test
+    [ "$status" -eq 64 ]
+    [[ "$output" == *"bewusst nicht cachebar (no-store)"* ]]
+}
+
+@test "check-http-cache.sh: Trace stale-while-revalidate / stale-if-error = Treffer (veraltete Kopie aus dem Cache)" {
+    for t in "stale-while-revalidate" "stale/stale-if-error"; do
+        rm -f "$BATS_TEST_TMPDIR/count"
+        http_cache_stub "200|Age: 0|$D1|X-Symfony-Cache: miss/store" "200|Age: 0|$D2|X-Symfony-Cache: $t"
+        PATH="$stub_dir:$PATH" run bash "$DIR/check-http-cache.sh" http://example.test
+        [ "$status" -eq 0 ]
+    done
+}
+
+@test "check-http-cache.sh: Hinweis nicht entscheidbar nennt Apache mit mod_php" {
+    http_cache_stub "200|Age: 4|$D1" "200|Age: 6|$D2"
+    PATH="$stub_dir:$PATH" run bash "$DIR/check-http-cache.sh" http://example.test
+    [ "$status" -eq 69 ]
+    [[ "$output" == *"Apache mit mod_php"* ]]
 }
 
 @test "check-http-cache.sh: ESI - Age waechst um die Pause, Date auch = nicht entscheidbar" {
@@ -386,6 +420,26 @@ D2="Date: Wed, 23 Sep 2026 15:53:35 GMT"
     [ "$status" -eq 1 ]
     [[ "$output" == *".env: SHOPWARE_HTTP_CACHE_ENABLED=1"*".env.prod: SHOPWARE_HTTP_DEFAULT_TTL=600"*".env.prod.local: SHOPWARE_HTTP_CACHE_ENABLED=0"* ]]
     [[ "$output" == *"Caches & Indizes"* ]]
+}
+
+@test "check-http-cache.sh: Abschnitt 4 - Reihenfolge .env, .env.local, .env.prod, .env.prod.local; export-Zeilen zaehlen" {
+    shop="$BATS_TEST_TMPDIR/shop"; mkdir -p "$shop"
+    printf 'SHOPWARE_HTTP_DEFAULT_TTL=100\n' > "$shop/.env"
+    printf 'SHOPWARE_HTTP_DEFAULT_TTL=200\n' > "$shop/.env.local"
+    printf 'export SHOPWARE_HTTP_DEFAULT_TTL=300\n' > "$shop/.env.prod"
+    printf 'SHOPWARE_HTTP_DEFAULT_TTL=400\n' > "$shop/.env.prod.local"
+    http_cache_stub "200|$D1" "200|$D2"
+    PATH="$stub_dir:$PATH" run bash "$DIR/check-http-cache.sh" http://example.test "$shop"
+    [[ "$output" == *"=100"*"=200"*"export SHOPWARE_HTTP_DEFAULT_TTL=300"*"=400"* ]]
+}
+
+@test "check-http-cache.sh: Abschnitt 4 warnt vor .env.local.php" {
+    shop="$BATS_TEST_TMPDIR/shop"; mkdir -p "$shop"
+    : > "$shop/.env"
+    printf '<?php return [];\n' > "$shop/.env.local.php"
+    http_cache_stub "200|$D1" "200|$D2"
+    PATH="$stub_dir:$PATH" run bash "$DIR/check-http-cache.sh" http://example.test "$shop"
+    [[ "$output" == *".env.local.php vorhanden"* ]]
 }
 
 @test "check-http-cache.sh: ohne .env-Eintrag nennt es die Umgebung des Webservers" {

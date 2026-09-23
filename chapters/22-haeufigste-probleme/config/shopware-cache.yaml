@@ -12,7 +12,8 @@
 # cache:clear einen Konfigurationsfehler.
 #
 # Vorhanden sind dort nur: cookies, ignored_url_parameters,
-# stale_while_revalidate, stale_if_error und reverse_proxy.
+# stale_while_revalidate, stale_if_error und reverse_proxy (ab 6.7 zusätzlich
+# soft_purge).
 # (Beleg: Configuration::createHttpCacheSection() in
 #  vendor/shopware/core/Framework/DependencyInjection/Configuration.php)
 #

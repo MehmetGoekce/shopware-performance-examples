@@ -28,8 +28,12 @@
 #         Fragments (ResponseCacheStrategy). Shopware 6.7 laedt Header und
 #         Footer immer per ESI, 6.6 nur mit dem Feature-Flag CACHE_REWORK.
 #         Ab 6.7 traegt deshalb auch ein abgeschalteter Cache Age 0 oder 1.
-#       - Oder ein Proxy davor setzt Date neu (nginx mit proxy_pass ohne
-#         "proxy_pass_header Date;", CDN).
+#       - Oder der Webserver davor setzt Date neu: nginx mit proxy_pass ohne
+#         "proxy_pass_header Date;", Apache mit mod_php, ein CDN. PHP-FPM
+#         hinter nginx (fastcgi_pass) oder Apache (proxy_fcgi) reicht es durch.
+#   Date gleich, Age aber nicht um die Pause gewachsen -> nicht entscheidbar:
+#       eine gespeicherte Kopie, deren Age nicht fortgeschrieben wird (andere
+#       Cache-Schicht) oder deren aeltestes ESI-Fragment neu gespeichert wurde.
 #   Age > 0 allein und "Age waechst um 1" sind kein Treffer: Symfony setzt
 #   beim Speichern Age = Sekunden seit Date, schon ein MISS ueber eine
 #   Sekundengrenze traegt Age 1. Zwei MISS koennen so 0 -> 1 zeigen.
@@ -46,9 +50,9 @@
 # Exit-Codes:
 #   0 = HTTP-Cache arbeitet
 #   1 = kein Treffer (kein Age, zwei MISS, Trace meldet miss)
-#   64 = Aufruffehler (auch: URL liefert nicht 200)
+#   64 = Aufruffehler (auch: URL liefert nicht 200 oder ist no-store)
 #   69 = nicht entscheidbar (Shop nicht erreichbar, Age waechst bei neuem
-#        Date, Age nur bei einem der beiden Abrufe)
+#        Date, Date gleich ohne Zuwachs, Age nur bei einem der beiden Abrufe)
 
 set -euo pipefail
 
@@ -84,8 +88,8 @@ fi
 SHOP_URL="${1:-http://localhost}"
 SHOP_PATH="${2:-}"
 # Pause zwischen den Abrufen. Bei einem Treffer waechst Age um mindestens
-# diesen Wert. Nicht 1: zwei MISS koennen sich durch die Rundung auf ganze
-# Sekunden um 1 unterscheiden.
+# diesen Wert. Zwei neu gerenderte Antworten tragen schon ab 1 s Pause
+# verschiedene Date; 2 s wie im Buch (Kapitel 6).
 PAUSE=2
 
 # Header per GET holen, Body verwerfen. -L folgt Weiterleitungen; die
@@ -151,6 +155,7 @@ case "${CACHE_CONTROL}" in
     *no-store*)
         echo "   Diese Seite ist bewusst nicht cachebar (no-store) — Checkout oder Kundenkonto."
         echo "   Fuer den Test eine Kategorie- oder Produktseite angeben."
+        exit 64
         ;;
     *no-cache*private*|*private*no-cache*)
         echo "   Das ist der Normalfall fuer eine Storefront-Seite und kein Defekt."
@@ -183,13 +188,13 @@ fi
 
 if [[ -n "${SHOP_PATH}" ]]; then
     echo
-    echo "4. Konfiguration in den .env-Dateien (spaetere Zeile gewinnt)..."
+    echo "4. Konfiguration in den .env-Dateien fuer APP_ENV=prod (spaetere Zeile gewinnt)..."
     FOUND_ENV=0
     # Reihenfolge wie Symfonys Dotenv in prod: jede Datei ueberschreibt die davor.
     for f in "${SHOP_PATH}/.env" "${SHOP_PATH}/.env.local" \
              "${SHOP_PATH}/.env.prod" "${SHOP_PATH}/.env.prod.local"; do
         if [[ -f "$f" ]]; then
-            LINES=$(grep -E '^SHOPWARE_HTTP_(CACHE_ENABLED|DEFAULT_TTL)=' "$f" || true)
+            LINES=$(grep -E '^(export[[:space:]]+)?SHOPWARE_HTTP_(CACHE_ENABLED|DEFAULT_TTL)=' "$f" || true)
             if [[ -n "${LINES}" ]]; then
                 FOUND_ENV=1
                 printf '%s\n' "${LINES}" | sed "s|^|   ${f##*/}: |"
@@ -197,7 +202,7 @@ if [[ -n "${SHOP_PATH}" ]]; then
         fi
     done
     if [[ -f "${SHOP_PATH}/.env.local.php" ]]; then
-        echo "   Achtung: .env.local.php vorhanden — dann liest Symfony nur sie, keine .env-Datei."
+        echo "   Achtung: .env.local.php vorhanden — dann liest Symfony in der Regel nur sie, keine .env-Datei."
     fi
     if [[ "${FOUND_ENV}" -eq 0 ]]; then
         echo "   In keiner .env-Datei gesetzt — es gelten die Defaults"
@@ -246,7 +251,8 @@ Zu pruefen, in dieser Reihenfolge:
 Achtung: die Keys "enabled", "default_ttl" und "invalidation" gibt es unter
 shopware.http_cache NICHT. Der Schalter ist die Env-Variable; unter
 shopware.http_cache liegen nur cookies, ignored_url_parameters,
-stale_while_revalidate, stale_if_error und reverse_proxy.
+stale_while_revalidate, stale_if_error und reverse_proxy (ab 6.7 zusaetzlich
+soft_purge).
 HINT
     exit 1
 fi
@@ -258,10 +264,13 @@ if [[ -n "${TRACE_2}" ]]; then
     MAIN_TRACE="${TRACE_2%%;*}"
     MAIN_TRACE="${MAIN_TRACE##*: }"
     HIT=0
-    # Nur "fresh" zaehlt. "valid" heisst: das Backend wurde gefragt und hat
-    # die Seite dafuer gerendert.
+    # "fresh" zaehlt, dazu die beiden Faelle, in denen Symfony eine veraltete
+    # gespeicherte Kopie ausliefert. "valid" heisst: das Backend wurde gefragt
+    # und hat die Seite dafuer gerendert.
     for token in ${MAIN_TRACE//[\/,]/ }; do
-        [[ "${token}" == "fresh" ]] && HIT=1
+        case "${token}" in
+            fresh|stale-while-revalidate|stale-if-error) HIT=1 ;;
+        esac
     done
     if [[ "${HIT}" -eq 1 ]]; then
         echo "Symfony meldet fuer den 2. Abruf \"${MAIN_TRACE}\": Treffer (Age ${AGE_1:--} -> ${AGE_2:--})."
@@ -305,10 +314,11 @@ Das ist KEIN Nachweis fuer einen Treffer:
     Dann traegt sie das Age des aeltesten Fragments. Shopware 6.7 laedt
     Header und Footer immer per ESI; ein nie gecachter Warenkorb zeigt dort
     genauso ein wachsendes Age.
-  - Oder ein Proxy vor dem Shop setzt Date neu. Dann kann es trotzdem ein
+  - Oder der Webserver vor PHP setzt Date neu. Dann kann es trotzdem ein
     Treffer sein. nginx mit proxy_pass tut das ab Werk; mit
     "proxy_pass_header Date;" im location-Block reicht er das Date des
-    Shops durch.
+    Shops durch. Apache mit mod_php setzt Date immer neu; PHP-FPM hinter
+    nginx (fastcgi_pass) oder Apache (proxy_fcgi) reicht es durch.
 
 Eindeutig wird es mit Symfonys Trace-Header. In config/packages/ eine Datei
 mit
@@ -320,6 +330,20 @@ mit
 anlegen, bin/console cache:clear, dann erneut pruefen: "fresh" ist ein
 Treffer, "miss" oder "miss/store" keiner. Die Datei danach wieder entfernen.
 Nicht entscheidbar: trace_level: short setzen oder den Proxy umgehen.
+HINT
+    exit 69
+fi
+
+# Gleiches Date ohne Zuwachs: eine gespeicherte Kopie, aber kein Nachweis,
+# dass Symfonys Cache sie ausgeliefert hat.
+if [[ "${AGE_OK}" -eq 1 && -n "${DATE_1}" && "${DATE_1}" == "${DATE_2}" ]]; then
+    cat <<HINT
+Date ist gleich geblieben, Age aber nicht um die Pause gewachsen (${AGE_1} -> ${AGE_2}).
+Nicht entscheidbar: Eine gespeicherte Kopie ist es, aber entweder schreibt
+eine andere Cache-Schicht davor Age nicht fort (nginx proxy_cache), oder das
+aelteste ESI-Fragment wurde zwischendurch neu gespeichert. Eindeutig wird es
+mit framework.http_cache.trace_level: short in einer Datei unter
+config/packages/, danach bin/console cache:clear: "fresh" ist ein Treffer.
 HINT
     exit 69
 fi
