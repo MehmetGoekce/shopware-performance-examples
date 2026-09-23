@@ -202,6 +202,13 @@ describe('Kapitel 24: Rate Limit (Buchfassung, Rate Limiting Binding)', () => {
         expect(origin).toHaveLength(0);
     });
 
+    it('nimmt ohne CF-Connecting-IP einen festen Schlüssel statt null', async () => {
+        const e = env(true);
+        await rateLimit.fetch(request('/search'), e);
+
+        expect(e.calls).toEqual([{ key: 'unknown' }]);
+    });
+
     it('reicht erlaubte Requests unverändert weiter', async () => {
         const res = await rateLimit.fetch(request('/', { headers: { 'CF-Connecting-IP': '203.0.113.7' } }), env(true));
 

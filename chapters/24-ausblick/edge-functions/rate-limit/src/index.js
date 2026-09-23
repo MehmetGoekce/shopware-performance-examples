@@ -7,17 +7,16 @@
  * Getestet in tests/JavaScript/ch24-edge-functions.test.js.
  */
 
-// Edge: Anfragen je IP begrenzen (Rate Limiting Binding, wrangler.toml:
-// [[ratelimits]] name = "RATE_LIMITER", namespace_id = "1001",
-// simple = { limit = 100, period = 60 })
+// Edge: teure Routen (Suche, Login) je IP bremsen, nicht Assets.
+// Rate Limiting Binding, Konfiguration im Companion: rate-limit/wrangler.toml.example
 export default {
     async fetch(request, env) {
-        const ip = request.headers.get('CF-Connecting-IP');
+        const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown';
 
         // Kein Zähler in KV: KV nimmt je Key höchstens einen Schreibvorgang
-        // pro Sekunde an, ein Zähler je IP scheitert genau beim Bot. Das
-        // Binding zählt je Cloudflare-Standort und bewusst ungenau; für ein
-        // verbindliches Limit die Rate-Limiting-Regeln von Cloudflare nutzen
+        // pro Sekunde an. Cloudflare rät von IPs als Key ab (Mobilfunk und
+        // Proxys teilen sie), anonyme Bots haben aber keine andere Kennung:
+        // Limit grosszügig wählen. Genau zählt weder Binding noch WAF-Regel
         const { success } = await env.RATE_LIMITER.limit({ key: ip });
         if (!success) {
             return new Response('Rate limit exceeded', { status: 429 });

@@ -112,7 +112,7 @@ chapters/24-ausblick/
 │   │   ├── src/index.js        # Währung, Sprache, Override-Cookie
 │   │   ├── src/minimal.js      # Fassung aus dem Buch
 │   │   └── wrangler.toml.example
-│   └── rate-limit/             # Anfragen je IP begrenzen (Rate Limiting Binding)
+│   └── rate-limit/             # Suche/Login je IP bremsen (Rate Limiting Binding)
 │       ├── src/index.js        # Fassung aus dem Buch
 │       └── wrangler.toml.example
 └── scripts/

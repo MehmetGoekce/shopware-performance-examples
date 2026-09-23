@@ -47,7 +47,7 @@ class TechDebtTrackerService
         $effort = self::EFFORT_POINTS[$item['effort']] ?? 5;
 
         // WSJF-ähnliche Priorisierung: Wert / Aufwand. Critical-Items
-        // (SLA < 1 Sprint) laufen ausserhalb dieser Rangliste
+        // (SLA < 1 Sprint) vor dieser Rangliste einplanen
         return $severity / $effort;
     }
 

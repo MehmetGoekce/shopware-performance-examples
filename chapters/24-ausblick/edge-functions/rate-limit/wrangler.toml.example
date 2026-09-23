@@ -10,8 +10,11 @@ name = "shopware-rate-limit"
 main = "src/index.js"
 compatibility_date = "2024-01-01"
 
+# Nur teure Routen: Workers laufen vor dem Cache, auf "/*" zaehlten auch CSS,
+# JS und Bilder mit, und normale Besucher stiessen nach wenigen Seiten ans Limit
 routes = [
-    { pattern = "shop.example.com/*", zone_name = "example.com" }
+    { pattern = "shop.example.com/search*", zone_name = "example.com" },
+    { pattern = "shop.example.com/account/login*", zone_name = "example.com" }
 ]
 
 [[ratelimits]]
