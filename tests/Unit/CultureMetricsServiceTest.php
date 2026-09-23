@@ -90,13 +90,13 @@ class CultureMetricsServiceTest extends TestCase
             ['total' => 10, 'performance_reviewed' => 8],                        // 80
             [['recovery_time_hours' => 3.0, 'postmortem_completed' => true]],    // 75 + 10 = 85
             ['date' => '2026-09-01', 'average_score' => 4.0, 'response_rate' => 0.9], // 75
-            ['brown_bags' => 3, 'wiki_updates' => 12, 'slack_messages' => 100]   // (50+100+100)/3
+            ['brown_bags' => 1, 'wiki_updates' => 12, 'slack_messages' => 100]   // (33.3+100+100)/3
         ));
 
         // 10 von 100 ueber der Schwelle: 40 % verbraucht, 60 % uebrig -> green -> 100
         $result = $service->calculateCultureScore(self::budget(10));
 
-        $expected = 80 * 0.25 + 100 * 0.25 + 85 * 0.20 + 75 * 0.15 + 83.3 * 0.15;
+        $expected = 80 * 0.25 + 100 * 0.25 + 85 * 0.20 + 75 * 0.15 + 77.8 * 0.15;
         self::assertSame(round($expected, 1), $result['overall_score']);
         self::assertSame([], $result['unrated']);
         self::assertSame('green', $result['components']['budget_compliance']['metrics']['policy']);
@@ -177,6 +177,57 @@ class CultureMetricsServiceTest extends TestCase
         self::assertSame('unknown', CultureMetricsService::trend(50.0, null));
     }
 
+    public function testZeroPullRequestsIsUnratedNotDivisionByZero(): void
+    {
+        $service = new CultureMetricsService(self::source(['total' => 0, 'performance_reviewed' => 0], null, null, null));
+
+        self::assertNull($service->calculateCultureScore([])['components']['code_review']['score']);
+    }
+
+    public function testRatesAndCountsAreCappedAtHundred(): void
+    {
+        $service = new CultureMetricsService(self::source(
+            ['total' => 10, 'performance_reviewed' => 15],
+            null,
+            ['date' => '2026-09-01', 'average_score' => 7.0, 'response_rate' => 1.0],
+            ['brown_bags' => 30, 'wiki_updates' => 0, 'slack_messages' => 0]
+        ));
+
+        $components = $service->calculateCultureScore([])['components'];
+
+        self::assertSame(100.0, $components['code_review']['score']);
+        self::assertSame(100.0, $components['developer_satisfaction']['score']);
+        self::assertSame(33.3, $components['knowledge_sharing']['score']);
+    }
+
+    public function testRecommendationOnlyBelowSixty(): void
+    {
+        $recommend = static function (int $reviewed): array {
+            $service = new CultureMetricsService(self::source(['total' => 100, 'performance_reviewed' => $reviewed], [], ['date' => 'x', 'average_score' => 5.0, 'response_rate' => 1.0], ['brown_bags' => 3, 'wiki_updates' => 12, 'slack_messages' => 100]));
+
+            return $service->calculateCultureScore(self::budget(0))['recommendations'];
+        };
+
+        self::assertSame([], $recommend(60));
+        self::assertSame(['Code-Review-Rate verbessern: Performance-Checkliste ins PR-Template'], $recommend(59));
+    }
+
+    public function testPostmortemBonusNeedsEightyPercent(): void
+    {
+        $score = static function (int $withPostmortem): ?float {
+            $incidents = [];
+            for ($i = 0; $i < 5; $i++) {
+                $incidents[] = ['recovery_time_hours' => 3.0, 'postmortem_completed' => $i < $withPostmortem];
+            }
+            $service = new CultureMetricsService(self::source(null, $incidents, null, null));
+
+            return $service->calculateCultureScore([])['components']['incident_response']['score'];
+        };
+
+        self::assertSame(85.0, $score(4)); // 80 %: 75 + 10
+        self::assertSame(75.0, $score(3)); // 60 %: kein Bonus
+    }
+
     public function testMttrStepsAndPostmortemBonus(): void
     {
         $score = static function (float $hours, bool $postmortem): ?float {
@@ -192,6 +243,8 @@ class CultureMetricsServiceTest extends TestCase
 
         self::assertSame(100.0, $score(2.0, true));
         self::assertSame(75.0, $score(2.1, false));
+        self::assertSame(75.0, $score(4.0, false));
+        self::assertSame(50.0, $score(4.1, false));
         self::assertSame(60.0, $score(8.0, true));
         self::assertSame(25.0, $score(8.1, false));
     }

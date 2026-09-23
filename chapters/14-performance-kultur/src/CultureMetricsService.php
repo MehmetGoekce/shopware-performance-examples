@@ -39,7 +39,7 @@ final class CultureMetricsService
 
     /** Zielwerte je Quartal (90 Tage) fuer Knowledge Sharing */
     public const KNOWLEDGE_TARGETS = [
-        'brown_bags' => 6,       // etwa 2 pro Monat
+        'brown_bags' => 3,       // monatlich wie im Buch (knowledge_sharing.sync.brown_bag)
         'wiki_updates' => 12,    // etwa 1 pro Woche
         'slack_messages' => 100,
     ];
@@ -229,7 +229,7 @@ final class CultureMetricsService
     private function knowledgeSharing(): array
     {
         $counts = $this->source->knowledgeSharingCounts(90);
-        $target = 'Ziel je Quartal: 6 Brown Bags, 12 Wiki-Updates, 100 Nachrichten in #performance';
+        $target = 'Ziel je Quartal: 3 Brown Bags, 12 Wiki-Updates, 100 Nachrichten in #performance';
 
         if ($counts === null) {
             return ['score' => null, 'metrics' => [], 'target' => $target];

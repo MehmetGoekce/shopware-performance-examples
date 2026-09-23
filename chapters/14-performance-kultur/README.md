@@ -175,7 +175,7 @@ Score = Code Review × 0.25 + Budget × 0.25 + Incidents × 0.20
 | Budget | green 100, yellow 60, orange 30, red 0 | `PerformanceBudgetService::calculate()` |
 | Incidents | MTTR bis 2 h 100, bis 4 h 75, bis 8 h 50, sonst 25; +10 ab 80 % Postmortems | Incident-Tracker (90 Tage) |
 | Developer Satisfaction | Survey-Durchschnitt 1-5 linear auf 0-100 | `templates/developer-survey.yaml` |
-| Knowledge Sharing | je Quartal 6 Brown Bags, 12 Wiki-Updates, 100 Nachrichten | Kalender, Wiki, Slack |
+| Knowledge Sharing | je Quartal 3 Brown Bags (monatlich), 12 Wiki-Updates, 100 Nachrichten | Kalender, Wiki, Slack |
 
 Gewichte, Stufen und Zielwerte sind Vorgaben dieses Beispiels, keine
 Branchenwerte. Die Rohdaten liefert eine eigene Klasse, die
