@@ -38,10 +38,11 @@ slos:
     target: 99.9  # Prozent
     unit: "percent"
     measurement: "Uptime über 30 Tage"
-    # 99.9% = 43.2 Minuten Downtime/Monat erlaubt
+    # 99.9% = 43.2 Minuten Downtime in 30 Tagen erlaubt
 
 # Error Budget Berechnung
 error_budget:
+  # Core Web Vitals; Verfügbarkeit über ihre eigenen 30 Tage (siehe oben)
   calculation_period: "28 Tage (rolling, wie der Chrome UX Report)"
 
   # Wie wird das Budget berechnet?
@@ -55,14 +56,20 @@ error_budget:
     Core Web Vitals: "p75 <= Schwelle" heisst SLO Target 75 %,
     also dürfen 25 % der Seitenaufrufe über der Schwelle liegen.
     - Bei 10 % über 2500 ms LCP: Budget 40 % verbraucht
-    - Bei 25 %: Budget 100 % verbraucht, p75 gerade noch "gut"
+    - Bei 12.5 % über 2500 ms LCP: Budget 50 % verbraucht
+    - Bei 25 % über 2500 ms LCP: Budget 100 % verbraucht, p75 gerade noch "gut"
     - Darüber: SLO verletzt
     Rechnung: src/PerformanceBudgetService.php, Aufruf: scripts/error-budget.php
+    (tests/Unit/PerformanceBudgetTest.php rechnet diese Zeilen nach)
 
-    Beispiel für 99.9% Availability:
-    - Erlaubte Fehler: 0.1% = 1 von 1000 Requests
-    - Bei 0.05% Fehlerrate: Budget 50% verbraucht
-    - Bei 0.1% Fehlerrate: Budget 100% verbraucht
+    Verfügbarkeit, dieselbe Formel mit SLO Target 99.9 %:
+    - Erlaubte Fehler: 0.1 % = 1 von 1000 Requests
+    - Bei 0.05 % Fehlerrate: Budget 50 % verbraucht
+    - Bei 0.1 % Fehlerrate: Budget 100 % verbraucht
+    Die 0.1 % gelten nur hier. Auf die Core Web Vitals übertragen, wäre das
+    Budget 250-mal zu klein: Ein Shop mit gerade noch gutem p75 (25 % über
+    der Schwelle) stünde bei 25000 % verbraucht. Die Verfügbarkeit rechnet
+    der Companion nicht aus, sie kommt aus Ihrem Uptime-Monitoring.
 
   aggregation: |
     Overall Budget = Minimum aller einzelnen Budgets

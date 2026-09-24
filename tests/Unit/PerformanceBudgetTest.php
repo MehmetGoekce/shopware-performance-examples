@@ -182,6 +182,75 @@ class PerformanceBudgetTest extends TestCase
         self::assertSame($policy, PerformanceBudgetService::policy($remaining));
     }
 
+    private const POLICY_TEMPLATE = __DIR__ . '/../../chapters/14-performance-kultur/templates/error-budget-policy.yaml';
+
+    /**
+     * Die Beispielzeilen der Vorlage rechnet der Service nach (MEM-322): Eine
+     * Zeile im Stil der Verfuegbarkeit (0.1 %) unter den Core Web Vitals
+     * haette hier Budget 25000 % statt 100 % ergeben
+     */
+    public function testTemplateCoreWebVitalsExamplesMatchTheService(): void
+    {
+        $template = (string) file_get_contents(self::POLICY_TEMPLATE);
+        preg_match_all('/^\s*- Bei ([\d.]+) % über (\d+) ms LCP: Budget ([\d.]+) % verbraucht/mu', $template, $rows, \PREG_SET_ORDER);
+        self::assertCount(3, $rows, 'Beispielzeilen fuer LCP in der Vorlage');
+
+        foreach ($rows as [$line, $sharePercent, $threshold, $usedPercent]) {
+            self::assertSame(RumStatistics::THRESHOLDS['LCP'][0], (int) $threshold, $line);
+            $over = (int) round((float) $sharePercent * 10);
+            $budget = PerformanceBudgetService::calculate(self::records('LCP', 1000 - $over, $over, 2500))['LCP'];
+            self::assertSame((float) $usedPercent, $budget['used_percent'], $line);
+        }
+    }
+
+    /**
+     * Verfuegbarkeit: dieselbe Formel (Fehlerrate / (1 - SLO Target)), nur mit 99.9 %
+     */
+    public function testTemplateAvailabilityExamplesUseTheSameFormula(): void
+    {
+        $template = (string) file_get_contents(self::POLICY_TEMPLATE);
+        self::assertMatchesRegularExpression('/^\s*target: 99\.9\s/m', $template);
+        self::assertStringContainsString('99.9% = 43.2 Minuten Downtime in 30 Tagen', $template);
+        self::assertEqualsWithDelta(43.2, 30 * 24 * 60 * (1 - 0.999), 1e-9);
+        self::assertStringContainsString('Erlaubte Fehler: 0.1 % = 1 von 1000 Requests', $template);
+
+        preg_match_all('/^\s*- Bei ([\d.]+) % Fehlerrate: Budget ([\d.]+) % verbraucht/mu', $template, $rows, \PREG_SET_ORDER);
+        self::assertCount(2, $rows, 'Beispielzeilen fuer Verfuegbarkeit in der Vorlage');
+        foreach ($rows as [$line, $errorRate, $usedPercent]) {
+            self::assertEqualsWithDelta((float) $usedPercent, (float) $errorRate / (100 - 99.9) * 100, 1e-9, $line);
+        }
+
+        // "250-mal zu klein ... 25000 % verbraucht": 25 % ueber der Schwelle gegen 0.1 % Budget
+        self::assertStringContainsString('250-mal zu klein', $template);
+        self::assertStringContainsString('25000 % verbraucht', $template);
+        self::assertEqualsWithDelta(250.0, PerformanceBudgetService::ALLOWED_PERCENT / 0.1, 1e-9);
+    }
+
+    /**
+     * Stufengrenzen der Vorlage (policy_levels) = Grenzen in policy()
+     */
+    public function testTemplatePolicyLevelsMatchTheService(): void
+    {
+        $template = (string) file_get_contents(self::POLICY_TEMPLATE);
+        preg_match('/condition: "Budget Remaining > (\d+)%"/', $template, $green);
+        preg_match('/condition: "Budget Remaining (\d+)-(\d+) %"/', $template, $yellow);
+        preg_match('/condition: "Budget Remaining (\d+) bis unter (\d+) %/', $template, $orange);
+        self::assertCount(2, $green);
+        self::assertCount(3, $yellow);
+        self::assertCount(3, $orange);
+
+        [$greenFrom, $yellowFrom, $yellowTo, $orangeFrom, $orangeTo] = [(int) $green[1], (int) $yellow[1], (int) $yellow[2], (int) $orange[1], (int) $orange[2]];
+        self::assertSame($greenFrom, $yellowTo);
+        self::assertSame($yellowFrom, $orangeTo);
+
+        self::assertSame('green', PerformanceBudgetService::policy($greenFrom + 0.1));
+        self::assertSame('yellow', PerformanceBudgetService::policy((float) $greenFrom));
+        self::assertSame('yellow', PerformanceBudgetService::policy((float) $yellowFrom));
+        self::assertSame('orange', PerformanceBudgetService::policy($yellowFrom - 0.1));
+        self::assertSame('orange', PerformanceBudgetService::policy((float) $orangeFrom));
+        self::assertSame('red', PerformanceBudgetService::policy($orangeFrom - 0.1));
+    }
+
     public function testOverallIsTheWorstMetricWithData(): void
     {
         $noData = ['policy' => 'no-data'];
