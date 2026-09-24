@@ -6,34 +6,36 @@ Ausblick – Neue Technologien und Trends
 Erkennt ungewöhnlich hohe Performance-Werte automatisch: auffällig ist,
 was mehr als --min-factor × Median der Reihe beträgt (Vorgabe 2).
 
+Grenze der Regel: Sie findet Ausreisser, solange weniger als die Hälfte der
+Reihe erhöht ist. Liegt ein Niveausprung (etwa nach einem Deploy) über der
+halben Reihe, wandert der Median mit, und nichts wird gemeldet. Dafür die
+neue Reihe gegen den Median eines Referenzzeitraums (z. B. Vorwoche) halten.
+
 Warum kein Isolation Forest (scikit-learn 1.6.1, random_state=42, MEM-321):
 Ein fester contamination-Wert gibt den Anteil vor. 0.25 markierte in einer
 Reihe ohne Ausreisser 2 von 8 Werten und fand von drei Ausreissern unter
-acht nur zwei; "auto" markierte in der Reihe ohne Ausreisser 3 von 8. Mit
-der Mediangrenze dahinter trug das Modell nichts bei, bei einem
-Niveausprung wählte es nur einen Teil der gleich hohen Werte aus.
+acht nur zwei. "auto" markierte in jeder gemessenen Reihe ohne Ausreisser
+mindestens 2 von 8 Werten und nach einem Niveausprung (fünf Werte um 100,
+vier um 300 ms) auch normale Werte. Mit der Mediangrenze dahinter trug das
+Modell nichts bei.
 
 Voraussetzungen: Python 3 (getestet mit 3.12), nur Standardbibliothek.
-    Für --url zusätzlich: pip install requests
 
 Verwendung:
     python detect-anomalies.py --input metrics.json   # aus collect-metrics.sh
     python detect-anomalies.py --example              # Beispiel aus Kapitel 24
     python detect-anomalies.py                        # Demo-Daten
-    python detect-anomalies.py --url https://shop.example.com
+
+Exit-Codes: 0 = keine Anomalie, 1 = mindestens eine Anomalie,
+            2 = Aufruf- oder Eingabefehler
 """
 
 import argparse
 import json
-import sys
+import math
 from datetime import datetime
 from statistics import median
 from typing import Dict, List
-
-try:
-    import requests
-except ImportError:
-    requests = None
 
 # Felder aus collect-metrics.sh (Lighthouse über die PageSpeed API)
 METRIC_NAMES = ['TTFB', 'FCP', 'LCP', 'CLS', 'TBT', 'SI']
@@ -55,45 +57,15 @@ def detect_performance_anomalies(metrics: list[float], min_factor: float = 2.0) 
 
 
 def example() -> None:
-    """Beispiel aus Kapitel 24."""
+    """Beispiel aus Kapitel 24 (Faktor 2)."""
     ttfb_values = [120, 115, 118, 450, 122, 119, 890, 121]  # ms
     anomalies = detect_performance_anomalies(ttfb_values)
     print(anomalies)
 
 
-def fetch_metrics_from_crux(url: str) -> Dict:
-    """
-    Holt CrUX-Daten von der PageSpeed API.
-
-    Args:
-        url: Shop-URL
-
-    Returns:
-        Dict mit Core Web Vitals
-    """
-    if requests is None:
-        print("Fehler: 'requests' Modul nicht installiert.")
-        print("Für Live-Daten: pip install requests")
-        return None
-
-    api_url = f"https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url={url}&strategy=mobile"
-
-    try:
-        response = requests.get(api_url, timeout=60)
-        data = response.json()
-
-        metrics = {}
-        if 'loadingExperience' in data:
-            le = data['loadingExperience']
-            if 'metrics' in le:
-                for key, value in le['metrics'].items():
-                    if 'percentile' in value:
-                        metrics[key] = value['percentile']
-
-        return metrics
-    except Exception as e:
-        print(f"Fehler beim Abrufen der Metriken: {e}")
-        return None
+def is_number(value) -> bool:
+    """Endliche Zahl; bool zählt nicht (JSON true wäre sonst 1)."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
 
 def analyze_metrics(metrics_history: List[Dict], min_factor: float = 2.0) -> Dict:
@@ -105,13 +77,15 @@ def analyze_metrics(metrics_history: List[Dict], min_factor: float = 2.0) -> Dic
         min_factor: Mindestabstand zum Median als Faktor
 
     Returns:
-        Analyse-Ergebnis je Metrik: 'anomalies' (Liste), oder 'skipped' mit Grund
+        Analyse-Ergebnis je Metrik: 'anomalies' (Liste), oder 'skipped' mit Grund.
+        'measurement' ist die Position in metrics_history, ab 1 gezählt.
     """
     results = {}
 
     for metric_name in METRIC_NAMES:
-        values = [m.get(metric_name, m.get(metric_name.lower())) for m in metrics_history]
-        values = [v for v in values if v is not None]
+        rows = [(i, m.get(metric_name)) for i, m in enumerate(metrics_history, 1)]
+        rows = [(i, v) for i, v in rows if is_number(v)]
+        values = [v for _, v in rows]
 
         if len(values) < 5:
             continue
@@ -120,14 +94,19 @@ def analyze_metrics(metrics_history: List[Dict], min_factor: float = 2.0) -> Dic
         if mid <= 0:
             # TBT oder CLS eines schnellen Shops: Median 0, die Grenze
             # min_factor × Median hielte jeden Wert über 0 für auffällig
-            results[metric_name] = {'skipped': 'Median 0, kein Mindestabstand möglich'}
+            results[metric_name] = {'skipped': 'Median ≤ 0, kein Mindestabstand möglich'}
             continue
 
         flags = detect_performance_anomalies(values, min_factor)
         results[metric_name] = {
             'anomalies': [
-                {'index': i, 'value': v, 'factor': round(v / mid, 1)}
-                for i, (v, flag) in enumerate(zip(values, flags)) if flag
+                {
+                    'measurement': i,
+                    'timestamp': metrics_history[i - 1].get('timestamp'),
+                    'value': v,
+                    'factor': round(v / mid, 1),
+                }
+                for (i, v), flag in zip(rows, flags) if flag
             ],
             'count': len(values),
             'median': round(mid, 2),
@@ -160,19 +139,16 @@ def print_report(results: Dict, min_factor: float) -> None:
         if not data['anomalies']:
             print("  Keine Anomalien.")
         for anomaly in data['anomalies']:
-            print(f"  Anomalie: Index {anomaly['index']}: {anomaly['value']} "
+            when = f" ({anomaly['timestamp']})" if anomaly['timestamp'] else ""
+            print(f"  Anomalie: Messung {anomaly['measurement']}{when}: {anomaly['value']} "
                   f"({anomaly['factor']} × Median)")
 
     print("\n" + "=" * 60)
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(
         description='Performance-Anomalie-Erkennung (Vielfaches des Medians)'
-    )
-    parser.add_argument(
-        '--url',
-        help='Shop-URL für Live-Analyse (PageSpeed API)'
     )
     parser.add_argument(
         '--input',
@@ -181,7 +157,7 @@ def main():
     parser.add_argument(
         '--example',
         action='store_true',
-        help='Beispiel aus Kapitel 24 ausgeben'
+        help='Beispiel aus Kapitel 24 ausgeben (immer mit Faktor 2)'
     )
     parser.add_argument(
         '--min-factor',
@@ -191,26 +167,22 @@ def main():
     )
 
     args = parser.parse_args()
-    if args.min_factor <= 1:
+    if not args.min_factor > 1:
         parser.error('--min-factor muss grösser als 1 sein')
 
     if args.example:
         example()
-        return
+        return 0
 
     if args.input:
         # Aus Datei laden
-        with open(args.input, 'r') as f:
-            metrics_history = json.load(f)
-    elif args.url:
-        # Live-Daten (nur aktueller Snapshot)
-        print(f"Hole Metriken für: {args.url}")
-        metrics = fetch_metrics_from_crux(args.url)
-        if metrics:
-            print(f"Gefundene Metriken: {metrics}")
-            print("\nHinweis: Für Anomalie-Erkennung werden historische Daten benötigt.")
-            print("Sammeln Sie Daten über Zeit mit: ./collect-metrics.sh")
-        return
+        try:
+            with open(args.input, 'r') as f:
+                metrics_history = json.load(f)
+        except (OSError, ValueError) as e:
+            parser.exit(2, f"Fehler: {args.input} nicht lesbar: {e}\n")
+        if not isinstance(metrics_history, list) or not all(isinstance(m, dict) for m in metrics_history):
+            parser.exit(2, f"Fehler: {args.input} ist keine Liste von Messungen (collect-metrics.sh)\n")
     else:
         # Demo-Daten
         print("Kein Input angegeben. Verwende Demo-Daten...")
@@ -218,10 +190,10 @@ def main():
             {'TTFB': 120, 'LCP': 1800, 'FCP': 800, 'CLS': 0.05},
             {'TTFB': 115, 'LCP': 1750, 'FCP': 780, 'CLS': 0.04},
             {'TTFB': 118, 'LCP': 1820, 'FCP': 810, 'CLS': 0.05},
-            {'TTFB': 450, 'LCP': 3500, 'FCP': 1200, 'CLS': 0.08},  # Anomalie!
+            {'TTFB': 450, 'LCP': 3500, 'FCP': 1200, 'CLS': 0.08},  # Anomalie nur TTFB (LCP 1,9 × Median)
             {'TTFB': 122, 'LCP': 1780, 'FCP': 795, 'CLS': 0.05},
             {'TTFB': 119, 'LCP': 1810, 'FCP': 805, 'CLS': 0.04},
-            {'TTFB': 890, 'LCP': 4200, 'FCP': 1800, 'CLS': 0.15},  # Anomalie!
+            {'TTFB': 890, 'LCP': 4200, 'FCP': 1800, 'CLS': 0.15},  # Anomalie in allen vier
             {'TTFB': 121, 'LCP': 1795, 'FCP': 800, 'CLS': 0.05},
             {'TTFB': 117, 'LCP': 1770, 'FCP': 785, 'CLS': 0.04},
             {'TTFB': 123, 'LCP': 1830, 'FCP': 815, 'CLS': 0.05},
@@ -229,7 +201,8 @@ def main():
 
     results = analyze_metrics(metrics_history, args.min_factor)
     print_report(results, args.min_factor)
+    return 1 if any(data.get('anomalies') for data in results.values()) else 0
 
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())

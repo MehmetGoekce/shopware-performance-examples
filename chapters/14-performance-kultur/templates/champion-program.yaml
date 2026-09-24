@@ -45,7 +45,7 @@ responsibilities:
 
     - name: "Code Reviews"
       description: "Mindestens 2 PRs mit Performance-Fokus reviewen"
-      time: "1-2 Stunden"
+      time: "1-1.5 Stunden"
 
     - name: "Knowledge Sharing"
       description: "1 Tip, Link oder Insight teilen"
@@ -82,7 +82,7 @@ responsibilities:
 benefits:
   learning:
     - "Dediziertes Zeitbudget für Weiterbildung (10%)"
-    - "Zugang zu Premium-Kursen (web.dev, Frontend Masters)"
+    - "Zeit für Kurse (web.dev kostenlos, Frontend Masters im Abo)"
     - "Konferenz-Budget (1-2 Konferenzen/Jahr)"
 
   recognition:

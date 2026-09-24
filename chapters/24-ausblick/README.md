@@ -53,16 +53,19 @@ wrangler deploy
 
 Braucht nur Python 3 (Standardbibliothek, getestet mit 3.12, `tests/Python`).
 Auffällig ist, was über `--min-factor` × Median der Reihe liegt (Vorgabe 2).
+Grenze: Betrifft ein Niveausprung die halbe Reihe oder mehr, wandert der Median
+mit, und nichts wird gemeldet; dann gegen einen Referenzzeitraum vergleichen.
 Kein Isolation Forest: Mit festem `contamination`-Wert gibt er den Anteil der
 Anomalien vor, und mit `"auto"` markierte er auch in Reihen ohne Ausreisser
-Werte (Messung im Skriptkopf).
+Werte (Messung im Skriptkopf). Exit-Codes: 0 keine Anomalie, 1 Anomalie,
+2 Aufruf- oder Eingabefehler.
 
 ```bash
 # Beispiel aus Kapitel 24
 python scripts/detect-anomalies.py --example
 
-# Script ausführen (--url braucht zusätzlich: pip install requests)
-python scripts/detect-anomalies.py --url https://shop.example.com
+# Metriken aus collect-metrics.sh auswerten
+python scripts/detect-anomalies.py --input metrics.json
 ```
 
 ## Quick Start
@@ -107,8 +110,9 @@ eine Modellschätzung, keine Messung.
 ### 4. Performance-Anomalien erkennen
 
 ```bash
-# Historische Daten sammeln (7 Tage empfohlen)
-./scripts/collect-metrics.sh https://shop.example.com
+# Historische Daten sammeln (7 Tage empfohlen). Ohne API-Key antwortete die
+# PageSpeed API am 2026-09-24 mit HTTP 429 (Tageskontingent 0)
+PSI_API_KEY=<key> ./scripts/collect-metrics.sh https://shop.example.com
 
 # Anomalien analysieren
 python scripts/detect-anomalies.py --input metrics.json
@@ -156,7 +160,7 @@ chapters/24-ausblick/
 | Technologie | Status | Ausblick |
 |-------------|--------|----------|
 | WebAssembly | ✅ in allen aktuellen Browsern ([caniuse](https://caniuse.com/wasm)) und in Cloudflare Workers | Kein Standardfall im Shop-Frontend, nur für rechenintensive Teile |
-| AI-gestützte Optimierung | 🔄 Frühe Phase | Anomalie-Erkennung jetzt möglich |
+| AI-gestützte Optimierung | 🔄 Frühe Phase | Anomalie-Erkennung: für eine Metrik reicht eine Regel ohne KI |
 | Composable Commerce | 🔄 Enterprise-only | Für große Shops relevant |
 
 ## Weiterführende Ressourcen
