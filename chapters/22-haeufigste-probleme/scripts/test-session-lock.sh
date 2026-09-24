@@ -79,30 +79,41 @@ SHOP_PATH="${2:-}"
 #      APP_ENV nach .env/.env.local (ohne Angabe: dev); bei APP_ENV=test
 #      entfaellt .env.local. Ohne .env, .env.dist und .env.local.php liest
 #      Shopware gar keine Datei.
+# DOTENV_NOTE ist gesetzt, wenn der Wert nicht sicher ist (Text: dotenv_note):
+# "Verweis" = $VAR/${VAR} in der Datei, den Symfony einsetzt, diese Funktion
+# nicht; "Format" = .env.local.php nicht im Format von composer dump-env.
+# Eine vorhandene, aber nicht lesbare Datei beendet das Skript mit Exit 69.
 # Die Umgebung des Webservers (FPM env[], Apache SetEnv, nginx fastcgi_param)
 # sieht diese Funktion nicht; sie schlaegt im Web ebenfalls jede Datei.
 dotenv_get() {
     local name="$1" root="${SHOP_PATH:-.}" f env_name line php_env
-    DOTENV_VALUE="" DOTENV_SOURCE=""
+    DOTENV_VALUE="" DOTENV_SOURCE="" DOTENV_NOTE=""
     if line=$(printenv "$name"); then
         DOTENV_VALUE="$line" DOTENV_SOURCE="Umgebung"
         return 0
     fi
     if [[ -f "$root/.env.local.php" ]]; then
+        dotenv_need "$root/.env.local.php"
         php_env=$(dotenv_php_value "$root/.env.local.php" APP_ENV)
         if ! env_name=$(printenv APP_ENV) || [[ -z "$php_env" || "$env_name" == "$php_env" ]]; then
             if grep -qE "^[[:space:]]*'${name}'[[:space:]]*=>" "$root/.env.local.php"; then
-                DOTENV_VALUE=$(dotenv_php_value "$root/.env.local.php" "$name")
                 DOTENV_SOURCE=".env.local.php"
+                if grep -qE "^[[:space:]]*'${name}'[[:space:]]*=>[[:space:]]*'" "$root/.env.local.php"; then
+                    DOTENV_VALUE=$(dotenv_php_value "$root/.env.local.php" "$name")
+                else
+                    DOTENV_NOTE="Format"
+                fi
             fi
             return 0
         fi
     fi
     [[ -f "$root/.env" || -f "$root/.env.dist" ]] || return 0
     f="$root/.env"; [[ -f "$f" ]] || f="$root/.env.dist"
+    dotenv_need "$f"
     env_name=$(printenv APP_ENV) || env_name=$(dotenv_file_value "$f" APP_ENV)
     local files=("$f")
     if [[ "${env_name:-dev}" != "test" && -f "$root/.env.local" ]]; then
+        dotenv_need "$root/.env.local"
         files+=("$root/.env.local")
         printenv APP_ENV >/dev/null || env_name=$(dotenv_file_value "$root/.env.local" APP_ENV "$env_name")
     fi
@@ -112,11 +123,28 @@ dotenv_get() {
     fi
     for f in "${files[@]}"; do
         [[ -f "$f" ]] || continue
-        if grep -qE "^[[:space:]]*(export[[:space:]]+)?${name}=" "$f"; then
+        dotenv_need "$f"
+        if line=$(grep -E "^[[:space:]]*(export[[:space:]]+)?${name}=" "$f" | tail -n 1); then
             DOTENV_VALUE=$(dotenv_file_value "$f" "$name")
             DOTENV_SOURCE="${f##*/}"
+            DOTENV_NOTE=""
+            # In '...' setzt Symfony nichts ein, sonst schon.
+            [[ "${line#*=}" != \'* && "$DOTENV_VALUE" == *'$'* ]] && DOTENV_NOTE="Verweis"
         fi
     done
+    return 0
+}
+dotenv_need() {
+    [[ -r "$1" ]] && return 0
+    echo "Nicht lesbar: $1" >&2
+    echo "Das Skript mit den Rechten des Shops starten, z. B. sudo -u www-data $0 ..." >&2
+    exit 69
+}
+dotenv_note() {
+    case "$DOTENV_NOTE" in
+        Verweis) echo "enthaelt einen \$-Verweis, den Symfony einsetzt, dieses Skript nicht" ;;
+        Format) echo "steht in .env.local.php nicht im Format von composer dump-env" ;;
+    esac
 }
 # Letzte Zuweisung NAME=... einer .env-Datei; "export " davor erlaubt.
 # Entfernt umschliessende Anfuehrungszeichen und einen Kommentar hinter
@@ -226,7 +254,7 @@ if [[ -n "${SHOP_PATH}" ]]; then
     # (FPM env[], Apache SetEnv), gelten im Web diese.
     for v in REDIS_SESSION_URL REDIS_URL; do
         dotenv_get "$v"
-        [[ -n "${DOTENV_SOURCE}" ]] && echo "   ${v}=${DOTENV_VALUE} (${DOTENV_SOURCE})"
+        [[ -n "${DOTENV_SOURCE}" ]] && echo "   ${v}=${DOTENV_VALUE} (${DOTENV_SOURCE}) $(dotenv_note)"
     done
 fi
 

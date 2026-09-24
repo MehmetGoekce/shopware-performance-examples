@@ -58,7 +58,8 @@ Die Variablen liest es wie bin/console: Umgebung, .env.local.php, sonst
 Umgebungsvariablen:
   ES_HOST     Host:Port des Clusters. Ohne Angabe OPENSEARCH_URL wie oben,
               sonst localhost:9200.
-  ADMIN_PATH  Pfad der Administration. Default: admin
+  ADMIN_PATH  Pfad der Administration. Default: SHOPWARE_ADMINISTRATION_PATH_NAME
+              wie oben, sonst admin
 USAGE
 }
 
@@ -77,7 +78,6 @@ SHOP_URL="${1:-http://localhost}"
 SHOP_PATH="${2:-.}"
 # Cluster-Adresse per Umgebungsvariable, damit die Argumentfolge einheitlich bleibt.
 ES_HOST_ARG="${ES_HOST:-}"
-ADMIN_PATH="${ADMIN_PATH:-admin}"
 
 # >>> dotenv_get (wortgleich in allen Skripten dieses Kapitels, siehe BATS)
 # Liest eine Variable so, wie Symfonys Dotenv::bootEnv() sie fuer die CLI
@@ -91,30 +91,41 @@ ADMIN_PATH="${ADMIN_PATH:-admin}"
 #      APP_ENV nach .env/.env.local (ohne Angabe: dev); bei APP_ENV=test
 #      entfaellt .env.local. Ohne .env, .env.dist und .env.local.php liest
 #      Shopware gar keine Datei.
+# DOTENV_NOTE ist gesetzt, wenn der Wert nicht sicher ist (Text: dotenv_note):
+# "Verweis" = $VAR/${VAR} in der Datei, den Symfony einsetzt, diese Funktion
+# nicht; "Format" = .env.local.php nicht im Format von composer dump-env.
+# Eine vorhandene, aber nicht lesbare Datei beendet das Skript mit Exit 69.
 # Die Umgebung des Webservers (FPM env[], Apache SetEnv, nginx fastcgi_param)
 # sieht diese Funktion nicht; sie schlaegt im Web ebenfalls jede Datei.
 dotenv_get() {
     local name="$1" root="${SHOP_PATH:-.}" f env_name line php_env
-    DOTENV_VALUE="" DOTENV_SOURCE=""
+    DOTENV_VALUE="" DOTENV_SOURCE="" DOTENV_NOTE=""
     if line=$(printenv "$name"); then
         DOTENV_VALUE="$line" DOTENV_SOURCE="Umgebung"
         return 0
     fi
     if [[ -f "$root/.env.local.php" ]]; then
+        dotenv_need "$root/.env.local.php"
         php_env=$(dotenv_php_value "$root/.env.local.php" APP_ENV)
         if ! env_name=$(printenv APP_ENV) || [[ -z "$php_env" || "$env_name" == "$php_env" ]]; then
             if grep -qE "^[[:space:]]*'${name}'[[:space:]]*=>" "$root/.env.local.php"; then
-                DOTENV_VALUE=$(dotenv_php_value "$root/.env.local.php" "$name")
                 DOTENV_SOURCE=".env.local.php"
+                if grep -qE "^[[:space:]]*'${name}'[[:space:]]*=>[[:space:]]*'" "$root/.env.local.php"; then
+                    DOTENV_VALUE=$(dotenv_php_value "$root/.env.local.php" "$name")
+                else
+                    DOTENV_NOTE="Format"
+                fi
             fi
             return 0
         fi
     fi
     [[ -f "$root/.env" || -f "$root/.env.dist" ]] || return 0
     f="$root/.env"; [[ -f "$f" ]] || f="$root/.env.dist"
+    dotenv_need "$f"
     env_name=$(printenv APP_ENV) || env_name=$(dotenv_file_value "$f" APP_ENV)
     local files=("$f")
     if [[ "${env_name:-dev}" != "test" && -f "$root/.env.local" ]]; then
+        dotenv_need "$root/.env.local"
         files+=("$root/.env.local")
         printenv APP_ENV >/dev/null || env_name=$(dotenv_file_value "$root/.env.local" APP_ENV "$env_name")
     fi
@@ -124,11 +135,28 @@ dotenv_get() {
     fi
     for f in "${files[@]}"; do
         [[ -f "$f" ]] || continue
-        if grep -qE "^[[:space:]]*(export[[:space:]]+)?${name}=" "$f"; then
+        dotenv_need "$f"
+        if line=$(grep -E "^[[:space:]]*(export[[:space:]]+)?${name}=" "$f" | tail -n 1); then
             DOTENV_VALUE=$(dotenv_file_value "$f" "$name")
             DOTENV_SOURCE="${f##*/}"
+            DOTENV_NOTE=""
+            # In '...' setzt Symfony nichts ein, sonst schon.
+            [[ "${line#*=}" != \'* && "$DOTENV_VALUE" == *'$'* ]] && DOTENV_NOTE="Verweis"
         fi
     done
+    return 0
+}
+dotenv_need() {
+    [[ -r "$1" ]] && return 0
+    echo "Nicht lesbar: $1" >&2
+    echo "Das Skript mit den Rechten des Shops starten, z. B. sudo -u www-data $0 ..." >&2
+    exit 69
+}
+dotenv_note() {
+    case "$DOTENV_NOTE" in
+        Verweis) echo "enthaelt einen \$-Verweis, den Symfony einsetzt, dieses Skript nicht" ;;
+        Format) echo "steht in .env.local.php nicht im Format von composer dump-env" ;;
+    esac
 }
 # Letzte Zuweisung NAME=... einer .env-Datei; "export " davor erlaubt.
 # Entfernt umschliessende Anfuehrungszeichen und einen Kommentar hinter
@@ -152,15 +180,15 @@ dotenv_php_value() {
 }
 # <<< dotenv_get
 
-# Shopware liest den Schalter als %env(bool:SHOPWARE_ES_ENABLED)%.
+# Shopware liest den Schalter als %env(bool:SHOPWARE_ES_ENABLED)%:
+# true/on/yes/1 oder eine Zahl ungleich 0.
 is_on() {
     local v
-    v=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+    v=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
     case "$v" in
         1|true|on|yes) return 0 ;;
-        ''|*[!0-9]*) return 1 ;;
-        *) [[ "$((10#$v))" -ne 0 ]] ;;
     esac
+    [[ "$v" =~ ^[+-]?[0-9]*\.?[0-9]+$ && ! "$v" =~ ^[+-]?0*\.?0*$ ]]
 }
 
 echo "=== Problem 11: Elasticsearch ==="
@@ -169,7 +197,9 @@ echo
 # Wert und Quelle je Variable, wie bin/console sie sieht.
 show() {
     dotenv_get "$1"
-    if [[ -n "${DOTENV_SOURCE}" ]]; then
+    if [[ -n "${DOTENV_NOTE}" ]]; then
+        printf '   %-28s = %s (%s) %s\n' "$1" "${DOTENV_VALUE}" "${DOTENV_SOURCE}" "$(dotenv_note)"
+    elif [[ -n "${DOTENV_SOURCE}" ]]; then
         printf '   %-28s = %s (%s)\n' "$1" "${DOTENV_VALUE}" "${DOTENV_SOURCE}"
     else
         printf '   %-28s = (nicht gesetzt)\n' "$1"
@@ -185,10 +215,14 @@ section() {
 }
 
 section "Konfiguration aus Sicht der CLI (Umgebung, .env.local.php, .env-Dateien)"
-show SHOPWARE_ES_ENABLED;          ES_ENABLED="${DOTENV_VALUE}"
+show SHOPWARE_ES_ENABLED;          ES_ENABLED="${DOTENV_VALUE}" ES_SRC="${DOTENV_SOURCE}" ES_NOTE="${DOTENV_NOTE}"
 show SHOPWARE_ES_INDEXING_ENABLED
-show OPENSEARCH_URL;               ES_URL="${DOTENV_VALUE}"
+show OPENSEARCH_URL;               ES_URL="${DOTENV_VALUE}" URL_NOTE="${DOTENV_NOTE}"
 show SHOPWARE_ES_INDEX_PREFIX;     ES_PREFIX="${DOTENV_VALUE:-sw}"
+if [[ -z "${ADMIN_PATH:-}" ]]; then
+    dotenv_get SHOPWARE_ADMINISTRATION_PATH_NAME
+    ADMIN_PATH="${DOTENV_VALUE:-admin}"
+fi
 if [[ -f "${SHOP_PATH}/.env.local.php" ]]; then
     echo "   .env.local.php vorhanden — Symfony liest dann keine .env-Datei,"
     echo "   ausser die Umgebung setzt ein anderes APP_ENV als die Datei."
@@ -196,12 +230,15 @@ fi
 
 if [[ -n "${ES_HOST_ARG}" ]]; then
     ES_BASE="${ES_HOST_ARG}"
+elif [[ -n "${URL_NOTE}" ]]; then
+    ES_BASE=""
 elif [[ -n "${ES_URL}" ]]; then
     ES_BASE="${ES_URL%%,*}"
 else
     ES_BASE="localhost:9200"
 fi
 case "${ES_BASE}" in
+    "") : ;;
     http://*|https://*) : ;;
     *) ES_BASE="http://${ES_BASE}" ;;
 esac
@@ -213,61 +250,77 @@ section "Sicht des Webservers (${SHOP_URL%/}/${ADMIN_PATH})"
 WEB_ES=""
 if ! command -v curl >/dev/null 2>&1; then
     echo "   curl fehlt — nicht geprueft."
-elif ! ADMIN_HTML=$(curl -sS --max-time 15 "${SHOP_URL%/}/${ADMIN_PATH}" 2>/dev/null); then
+elif ! ADMIN_HTML=$(curl -sSL --max-time 15 -w '\n%{http_code}' "${SHOP_URL%/}/${ADMIN_PATH}" 2>/dev/null); then
     echo "   ${SHOP_URL%/}/${ADMIN_PATH} nicht erreichbar — nicht geprueft."
 elif [[ "${ADMIN_HTML}" =~ storefrontEsEnable:[[:space:]]*(true|false) ]]; then
     WEB_ES="${BASH_REMATCH[1]}"
     echo "   storefrontEsEnable: ${WEB_ES}"
 else
-    echo "   Kein storefrontEsEnable in der Anmeldeseite (vor 6.5.2.0 oder anderer"
-    echo "   Admin-Pfad, siehe ADMIN_PATH) — nicht geprueft."
+    echo "   Kein storefrontEsEnable in der Antwort (HTTP ${ADMIN_HTML##*$'\n'}; vor 6.5.2.0"
+    echo "   oder anderer Admin-Pfad, siehe ADMIN_PATH) — nicht geprueft."
 fi
 
 CLI_ES=false
 is_on "${ES_ENABLED}" && CLI_ES=true
-if [[ -n "${WEB_ES}" && "${WEB_ES}" != "${CLI_ES}" ]]; then
-    echo "   ✗ Webserver (${WEB_ES}) und CLI (${CLI_ES}) sind uneins: Der Webserver"
-    echo "     setzt eigene Werte (FPM env[], Apache SetEnv, nginx fastcgi_param)."
+[[ -n "${ES_NOTE}" ]] && CLI_ES=""
+if [[ -n "${WEB_ES}" && -n "${CLI_ES}" && "${WEB_ES}" != "${CLI_ES}" ]]; then
+    echo "   ✗ Webserver (${WEB_ES}) und CLI (${CLI_ES}) sind uneins."
+    if [[ "${ES_SRC}" == "Umgebung" ]]; then
+        echo "     Die CLI hat den Wert aus der Umgebung dieser Shell; die sieht der"
+        echo "     Webserver nicht."
+    else
+        echo "     Der Webserver setzt eigene Werte (FPM env[], Apache SetEnv, nginx"
+        echo "     fastcgi_param)."
+    fi
     echo "     Dann stimmt auch OPENSEARCH_URL oben nicht sicher; die des Webservers"
     echo "     zeigt Shopware nirgends an, sie steht in dessen Konfiguration."
     ISSUES=$((ISSUES + 1))
 fi
-if [[ "${WEB_ES:-${CLI_ES}}" != "true" ]]; then
+SEARCH_ES="${WEB_ES:-${CLI_ES}}"
+if [[ -z "${SEARCH_ES}" ]]; then
+    echo "   SHOPWARE_ES_ENABLED nicht bewertet (siehe Abschnitt 1)."
+elif [[ "${SEARCH_ES}" != "true" ]]; then
     echo "   Die Suche laeuft NICHT ueber Elasticsearch."
     ISSUES=$((ISSUES + 1))
 fi
 
 echo
-section "Cluster unter ${ES_BASE}"
-if ROOT=$(curl -sS --connect-timeout 5 "${ES_BASE}" 2>/dev/null) && [[ -n "${ROOT}" ]]; then
-    VERSION=$(printf '%s' "${ROOT}" | grep -oE '"number"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | cut -d'"' -f4)
-    DISTRO=$(printf '%s' "${ROOT}" | grep -oE '"distribution"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | cut -d'"' -f4)
-    echo "   erreichbar — ${DISTRO:-elasticsearch} ${VERSION:-?}"
-
-    HEALTH=$(curl -sS "${ES_BASE}/_cluster/health" 2>/dev/null \
-        | grep -oE '"status"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | cut -d'"' -f4 || true)
-    case "${HEALTH}" in
-        green)  echo "   Cluster-Status: green" ;;
-        yellow) echo "   Cluster-Status: yellow — bei einem einzelnen Knoten normal," ;;
-        *)      echo "   Cluster-Status: ${HEALTH:-unbekannt}"; ISSUES=$((ISSUES + 1)) ;;
-    esac
-    if [[ "${HEALTH}" == "yellow" ]]; then
-        echo "   weil die konfigurierten Replicas keinen zweiten Knoten finden."
-    fi
-
-    echo
-    section "Shopware-Indizes (Praefix ${ES_PREFIX})"
-    INDICES=$(curl -sS "${ES_BASE}/_cat/indices/${ES_PREFIX}*?h=index,docs.count,store.size" 2>/dev/null || true)
-    if [[ -z "${INDICES}" ]]; then
-        echo "   Keine Indizes mit diesem Praefix."
-        ISSUES=$((ISSUES + 1))
-    else
-        printf '%s\n' "${INDICES}" | sed 's/^/   /'
-    fi
+if [[ -z "${ES_BASE}" ]]; then
+    section "Cluster"
+    echo "   OPENSEARCH_URL ist nicht sicher (siehe Abschnitt 1) — nicht geprueft."
+    echo "   Adresse von Hand mitgeben: ES_HOST=host:9200 $0 ..."
 else
-    echo "   NICHT erreichbar."
-    echo "   Gegenprobe: curl -v ${ES_BASE}"
-    ISSUES=$((ISSUES + 1))
+    section "Cluster unter ${ES_BASE}"
+    if ROOT=$(curl -sS --connect-timeout 5 "${ES_BASE}" 2>/dev/null) && [[ -n "${ROOT}" ]]; then
+        VERSION=$(printf '%s' "${ROOT}" | grep -oE '"number"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | cut -d'"' -f4)
+        DISTRO=$(printf '%s' "${ROOT}" | grep -oE '"distribution"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | cut -d'"' -f4)
+        echo "   erreichbar — ${DISTRO:-elasticsearch} ${VERSION:-?}"
+
+        HEALTH=$(curl -sS "${ES_BASE}/_cluster/health" 2>/dev/null \
+            | grep -oE '"status"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | cut -d'"' -f4 || true)
+        case "${HEALTH}" in
+            green)  echo "   Cluster-Status: green" ;;
+            yellow) echo "   Cluster-Status: yellow — bei einem einzelnen Knoten normal," ;;
+            *)      echo "   Cluster-Status: ${HEALTH:-unbekannt}"; ISSUES=$((ISSUES + 1)) ;;
+        esac
+        if [[ "${HEALTH}" == "yellow" ]]; then
+            echo "   weil die konfigurierten Replicas keinen zweiten Knoten finden."
+        fi
+
+        echo
+        section "Shopware-Indizes (Praefix ${ES_PREFIX})"
+        INDICES=$(curl -sS "${ES_BASE}/_cat/indices/${ES_PREFIX}*?h=index,docs.count,store.size" 2>/dev/null || true)
+        if [[ -z "${INDICES}" ]]; then
+            echo "   Keine Indizes mit diesem Praefix."
+            ISSUES=$((ISSUES + 1))
+        else
+            printf '%s\n' "${INDICES}" | sed 's/^/   /'
+        fi
+    else
+        echo "   NICHT erreichbar."
+        echo "   Gegenprobe: curl -v ${ES_BASE}"
+        ISSUES=$((ISSUES + 1))
+    fi
 fi
 
 if [[ -f "${SHOP_PATH}/bin/console" ]]; then

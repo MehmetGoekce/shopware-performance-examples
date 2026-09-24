@@ -43,6 +43,17 @@ get() {
     ' _ "$BATS_TEST_TMPDIR/dotenv_get.sh" "$name"
 }
 
+# note NAME [VAR=wert ...]: nur DOTENV_NOTE.
+note() {
+    local name="$1"; shift
+    env -i PATH="$PATH" SHOP_PATH="$shop" "$@" bash -c '
+        set -euo pipefail
+        source "$1"
+        dotenv_get "$2"
+        printf "%s\n" "$DOTENV_NOTE"
+    ' _ "$BATS_TEST_TMPDIR/dotenv_get.sh" "$name"
+}
+
 # ---------------------------------------------------------------------------
 # Drift und Altlasten
 # ---------------------------------------------------------------------------
@@ -139,6 +150,44 @@ PHP
     [ "$(get X APP_ENV=prod)" == "aus-php|.env.local.php" ]
 }
 
+@test "dotenv_get: .env.local.php ohne APP_ENV gilt auch bei APP_ENV in der Umgebung" {
+    printf 'APP_ENV=prod\nX=aus-env\n' > "$shop/.env"
+    printf "<?php return array (\n  'X' => 'aus-php',\n);\n" > "$shop/.env.local.php"
+    [ "$(get X APP_ENV=dev)" == "aus-php|.env.local.php" ]
+}
+
+@test "dotenv_get: .env.local.php in fremdem Format = Quelle genannt, Wert leer, Format-Hinweis" {
+    printf "<?php return array (\n  'APP_DEBUG' => 1,\n);\n" > "$shop/.env.local.php"
+    [ "$(get APP_DEBUG)" == "|.env.local.php" ]
+    [ "$(note APP_DEBUG)" == "Format" ]
+}
+
+@test "dotenv_get: \$-Verweis wird gemeldet, in einfachen Anfuehrungszeichen nicht" {
+    printf 'APP_ENV=prod\nA=${B}\nC="x$D"\nE='"'"'$F'"'"'\nG=ohne\n' > "$shop/.env"
+    [ "$(note A)" == "Verweis" ]
+    [ "$(note C)" == "Verweis" ]
+    [ "$(note E)" == "" ]
+    [ "$(note G)" == "" ]
+}
+
+@test "dotenv_get: spaetere Datei ohne Verweis hebt den Hinweis auf" {
+    printf 'APP_ENV=prod\nX=${Y}\n' > "$shop/.env"
+    printf 'X=fest\n' > "$shop/.env.local"
+    [ "$(get X)" == "fest|.env.local" ]
+    [ "$(note X)" == "" ]
+}
+
+@test "dotenv_get: nicht lesbare Datei beendet mit 69 (Symfony scheitert ebenso)" {
+    [ "$(id -u)" -ne 0 ] || skip "root liest jede Datei"
+    printf 'APP_ENV=prod\n' > "$shop/.env"
+    printf 'APP_DEBUG=1\n' > "$shop/.env.local"
+    chmod 0 "$shop/.env.local"
+    run env -i PATH="$PATH" SHOP_PATH="$shop" bash -c 'set -euo pipefail; source "$1"; dotenv_get APP_DEBUG' _ "$BATS_TEST_TMPDIR/dotenv_get.sh"
+    chmod 644 "$shop/.env.local"
+    [ "$status" -eq 69 ]
+    [[ "$output" == *"Nicht lesbar: $shop/.env.local"* ]]
+}
+
 # ---------------------------------------------------------------------------
 # APP_ENV: Dateiwahl und Wert
 # ---------------------------------------------------------------------------
@@ -173,6 +222,26 @@ PHP
     printf 'X=aus-prod\n' > "$shop/.env.prod"
     printf 'X=aus-dev\n' > "$shop/.env.dev"
     [ "$(get X APP_ENV=prod)" == "aus-prod|.env.prod" ]
+}
+
+@test "dotenv_get: APP_ENV aus der Umgebung schlaegt APP_ENV aus .env.local bei der Dateiwahl" {
+    printf 'APP_ENV=prod\nX=aus-env\n' > "$shop/.env"
+    printf 'APP_ENV=dev\n' > "$shop/.env.local"
+    printf 'X=aus-prod\n' > "$shop/.env.prod"
+    printf 'X=aus-dev\n' > "$shop/.env.dev"
+    [ "$(get X APP_ENV=prod)" == "aus-prod|.env.prod" ]
+}
+
+@test "dotenv_get: bei APP_ENV=local keine weiteren Dateien" {
+    printf 'APP_ENV=local\nX=aus-env\n' > "$shop/.env"
+    printf 'X=aus-local-local\n' > "$shop/.env.local.local"
+    [ "$(get X)" == "aus-env|.env" ]
+}
+
+@test "dotenv_get: .env schlaegt .env.dist, wenn beide da sind" {
+    printf 'APP_ENV=prod\nX=aus-env\n' > "$shop/.env"
+    printf 'APP_ENV=prod\nX=aus-dist\n' > "$shop/.env.dist"
+    [ "$(get X)" == "aus-env|.env" ]
 }
 
 @test "dotenv_get: bei APP_ENV=test entfaellt .env.local" {
@@ -224,6 +293,7 @@ debug_stub() {
     printf '%s' "$1" > "$BATS_TEST_TMPDIR/api-body"
     cat > "$stub_dir/curl" <<EOF
 #!/bin/bash
+printf '%s\n' "\$@" >> "$BATS_TEST_TMPDIR/curl-args"
 [ "\$(cat "$BATS_TEST_TMPDIR/api-body")" = FAIL ] && exit 7
 cat "$BATS_TEST_TMPDIR/api-body"
 EOF
@@ -311,7 +381,54 @@ run_debug() {
         [ "$status" -eq 0 ]
         [[ "$output" == *"nicht geprueft"* ]]
         [[ "$output" != *"Debug ist im Web"* ]]
+        [[ "$output" == *"Nicht geprueft: Debug (Webserver) APP_ENV (Webserver)."* ]]
+        [[ "$output" != *"korrekt konfiguriert"* ]]
     done
+}
+
+@test "check-debug-mode.sh: folgt Weiterleitungen (curl -L) (Review B H1)" {
+    printf 'APP_ENV=prod\n' > "$shop/.env"
+    debug_stub "$NO_TRACE"
+    run_debug
+    grep -qx -- '-sSL' "$BATS_TEST_TMPDIR/curl-args"
+}
+
+@test "check-debug-mode.sh: APP_DEBUG=yes, =2 und =-1 sind an" {
+    for v in yes 2 -1; do
+        printf 'APP_ENV=prod\nAPP_DEBUG=%s\n' "$v" > "$shop/.env"
+        debug_stub "$NO_TRACE"
+        run_debug
+        [ "$status" -eq 1 ] || { echo "APP_DEBUG=$v"; return 1; }
+        [[ "$output" == *"KRITISCH: APP_DEBUG an"* ]]
+    done
+}
+
+@test "check-debug-mode.sh: APP_DEBUG mit \$-Verweis wird nicht bewertet" {
+    printf 'APP_ENV=prod\nAPP_DEBUG=${X:-1}\n' > "$shop/.env"
+    debug_stub "$NO_TRACE"
+    run_debug
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"APP_DEBUG nicht bewertet"* ]]
+    [[ "$output" != *"APP_DEBUG aus"* ]]
+    [[ "$output" == *"Nicht geprueft: APP_DEBUG (CLI)"* ]]
+}
+
+@test "check-debug-mode.sh: .env.local.php ohne APP_ENV = CLI prod mit Debug, Web dev" {
+    printf "<?php return array (\n  'X' => '1',\n);\n" > "$shop/.env.local.php"
+    debug_stub "$NO_TRACE"
+    run_debug
+    [ "$status" -eq 1 ]
+    [[ "$output" == *".env.local.php ohne APP_ENV — bin/console laeuft in prod mit Debug"* ]]
+}
+
+@test "check-debug-mode.sh: Empfehlung ohne assets:install/theme:compile (Review A1)" {
+    printf 'APP_ENV=dev\n' > "$shop/.env"
+    debug_stub "$NO_TRACE"
+    run_debug
+    [ "$status" -eq 1 ]
+    [[ "$output" != *"theme:compile"* ]]
+    [[ "$output" != *"assets:install"* ]]
+    [[ "$output" == *"cache:clear:all ab Shopware 6.6.8.0"* ]]
 }
 
 @test "check-debug-mode.sh: Empfehlung nennt die Reihenfolge, nicht nur .env.local" {
@@ -341,6 +458,7 @@ es_stub() {
 #!/bin/bash
 url="\${@: -1}"
 echo "\$url" >> "$BATS_TEST_TMPDIR/calls"
+printf '%s\n' "\$@" >> "$BATS_TEST_TMPDIR/curl-args"
 case "\$url" in
     */admin) [ "$1" = NONE ] && echo '<html></html>' || echo "      storefrontEsEnable: $1," ;;
     */_cluster/health) echo '{"status":"green"}' ;;
@@ -406,6 +524,41 @@ run_es() {
     [[ "$output" != *"uneins"* ]]
 }
 
+@test "check-elasticsearch.sh: Umgebung der Shell als Ursache genannt (Review B N7)" {
+    printf 'APP_ENV=prod\nSHOPWARE_ES_ENABLED=0\n' > "$shop/.env"
+    es_stub false
+    run env -u OPENSEARCH_URL -u APP_ENV SHOPWARE_ES_ENABLED=1 PATH="$stub_dir:$PATH" \
+        bash "$DIR/check-elasticsearch.sh" http://example.test "$shop"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"aus der Umgebung dieser Shell"* ]]
+    [[ "$output" != *"Der Webserver setzt eigene Werte"* ]]
+}
+
+@test "check-elasticsearch.sh: Admin-Pfad aus SHOPWARE_ADMINISTRATION_PATH_NAME, curl -L" {
+    printf 'APP_ENV=prod\nSHOPWARE_ES_ENABLED=1\nSHOPWARE_ADMINISTRATION_PATH_NAME=verwaltung\n' > "$shop/.env"
+    es_stub true
+    run_es
+    grep -qx 'http://example.test/verwaltung' "$BATS_TEST_TMPDIR/calls"
+    # Die Anmeldeseite mit -L holen (Weiterleitung http -> https), Review B M4.
+    grep -qx -- '-sSL' "$BATS_TEST_TMPDIR/curl-args"
+}
+
+@test "check-elasticsearch.sh: SHOPWARE_ES_ENABLED=0.5 zaehlt als an (env(bool:))" {
+    printf 'APP_ENV=prod\nSHOPWARE_ES_ENABLED=0.5\n' > "$shop/.env"
+    es_stub true
+    run_es
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"uneins"* ]]
+}
+
+@test "check-elasticsearch.sh: OPENSEARCH_URL mit \$-Verweis wird nicht angefragt" {
+    printf 'APP_ENV=prod\nSHOPWARE_ES_ENABLED=1\nOPENSEARCH_URL=http://${ES_HOST_NAME}:9200\n' > "$shop/.env"
+    es_stub true
+    run_es
+    [[ "$output" == *"OPENSEARCH_URL               = http://\${ES_HOST_NAME}:9200 (.env) enthaelt einen"* ]]
+    ! grep -q 'ES_HOST_NAME' "$BATS_TEST_TMPDIR/calls"
+}
+
 @test "check-elasticsearch.sh: ES_ENABLED nirgends gesetzt = nicht gesetzt, Suche nicht ueber ES" {
     printf 'APP_ENV=prod\n' > "$shop/.env"
     es_stub NONE
@@ -439,6 +592,15 @@ mysql_stub() {
     run env -u DATABASE_URL PATH="$stub_dir:$PATH" bash "$DIR/diagnose-slow-queries.sh" http://example.test "$shop"
     [ "$status" -eq 1 ]
     [[ "$output" == *"Keine DATABASE_URL gefunden (Umgebung, .env.local.php, .env-Dateien"* ]]
+}
+
+@test "diagnose-slow-queries.sh: DATABASE_URL mit \$-Verweis = Exit 69 mit Hinweis" {
+    printf 'APP_ENV=prod\nDATABASE_URL="mysql://u:${DB_PASS}@db:3306/shop"\n' > "$shop/.env"
+    mysql_stub
+    run env -u DATABASE_URL PATH="$stub_dir:$PATH" bash "$DIR/diagnose-slow-queries.sh" http://example.test "$shop"
+    [ "$status" -eq 69 ]
+    [[ "$output" == *"enthaelt einen \$-Verweis"* ]]
+    [[ "$output" != *"Datenbank: u@"* ]]
 }
 
 @test "audit-themes.sh: DATABASE_URL aus .env.local.php" {
