@@ -49,8 +49,9 @@ Drei Punkte, die den Rest dieses Verzeichnisses erklären (alle im Testshop geme
 
 HTTP/3 am eigenen Origin: kein eigenes Fragment in diesem Kapitel, sondern das
 Delta aus Kapitel 24 (`chapters/24-ausblick/config/nginx-http3.conf`) im vHost
-aus Anhang C. Ein zweites Fragment mit eigenen QUIC-Listenern startet neben
-diesem Delta nicht (`duplicate listen`), MEM-323.
+aus Anhang C. Das frühere Fragment dieses Kapitels (`listen 443 ssl` plus
+`listen 443 quic reuseport`) startete neben dem Delta nicht (`a duplicate
+listen`), MEM-323.
 
 ### src/
 

@@ -31,6 +31,14 @@ fliesstext() {
         | tr -s '[:space:]' ' '
 }
 
+# Eine nginx-Anweisung je Zeile: Kommentare weg, Zeilenumbrueche und
+# Tabulatoren zu Leerzeichen, an ';' getrennt, alles bis zur letzten Klammer weg.
+# tr -d '\000' haelt grep bei Binaerdateien im Textmodus.
+anweisungen() {
+    tr -d '\000' < "$1" | sed 's/#.*//' | tr '\n\t\r' '   ' | tr ';' '\n' \
+        | sed -E 's/.*[{}]//; s/^[[:space:]]+//; s/[[:space:]]+/ /g'
+}
+
 # Alle Dateien des Repos ausser installierten Abhaengigkeiten, .git und
 # tests/ (die Tests nennen die Muster selbst). Review MEM-290: nur chapters/
 # liess eine zweite Vorlage unter templates/ durch.
@@ -84,8 +92,14 @@ dateien() {
     # neben Anhang C nicht startete; es verweist seit MEM-323 auf dieses Delta.
     # Gezaehlt werden Zeilen, nicht Dateien (Review MEM-318): eine doppelte
     # quic-Zeile im Delta selbst startet ebenso wenig.
+    # Review MEM-323: nginx liest Anweisungen, nicht Zeilen - `http3 on; listen
+    # 443 quic reuseport;` in einer Zeile oder ein Umbruch mitten im listen
+    # starten genauso. Config-Dateien deshalb je Anweisung, Markdown zeilenweise.
     dateien | while read -r f; do
-            grep -HE '^[[:space:]]*listen[[:space:]][^;#]*\bquic\b' "$f" 2>/dev/null || true
+            case "$f" in
+                *.md) grep -HE '^[[:space:]]*listen[[:space:]][^;#]*\bquic\b' "$f" 2>/dev/null || true ;;
+                *) anweisungen "$f" | grep -E '^listen [^;]*\bquic\b' | sed "s|^|$f:|" || true ;;
+            esac
         done > "$BATS_TEST_TMPDIR/quic"
     cat "$BATS_TEST_TMPDIR/quic"
     [ "$(wc -l < "$BATS_TEST_TMPDIR/quic")" -eq 2 ]
