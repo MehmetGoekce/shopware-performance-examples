@@ -1,0 +1,20 @@
+[
+    {
+        "month": "Monat 1",
+        "score": 410,
+        "items": 9,
+        "hours": 150
+    },
+    {
+        "month": "Monat 2",
+        "score": 330,
+        "items": 7,
+        "hours": 110
+    },
+    {
+        "month": "Monat 3",
+        "score": 230,
+        "items": 5,
+        "hours": 68
+    }
+]

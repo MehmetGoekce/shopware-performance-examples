@@ -1,0 +1,65 @@
+[
+    {
+        "id": "TD-001",
+        "title": "Legacy jQuery Event Handlers",
+        "category": "frontend",
+        "severity": "high",
+        "effort": "medium",
+        "estimated_hours": 16,
+        "affected_pages": [
+            "checkout",
+            "cart"
+        ],
+        "status": "backlog"
+    },
+    {
+        "id": "TD-002",
+        "title": "Synchrone Third-Party Scripts",
+        "category": "frontend",
+        "severity": "high",
+        "effort": "small",
+        "estimated_hours": 8,
+        "affected_pages": [
+            "all"
+        ],
+        "status": "backlog"
+    },
+    {
+        "id": "TD-003",
+        "title": "N+1 Queries in Produktliste",
+        "category": "database",
+        "severity": "critical",
+        "effort": "medium",
+        "estimated_hours": 24,
+        "affected_pages": [
+            "category",
+            "search"
+        ],
+        "status": "backlog"
+    },
+    {
+        "id": "TD-004",
+        "title": "Fehlende Cache-Invalidierung",
+        "category": "backend",
+        "severity": "medium",
+        "effort": "medium",
+        "estimated_hours": 12,
+        "affected_pages": [
+            "product"
+        ],
+        "status": "backlog"
+    },
+    {
+        "id": "TD-005",
+        "title": "Unoptimierte Produktbilder",
+        "category": "infrastructure",
+        "severity": "high",
+        "effort": "small",
+        "estimated_hours": 8,
+        "affected_pages": [
+            "product",
+            "category"
+        ],
+        "status": "in_progress"
+    }
+]

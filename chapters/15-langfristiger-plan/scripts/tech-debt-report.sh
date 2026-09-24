@@ -2,183 +2,237 @@
 #
 # Tech Debt Report Generator
 #
-# Generiert einen Report über Performance-bezogene Technical Debt.
-# Zeigt priorisierte Backlog-Items und Empfehlungen.
+# Generiert einen Report über Performance-bezogene Technical Debt aus einer
+# Eingabedatei. Zeigt priorisierte Backlog-Items und Empfehlungen.
 #
-# BEISPIELDATEN: Die Items unten sind erfunden und stehen im Skript. Die
-# Ausgabe sagt das in jeder Form (Text und JSON). Eigene Items tragen Sie in
-# TECH_DEBT_DATA ein. Skala wie Kapitel 15 (src/TechDebtTrackerService.php):
-# Score = Summe der Severity-Punkte offener Items, critical 100, high 40,
-# medium 10, low 2; < 200 gesund, 200-499 Aufmerksamkeit, ab 500 kritisch.
-# Priorität = Severity-Punkte / Aufwandspunkte (WSJF-ähnlich).
+# Eingabe: JSON-Liste im Format von TechDebtRepository::findAllPerformanceDebt()
+# (src/TechDebtRepository.php), also nur offene Items:
+#   [{"title": "...", "severity": "high", "effort": "small", "category": "frontend"}]
+# Pflicht: title, severity, effort. Optional: category (fehlt = "other"), id,
+# estimated_hours (Stunden, für Stundensumme und Sprint-Empfehlung) und
+# status ("in_progress" zählt als in Arbeit, "resolved" fällt heraus).
+#
+# Skala wie Kapitel 15 (src/TechDebtTrackerService.php): Score = Summe der
+# Severity-Punkte offener Items, critical 100, high 40, medium 10, low 2;
+# < 200 gesund, 200-499 Aufmerksamkeit, ab 500 kritisch. Priorität =
+# Severity-Punkte / Aufwandspunkte (trivial 1, small 2, medium 5, large 13,
+# xlarge 21). Unbekannte Werte zählen wie medium (10 Punkte, Aufwand 5) wie im
+# Service; das Skript warnt dann auf stderr.
+#
+# Beispieldaten: examples/tech-debt.demo.json und
+# examples/tech-debt-history.demo.json. Nur wenn eine Datei auf .demo.json
+# endet, kennzeichnet die Ausgabe sie als BEISPIELDATEN.
 #
 # Verwendung:
-#   ./tech-debt-report.sh
-#   ./tech-debt-report.sh --trend
-#   ./tech-debt-report.sh --json
+#   ./tech-debt-report.sh tech-debt.json
+#   ./tech-debt-report.sh --trend verlauf.json tech-debt.json
+#   ./tech-debt-report.sh --json tech-debt.json
+#   ./tech-debt-report.sh ../examples/tech-debt.demo.json   # Demo
+#
+# Exit-Codes: 0 ok, 1 Aufruf falsch, 2 jq fehlt, 65 Eingabe ungültig,
+# 66 Eingabe fehlt oder ist nicht lesbar.
 #
 # Voraussetzungen:
-#   - jq (jede Ausgabeform)
+#   - jq
 
-set -e
+set -euo pipefail
+
+usage() {
+    echo "Usage: $(basename "$0") [--trend VERLAUF.json] [--json] EINGABE.json" >&2
+    echo "  EINGABE.json: Liste offener Items wie TechDebtRepository::findAllPerformanceDebt()" >&2
+    echo "  Demo: $(basename "$0") examples/tech-debt.demo.json" >&2
+}
+
+SHOW_TREND=false
+TREND_FILE=""
+OUTPUT_FORMAT="text"
+INPUT_FILE=""
+
+# Argumente parsen
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --trend)
+            if [[ $# -lt 2 || -z "$2" || "$2" == --* ]]; then
+                echo "Fehler: --trend braucht eine Verlaufsdatei" >&2
+                usage
+                exit 1
+            fi
+            SHOW_TREND=true
+            TREND_FILE="$2"
+            shift 2
+            ;;
+        --json)
+            OUTPUT_FORMAT="json"
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        -*)
+            echo "Unbekanntes Argument: $1" >&2
+            usage
+            exit 1
+            ;;
+        *)
+            if [[ -n "${INPUT_FILE}" ]]; then
+                echo "Fehler: nur eine Eingabedatei" >&2
+                usage
+                exit 1
+            fi
+            INPUT_FILE="$1"
+            shift
+            ;;
+    esac
+done
+
+if [[ -z "${INPUT_FILE}" ]]; then
+    echo "Fehler: keine Eingabedatei" >&2
+    usage
+    exit 1
+fi
 
 if ! command -v jq >/dev/null 2>&1; then
     echo "Fehler: jq fehlt (apt install jq)" >&2
     exit 2
 fi
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SHOW_TREND=false
-OUTPUT_FORMAT="text"
+# Datei vorhanden, lesbar, gültiges JSON?
+read_json() {
+    local file=$1
+    if [[ ! -f "${file}" || ! -r "${file}" ]]; then
+        echo "Fehler: ${file} fehlt oder ist nicht lesbar" >&2
+        exit 66
+    fi
+    # genau ein JSON-Wert: eine leere Datei ist für "jq empty" gültig
+    if [[ "$(jq -s 'length' "${file}" 2>/dev/null)" != "1" ]]; then
+        echo "Fehler: ${file} ist kein gültiges JSON (genau ein Wert erwartet)" >&2
+        exit 65
+    fi
+}
 
-# Argumente parsen
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --trend)
-            SHOW_TREND=true
-            shift
-            ;;
-        --json)
-            OUTPUT_FORMAT="json"
-            shift
-            ;;
-        *)
-            echo "Unbekanntes Argument: $1"
-            exit 1
-            ;;
-    esac
-done
+# Beispieldaten erkennt das Skript am Dateinamen, nicht am Inhalt
+is_demo() {
+    [[ "$(basename "$1")" == *.demo.json ]]
+}
+
+read_json "${INPUT_FILE}"
+
+# Pflichtfelder prüfen: die erste Verletzung je Item, mit Position
+INPUT_ERRORS=$(jq -r '
+    if type != "array" then "Die Eingabe muss eine JSON-Liste sein, nicht \(type)"
+    else to_entries[] | .key as $i | .value |
+        if type != "object" then "Item \($i): kein Objekt"
+        elif (.title | type) != "string" or .title == "" then "Item \($i): title fehlt"
+        elif (.severity | type) != "string" then "Item \($i) (\(.title)): severity fehlt"
+        elif (.effort | type) != "string" then "Item \($i) (\(.title)): effort fehlt"
+        elif has("category") and (.category | type) != "string" then "Item \($i) (\(.title)): category ist kein Text"
+        elif has("estimated_hours") and ((.estimated_hours | type) != "number" or .estimated_hours < 0) then "Item \($i) (\(.title)): estimated_hours ist keine Zahl >= 0"
+        elif has("status") and (.status | type) != "string" then "Item \($i) (\(.title)): status ist kein Text"
+        else empty end
+    end' "${INPUT_FILE}")
+if [[ -n "${INPUT_ERRORS}" ]]; then
+    echo "Fehler: ${INPUT_FILE} hat nicht das Format von findAllPerformanceDebt():" >&2
+    echo "${INPUT_ERRORS}" | sed 's/^/  /' >&2
+    exit 65
+fi
+
+if [[ "${SHOW_TREND}" = true ]]; then
+    read_json "${TREND_FILE}"
+    TREND_ERRORS=$(jq -r '
+        if type != "array" then "Der Verlauf muss eine JSON-Liste sein, nicht \(type)"
+        elif length == 0 then "Der Verlauf ist leer"
+        else to_entries[] | .key as $i | .value |
+            if type != "object" then "Eintrag \($i): kein Objekt"
+            elif (.month | type) != "string" then "Eintrag \($i): month fehlt"
+            elif (.score | type) != "number" then "Eintrag \($i) (\(.month)): score fehlt"
+            else empty end
+        end' "${TREND_FILE}")
+    if [[ -n "${TREND_ERRORS}" ]]; then
+        echo "Fehler: ${TREND_FILE}:" >&2
+        echo "${TREND_ERRORS}" | sed 's/^/  /' >&2
+        exit 65
+    fi
+fi
+
+# Unbekannte Werte: rechnen wie der Service (medium), aber sagen
+jq -r '.[] |
+    (select(.severity | IN("critical", "high", "medium", "low") | not)
+        | "Warnung: \(.title): severity \"\(.severity)\" unbekannt, zählt wie medium (10 Punkte)"),
+    (select(.effort | IN("trivial", "small", "medium", "large", "xlarge") | not)
+        | "Warnung: \(.title): effort \"\(.effort)\" unbekannt, zählt wie medium (Aufwand 5)")' \
+    "${INPUT_FILE}" >&2
 
 # Farben
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
-BLUE='\033[0;34m'
 NC='\033[0m'
 
-# ============================================================
-# Beispieldaten (erfunden, keine Messung)
-# In Realität aus Ihrem Tracker laden
-# ============================================================
+if is_demo "${INPUT_FILE}"; then
+    DATA_NOTE="BEISPIELDATEN aus $(basename "${INPUT_FILE}"), keine Messung"
+else
+    DATA_NOTE=""
+fi
 
-DATA_NOTE="BEISPIELDATEN aus dem Skript, keine Messung"
-
-# Tech Debt Items (JSON), severity: critical|high|medium|low,
-# effort: trivial (<2h)|small (<1 Tag)|medium (1-5 Tage)|large|xlarge
-TECH_DEBT_DATA='[
-    {
-        "id": "TD-001",
-        "title": "Legacy jQuery Event Handlers",
-        "category": "frontend",
-        "severity": "high",
-        "effort": "medium",
-        "estimated_hours": 16,
-        "affected_pages": ["checkout", "cart"],
-        "status": "backlog"
-    },
-    {
-        "id": "TD-002",
-        "title": "Synchrone Third-Party Scripts",
-        "category": "frontend",
-        "severity": "high",
-        "effort": "small",
-        "estimated_hours": 8,
-        "affected_pages": ["all"],
-        "status": "backlog"
-    },
-    {
-        "id": "TD-003",
-        "title": "N+1 Queries in Produktliste",
-        "category": "database",
-        "severity": "critical",
-        "effort": "medium",
-        "estimated_hours": 24,
-        "affected_pages": ["category", "search"],
-        "status": "backlog"
-    },
-    {
-        "id": "TD-004",
-        "title": "Fehlende Cache-Invalidierung",
-        "category": "backend",
-        "severity": "medium",
-        "effort": "medium",
-        "estimated_hours": 12,
-        "affected_pages": ["product"],
-        "status": "backlog"
-    },
-    {
-        "id": "TD-005",
-        "title": "Unoptimierte Produktbilder",
-        "category": "infrastructure",
-        "severity": "high",
-        "effort": "small",
-        "estimated_hours": 8,
-        "affected_pages": ["product", "category"],
-        "status": "in_progress"
-    }
-]'
-
-# Beispiel-Verlauf für --trend (erfunden). Eigene Werte: Score jeden Monat ablegen
-HISTORICAL_DATA='[
-    {"month": "Monat 1", "score": 410, "items": 9, "hours": 150},
-    {"month": "Monat 2", "score": 330, "items": 7, "hours": 110},
-    {"month": "Monat 3", "score": 230, "items": 5, "hours": 68}
-]'
-
-# Punkte wie in Kapitel 15, unbekannte Werte zählen wie medium
+# Punkte und Grenzen wie in Kapitel 15, an einer Stelle für Text und JSON
 JQ_DEFS='def points: ({"critical": 100, "high": 40, "medium": 10, "low": 2}[.severity] // 10);
 def prio: (points / ({"trivial": 1, "small": 2, "medium": 5, "large": 13, "xlarge": 21}[.effort] // 5) * 10 | round / 10);
-def open_items: [.[] | select(.status != "resolved")];'
+def open_items: [.[] | select(.status != "resolved")];
+def backlog: [open_items[] | select(.status != "in_progress")];
+def score: (open_items | map(points) | add // 0);
+def health: if score < 200 then "healthy" elif score < 500 then "attention" else "critical" end;
+def ranked: open_items | map(. + {priority: prio}) | sort_by(-.priority);
+def by_category: open_items | group_by(.category // "other")
+    | map({category: (.[0].category // "other"), count: length, points: (map(points) | add)});'
 
-# ============================================================
-# Statistiken berechnen
-# ============================================================
+SPRINT_CAPACITY=80  # Stunden pro Sprint
+TECH_DEBT_BUDGET=$((SPRINT_CAPACITY * 25 / 100))
 
-TOTAL_ITEMS=$(echo "${TECH_DEBT_DATA}" | jq 'length')
-BACKLOG_ITEMS=$(echo "${TECH_DEBT_DATA}" | jq '[.[] | select(.status == "backlog")] | length')
-IN_PROGRESS=$(echo "${TECH_DEBT_DATA}" | jq '[.[] | select(.status == "in_progress")] | length')
-TOTAL_HOURS=$(echo "${TECH_DEBT_DATA}" | jq '[.[] | select(.status == "backlog") | .estimated_hours] | add')
-
-# Tech Debt Score: Summe der Severity-Punkte offener Items (Kapitel 15)
-TECH_DEBT_SCORE=$(echo "${TECH_DEBT_DATA}" | jq "${JQ_DEFS} open_items | map(points) | add // 0")
-
-# Health Status
-if [[ "${TECH_DEBT_SCORE}" -lt 200 ]]; then
-    HEALTH="healthy"
-    HEALTH_COLOR=${GREEN}
-elif [[ "${TECH_DEBT_SCORE}" -lt 500 ]]; then
-    HEALTH="attention"
-    HEALTH_COLOR=${YELLOW}
-else
-    HEALTH="critical"
-    HEALTH_COLOR=${RED}
-fi
+# Sprint-Empfehlung: nach Priorität, was noch ins 25-%-Budget passt.
+# Items ohne Stundenschätzung plant das Skript nicht ein
+JQ_SPRINT='def sprint($budget): reduce (ranked[] | select(.status != "in_progress")
+        | select(.estimated_hours != null)) as $i
+    ({used: 0, items: []};
+     if .used + $i.estimated_hours <= $budget
+     then .used += $i.estimated_hours | .items += [$i] else . end) | .items;'
 
 # ============================================================
 # Output
 # ============================================================
 
 if [[ "${OUTPUT_FORMAT}" == "json" ]]; then
-    # JSON Output
-    cat << EOF
-{
-    "generated_at": "$(date -Iseconds)",
-    "data_source": "${DATA_NOTE}",
-    "summary": {
-        "total_items": ${TOTAL_ITEMS},
-        "backlog_items": ${BACKLOG_ITEMS},
-        "in_progress": ${IN_PROGRESS},
-        "total_hours": ${TOTAL_HOURS},
-        "tech_debt_score": ${TECH_DEBT_SCORE},
-        "health": "${HEALTH}"
-    },
-    "items": ${TECH_DEBT_DATA},
-    "by_category": $(echo "${TECH_DEBT_DATA}" | jq 'group_by(.category) | map({category: .[0].category, count: length})'),
-    "top_priority": $(echo "${TECH_DEBT_DATA}" | jq "${JQ_DEFS} open_items | map(. + {priority: prio}) | sort_by(-.priority) | .[0:3]")
-}
-EOF
+    jq --arg now "$(date -Iseconds)" --arg source "$(basename "${INPUT_FILE}")" \
+        --argjson demo "$(is_demo "${INPUT_FILE}" && echo true || echo false)" \
+        --argjson budget "${TECH_DEBT_BUDGET}" "${JQ_DEFS} ${JQ_SPRINT}"'
+        {
+            generated_at: $now,
+            data_source: (if $demo then "BEISPIELDATEN aus \($source), keine Messung" else $source end),
+            demo: $demo,
+            summary: {
+                total_items: length,
+                backlog_items: (backlog | length),
+                in_progress: (open_items | map(select(.status == "in_progress")) | length),
+                total_hours: (backlog | map(.estimated_hours // 0) | add // 0),
+                items_without_estimate: (backlog | map(select(.estimated_hours == null)) | length),
+                tech_debt_score: score,
+                health: health
+            },
+            items: .,
+            by_category: by_category,
+            top_priority: (ranked | .[0:5]),
+            sprint: {budget_hours: $budget, items: [sprint($budget)[] | .title]}
+        }' "${INPUT_FILE}"
     exit 0
 fi
+
+TECH_DEBT_SCORE=$(jq "${JQ_DEFS} score" "${INPUT_FILE}")
+HEALTH=$(jq -r "${JQ_DEFS} health" "${INPUT_FILE}")
+case "${HEALTH}" in
+    healthy) HEALTH_COLOR=${GREEN} ;;
+    attention) HEALTH_COLOR=${YELLOW} ;;
+    *) HEALTH_COLOR=${RED} ;;
+esac
 
 # Text Output
 echo "================================================"
@@ -186,7 +240,10 @@ echo "  Technical Debt Report"
 echo "================================================"
 echo ""
 echo "Datum: $(date)"
-echo -e "${YELLOW}HINWEIS: ${DATA_NOTE}${NC}"
+echo "Eingabe: ${INPUT_FILE}"
+if [[ -n "${DATA_NOTE}" ]]; then
+    echo -e "${YELLOW}HINWEIS: ${DATA_NOTE}${NC}"
+fi
 echo ""
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -194,9 +251,12 @@ echo "  Zusammenfassung"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 echo -e "Tech Debt Score:    ${HEALTH_COLOR}${TECH_DEBT_SCORE}${NC} Punkte (${HEALTH}; < 200 gesund, ab 500 kritisch)"
-echo "Backlog Items:      ${BACKLOG_ITEMS}"
-echo "In Progress:        ${IN_PROGRESS}"
-echo "Geschätzte Stunden: ${TOTAL_HOURS}h (Backlog)"
+jq -r "${JQ_DEFS}"'
+    "Backlog Items:      \(backlog | length)",
+    "In Progress:        \(open_items | map(select(.status == "in_progress")) | length)",
+    "Geschätzte Stunden: \(backlog | map(.estimated_hours // 0) | add // 0)h (Backlog)"
+        + (backlog | map(select(.estimated_hours == null)) | length
+           | if . > 0 then ", \(.) Items ohne Schätzung" else "" end)' "${INPUT_FILE}"
 echo ""
 
 # By Category
@@ -205,7 +265,8 @@ echo "  Nach Kategorie"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-echo "${TECH_DEBT_DATA}" | jq -r 'group_by(.category) | .[] | "\(.[0].category): \(length) Items"'
+jq -r "${JQ_DEFS}"' by_category | if length == 0 then "Keine offenen Items."
+    else .[] | "\(.category): \(.count) Items, \(.points) Punkte" end' "${INPUT_FILE}"
 echo ""
 
 # Top Priority Items
@@ -214,61 +275,51 @@ echo "  Top Priority Items"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-echo "${TECH_DEBT_DATA}" | jq -r "${JQ_DEFS}"' open_items | map(. + {priority: prio}) | sort_by(-.priority) | .[0:5] | .[] |
-    "[\(.id)] \(.title)\n    Category: \(.category) | Severity: \(.severity) | Priority: \(.priority) | Hours: \(.estimated_hours)h\n"'
+jq -r "${JQ_DEFS}"' ranked | .[0:5] | .[] |
+    "\(if .id then "[\(.id)] " else "" end)\(.title)\n    Category: \(.category // "other") | Severity: \(.severity) | Priority: \(.priority) | Hours: \(if .estimated_hours == null then "?" else "\(.estimated_hours)h" end)\n"' \
+    "${INPUT_FILE}"
 
 # Sprint Recommendation
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  Sprint Empfehlung (25% Regel)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-
-SPRINT_CAPACITY=80  # Stunden pro Sprint
-TECH_DEBT_BUDGET=$((SPRINT_CAPACITY * 25 / 100))
-
 echo "Sprint-Kapazität:    ${SPRINT_CAPACITY}h"
 echo "Tech Debt Budget:    ${TECH_DEBT_BUDGET}h (25%)"
 echo ""
 echo "Empfohlene Items für nächsten Sprint:"
 echo ""
 
-# Items die ins Budget passen
-ACCUMULATED=0
-echo "${TECH_DEBT_DATA}" | jq -r "${JQ_DEFS}"'
-    map(. + {priority: prio}) |
-    sort_by(-.priority) |
-    .[] |
-    select(.status == "backlog") |
-    "  ☐ \(.title) (\(.estimated_hours)h)"
-' | while read -r line; do
-    hours="${line##*(}"
-    hours="${hours%h)}"
-    new_total=$((ACCUMULATED + hours))
-    if [[ ${new_total} -le ${TECH_DEBT_BUDGET} ]]; then
-        echo "${line}"
-        ACCUMULATED=$new_total
-    fi
-done
+jq -r --argjson budget "${TECH_DEBT_BUDGET}" "${JQ_DEFS} ${JQ_SPRINT}"'
+    [sprint($budget)[] | "☐ \(.title) (\(.estimated_hours)h)"] as $picked
+    | (if ($picked | length) == 0 then "(keins mit Stundenschätzung passt ins Budget)" else $picked[] end),
+      (backlog | map(select(.estimated_hours == null)) | .[]
+       | "  ohne Stundenschätzung, nicht eingeplant: \(.title)")' "${INPUT_FILE}"
 
 echo ""
 
 # Trend (optional)
 if [[ "${SHOW_TREND}" = true ]]; then
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  Trend (Beispielverlauf, keine Messung)"
+    echo "  Trend (${TREND_FILE})"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
+    if is_demo "${TREND_FILE}"; then
+        echo -e "${YELLOW}HINWEIS: BEISPIELDATEN aus $(basename "${TREND_FILE}"), keine Messung${NC}"
+    fi
 
-    echo "${HISTORICAL_DATA}" | jq -r '.[] | "\(.month): Score \(.score) | Items: \(.items) | Hours: \(.hours)h"'
+    jq -r '.[] | "\(.month): Score \(.score)"
+        + (if .items != null then " | Items: \(.items)" else "" end)
+        + (if .hours != null then " | Hours: \(.hours)h" else "" end)' "${TREND_FILE}"
 
     # Trend berechnen
-    FIRST_SCORE=$(echo "${HISTORICAL_DATA}" | jq '.[0].score')
-    LAST_SCORE=$(echo "${HISTORICAL_DATA}" | jq '.[-1].score')
+    FIRST_SCORE=$(jq '.[0].score' "${TREND_FILE}")
+    LAST_SCORE=$(jq '.[-1].score' "${TREND_FILE}")
 
-    if [[ "${LAST_SCORE}" -lt "${FIRST_SCORE}" ]]; then
+    if jq -e -n --argjson a "${FIRST_SCORE}" --argjson b "${LAST_SCORE}" '$b < $a' >/dev/null; then
         TREND_TEXT="improving ↓"
         TREND_COLOR=${GREEN}
-    elif [[ "${LAST_SCORE}" -gt "${FIRST_SCORE}" ]]; then
+    elif jq -e -n --argjson a "${FIRST_SCORE}" --argjson b "${LAST_SCORE}" '$b > $a' >/dev/null; then
         TREND_TEXT="worsening ↑"
         TREND_COLOR=${RED}
     else
