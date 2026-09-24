@@ -24,6 +24,15 @@ Skripte, die nur eines von beiden brauchen, nehmen das andere trotzdem
 entgegen und werten es nicht aus. So kann `run-all-diagnostics.sh` alle
 gleich aufrufen.
 
+Variablen wie `APP_ENV`, `DATABASE_URL` oder `SHOPWARE_ES_ENABLED` lesen die
+Skripte so, wie `bin/console` sie sieht: Umgebung, dann `.env.local.php`
+(ersetzt alle `.env`-Dateien), sonst `.env`, `.env.local`, `.env.<APP_ENV>`,
+`.env.<APP_ENV>.local`, die spätere gewinnt. Die Funktion `dotenv_get` steht
+dafür in jedem dieser Skripte wortgleich, damit jedes einzeln kopierbar bleibt.
+Was der Webserver selbst setzt (FPM `env[]`, Apache `SetEnv`), sieht keine
+Datei; `check-debug-mode.sh` und `check-elasticsearch.sh` fragen deshalb
+zusätzlich den Webserver.
+
 Jedes Skript kennt `--help`. Die Exit-Codes sind einheitlich:
 
 | Code | Bedeutung |
