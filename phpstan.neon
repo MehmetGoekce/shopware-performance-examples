@@ -55,106 +55,48 @@ parameters:
         - chapters/15-langfristiger-plan/src/AnnualPerformanceReportService.php
         - chapters/15-langfristiger-plan/src/OkrProgressService.php
 
-    reportUnmatchedIgnoredErrors: false
+    # Ein Muster, das nichts trifft, ist ein Fehler (MEM-332): 17 Muster trafen
+    # nichts mehr, eines davon ("Strict comparison .+ will always evaluate to")
+    # haette vertippte Literale wie $overall === 'nodata' verdeckt. Ein neues
+    # Muster nur zusammen mit dem Fehler, den es unterdrueckt. Folge: Ein Teillauf
+    # auf ein Verzeichnis meldet die Muster, die dort nichts treffen (rc 1);
+    # einzelne Dateien oder das ganze Projekt pruefen.
+    reportUnmatchedIgnoredErrors: true
 
     ignoreErrors:
         # Shopware classes not installed (Book examples)
         -
             message: '#Shopware\\#'
-            reportUnmatched: false
-        -
-            message: '#unknown class Shopware\\#'
-            reportUnmatched: false
 
         # Symfony classes not installed (Book examples)
         -
             message: '#Symfony\\#'
-            reportUnmatched: false
-
-        # PSR interfaces not installed
-        -
-            message: '#Psr\\#'
-            reportUnmatched: false
 
         # Doctrine DBAL not installed
         -
             message: '#Doctrine\\DBAL\\#'
-            reportUnmatched: false
-
-        # Properties used in book examples (may appear unused)
-        -
-            message: '#Property .+ is never read, only written#'
-            reportUnmatched: false
 
         # PerformanceExamples namespace (src/ not autoloaded, loaded via require_once in tests)
         -
             message: '#PerformanceExamples\\#'
-            reportUnmatched: false
 
         # PHPUnit dynamic calls in tests (common pattern)
         -
             message: '#Dynamic call to static method PHPUnit\\#'
-            reportUnmatched: false
 
         # Strict rules - relaxed for book examples
         -
             identifier: empty.notAllowed
         -
-            identifier: booleanNot.exprNotBoolean
-        -
-            identifier: booleanAnd.leftNotBoolean
-        -
-            identifier: booleanAnd.rightNotBoolean
-        -
-            identifier: if.condNotBoolean
-        -
-            identifier: ternary.condNotBoolean
-        -
             identifier: ternary.shortNotAllowed
-        -
-            identifier: assign.propertyReadOnlyByPhpDocAssignOp
 
         # Iterable value type (too noisy for examples)
         -
             identifier: missingType.iterableValue
 
-        # Duplicate array keys (constants in lookup tables)
-        -
-            message: '#Array has \d+ duplicate keys#'
-            reportUnmatched: false
-
         # Unused constants (book examples may not use all constants)
         -
             message: '#Constant .+ is unused#'
-            reportUnmatched: false
 
-        # Readonly property issues (example code patterns)
-        -
-            message: '#Readonly property .+ is assigned outside#'
-            reportUnmatched: false
-
-        # Always true/false comparisons (intentional in examples)
-        -
-            message: '#Comparison operation .+ is always true#'
-            reportUnmatched: false
-        -
-            message: '#Else branch is unreachable#'
-            reportUnmatched: false
-        -
-            message: '#Strict comparison .+ will always evaluate to#'
-            reportUnmatched: false
-
-        # Test-specific patterns
         # Kein '#Offset .+ does not exist#' (MEM-322): verdeckte vertippte
         # Array-Schluessel wie $row['usedPercent'], ohne dass ein Fehler darunter lag
-        -
-            message: '#Casting to int something that#'
-            reportUnmatched: false
-        -
-            message: '#Call to an undefined method .+::expects#'
-            reportUnmatched: false
-
-        # Return type mismatches (relaxed for book examples)
-        -
-            message: '#Method .+ never returns .+ so it can be removed#'
-            reportUnmatched: false
