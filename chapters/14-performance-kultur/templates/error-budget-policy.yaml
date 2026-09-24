@@ -102,7 +102,7 @@ policy_levels:
       releases:
         - "Zusätzlicher Performance-Review vor Release"
         - "Rollback-Plan dokumentiert"
-        - "Kürzere Bake-Time"
+        - "Längere Bake-Time vor dem vollen Rollout"
       monitoring:
         - "Erhöhte Alert-Sensitivität"
         - "Täglicher Dashboard Review"

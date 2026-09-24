@@ -227,6 +227,34 @@ class PerformanceBudgetTest extends TestCase
     }
 
     /**
+     * SLO-Schwellen, Budgetanteil und Zeitraum der Vorlage = Service, RumStatistics und error-budget.php
+     */
+    public function testTemplateSlosMatchTheService(): void
+    {
+        $template = (string) file_get_contents(self::POLICY_TEMPLATE);
+
+        foreach (['lcp' => 'LCP', 'cls' => 'CLS', 'inp' => 'INP'] as $key => $metric) {
+            self::assertSame(1, preg_match('/^    ' . $key . ':\n(?:      .*\n)*?      target: ([\d.]+)/m', $template, $target), $key);
+            self::assertEquals(RumStatistics::THRESHOLDS[$metric][0], (float) $target[1], $key);
+        }
+
+        self::assertSame(1, preg_match('/heisst SLO Target (\d+) %,\n\s*also dürfen (\d+) % der Seitenaufrufe/u', $template, $slo));
+        self::assertSame(100 - PerformanceBudgetService::ALLOWED_PERCENT, (int) $slo[1]);
+        self::assertSame(PerformanceBudgetService::ALLOWED_PERCENT, (int) $slo[2]);
+
+        // "(25 % über der Schwelle) stünde bei 25000 % verbraucht": aus dem Budget gerechnet
+        self::assertSame(1, preg_match('/\((\d+) % über\s+der Schwelle\) stünde bei (\d+) % verbraucht/u', $template, $wrong));
+        self::assertSame(PerformanceBudgetService::ALLOWED_PERCENT, (int) $wrong[1]);
+        self::assertEqualsWithDelta((float) $wrong[2], (int) $wrong[1] / 0.1 * 100, 1e-9);
+
+        self::assertSame(1, preg_match('/calculation_period: "(\d+) Tage/', $template, $period));
+        $script = (string) file_get_contents(__DIR__ . '/../../chapters/14-performance-kultur/scripts/error-budget.php');
+        self::assertStringContainsString("\$days = '{$period[1]}';", $script);
+    }
+
+    /**
+     * Stufengrenzen der Vorlage (policy_levels) = Grenzen in policy()
+     */    /**
      * Stufengrenzen der Vorlage (policy_levels) = Grenzen in policy()
      */
     public function testTemplatePolicyLevelsMatchTheService(): void
@@ -249,6 +277,10 @@ class PerformanceBudgetTest extends TestCase
         self::assertSame('orange', PerformanceBudgetService::policy($yellowFrom - 0.1));
         self::assertSame('orange', PerformanceBudgetService::policy((float) $orangeFrom));
         self::assertSame('red', PerformanceBudgetService::policy($orangeFrom - 0.1));
+
+        preg_match('/condition: "Budget überzogen \(unter (\d+) %/u', $template, $red);
+        self::assertCount(2, $red);
+        self::assertSame($orangeFrom, (int) $red[1]);
     }
 
     public function testOverallIsTheWorstMetricWithData(): void
