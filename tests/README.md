@@ -12,6 +12,7 @@ This directory contains all tests for the Shopware Performance Examples.
 | `E2E/` | Playwright | Browser tests |
 | `Shell/` | BATS | Shell script tests |
 | `Snapshots/` | PHPUnit | Twig template snapshots |
+| `Python/` | pytest (CI-Job `python`, `python:3.12-slim`) | Kapitel 24 `detect-anomalies.py` (MEM-321) |
 
 ## Running Tests
 

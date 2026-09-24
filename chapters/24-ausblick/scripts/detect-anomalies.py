@@ -1,109 +1,64 @@
 #!/usr/bin/env python3
 """
-Kapitel 24: ML-basierte Performance-Anomalie-Erkennung
+Kapitel 24: Performance-Anomalie-Erkennung
 Ausblick – Neue Technologien und Trends
 
-Erkennt ungewöhnliche Performance-Werte automatisch.
-Nutzt Isolation Forest für Outlier-Detection.
+Erkennt ungewöhnlich hohe Performance-Werte automatisch: auffällig ist,
+was mehr als --min-factor × Median der Reihe beträgt (Vorgabe 2).
 
-Voraussetzungen:
-    pip install numpy scikit-learn requests
+Warum kein Isolation Forest (scikit-learn 1.6.1, random_state=42, MEM-321):
+Ein fester contamination-Wert gibt den Anteil vor. 0.25 markierte in einer
+Reihe ohne Ausreisser 2 von 8 Werten und fand von drei Ausreissern unter
+acht nur zwei; "auto" markierte in der Reihe ohne Ausreisser 3 von 8. Mit
+der Mediangrenze dahinter trug das Modell nichts bei, bei einem
+Niveausprung wählte es nur einen Teil der gleich hohen Werte aus.
+
+Voraussetzungen: Python 3 (getestet mit 3.12), nur Standardbibliothek.
+    Für --url zusätzlich: pip install requests
 
 Verwendung:
+    python detect-anomalies.py --input metrics.json   # aus collect-metrics.sh
+    python detect-anomalies.py --example              # Beispiel aus Kapitel 24
+    python detect-anomalies.py                        # Demo-Daten
     python detect-anomalies.py --url https://shop.example.com
-    python detect-anomalies.py --input metrics.json
 """
 
 import argparse
 import json
 import sys
 from datetime import datetime
-from typing import List, Dict, Tuple
-
-try:
-    import numpy as np
-    from sklearn.ensemble import IsolationForest
-except ImportError:
-    print("Fehler: Abhängigkeiten nicht installiert.")
-    print("Bitte ausführen: pip install numpy scikit-learn")
-    sys.exit(1)
+from statistics import median
+from typing import Dict, List
 
 try:
     import requests
 except ImportError:
     requests = None
 
+# Felder aus collect-metrics.sh (Lighthouse über die PageSpeed API)
+METRIC_NAMES = ['TTFB', 'FCP', 'LCP', 'CLS', 'TBT', 'SI']
 
-class PerformanceAnomalyDetector:
+
+def detect_performance_anomalies(metrics: list[float], min_factor: float = 2.0) -> list[bool]:
     """
-    Erkennt Anomalien in Performance-Metriken mittels Isolation Forest.
+    Erkennt Ausreisser in Performance-Metriken (höher = schlechter).
 
-    Isolation Forest funktioniert gut für:
-    - Univariate Daten (einzelne Metrik)
-    - Ohne Training auf "normale" Daten
-    - Echzeit-Erkennung möglich
+    Args:
+        metrics: Liste von TTFB-Werten (oder andere Metriken)
+        min_factor: gemeldet wird nur, was über min_factor × Median liegt
+
+    Returns:
+        Liste von Booleans: True = Anomalie
     """
+    floor = min_factor * median(metrics)
+    return [value > floor for value in metrics]
 
-    def __init__(self, contamination: float = 0.1):
-        """
-        Args:
-            contamination: Erwarteter Anteil an Anomalien (0.0-0.5)
-                          0.1 = 10% der Daten sind Anomalien
-        """
-        self.contamination = contamination
-        self.model = IsolationForest(
-            contamination=contamination,
-            random_state=42,
-            n_estimators=100
-        )
 
-    def detect(self, values: List[float]) -> List[Dict]:
-        """
-        Erkennt Anomalien in einer Liste von Werten.
-
-        Args:
-            values: Liste von Metriken (z.B. TTFB in ms)
-
-        Returns:
-            Liste von Anomalie-Informationen
-        """
-        if len(values) < 10:
-            print("Warnung: Weniger als 10 Datenpunkte. Ergebnisse unzuverlässig.")
-
-        # Reshape für sklearn
-        X = np.array(values).reshape(-1, 1)
-
-        # Fit und Predict
-        predictions = self.model.fit_predict(X)
-
-        # Anomalie-Score (-1 = Anomalie, 1 = Normal)
-        anomalies = []
-        for i, (value, pred) in enumerate(zip(values, predictions)):
-            if pred == -1:
-                # Berechne Z-Score für Kontext
-                mean = np.mean(values)
-                std = np.std(values)
-                z_score = (value - mean) / std if std > 0 else 0
-
-                anomalies.append({
-                    'index': i,
-                    'value': value,
-                    'z_score': round(z_score, 2),
-                    'severity': self._classify_severity(z_score),
-                    'direction': 'high' if value > mean else 'low'
-                })
-
-        return anomalies
-
-    def _classify_severity(self, z_score: float) -> str:
-        """Klassifiziert Schweregrad basierend auf Z-Score."""
-        abs_z = abs(z_score)
-        if abs_z > 3:
-            return 'critical'
-        elif abs_z > 2:
-            return 'warning'
-        else:
-            return 'info'
+def example() -> None:
+    """Beispiel aus Kapitel 24."""
+    ttfb_values = [120, 115, 118, 450, 122, 119, 890, 121]  # ms
+    anomalies = detect_performance_anomalies(ttfb_values)
+    print(anomalies)
 
 
 def fetch_metrics_from_crux(url: str) -> Dict:
@@ -141,78 +96,79 @@ def fetch_metrics_from_crux(url: str) -> Dict:
         return None
 
 
-def analyze_metrics(metrics_history: List[Dict]) -> Dict:
+def analyze_metrics(metrics_history: List[Dict], min_factor: float = 2.0) -> Dict:
     """
     Analysiert historische Metriken auf Anomalien.
 
     Args:
         metrics_history: Liste von Metrik-Snapshots
+        min_factor: Mindestabstand zum Median als Faktor
 
     Returns:
-        Analyse-Ergebnis mit Anomalien pro Metrik
+        Analyse-Ergebnis je Metrik: 'anomalies' (Liste), oder 'skipped' mit Grund
     """
-    detector = PerformanceAnomalyDetector(contamination=0.1)
     results = {}
 
-    # Metriken extrahieren
-    metric_names = ['TTFB', 'FCP', 'LCP', 'FID', 'INP', 'CLS']
-
-    for metric_name in metric_names:
+    for metric_name in METRIC_NAMES:
         values = [m.get(metric_name, m.get(metric_name.lower())) for m in metrics_history]
         values = [v for v in values if v is not None]
 
-        if len(values) >= 5:
-            anomalies = detector.detect(values)
-            if anomalies:
-                results[metric_name] = {
-                    'anomalies': anomalies,
-                    'count': len(anomalies),
-                    'mean': round(np.mean(values), 2),
-                    'std': round(np.std(values), 2),
-                    'min': round(min(values), 2),
-                    'max': round(max(values), 2)
-                }
+        if len(values) < 5:
+            continue
+
+        mid = median(values)
+        if mid <= 0:
+            # TBT oder CLS eines schnellen Shops: Median 0, die Grenze
+            # min_factor × Median hielte jeden Wert über 0 für auffällig
+            results[metric_name] = {'skipped': 'Median 0, kein Mindestabstand möglich'}
+            continue
+
+        flags = detect_performance_anomalies(values, min_factor)
+        results[metric_name] = {
+            'anomalies': [
+                {'index': i, 'value': v, 'factor': round(v / mid, 1)}
+                for i, (v, flag) in enumerate(zip(values, flags)) if flag
+            ],
+            'count': len(values),
+            'median': round(mid, 2),
+            'min': round(min(values), 2),
+            'max': round(max(values), 2),
+        }
 
     return results
 
 
-def print_report(results: Dict) -> None:
+def print_report(results: Dict, min_factor: float) -> None:
     """Gibt Anomalie-Report aus."""
     print("\n" + "=" * 60)
     print("PERFORMANCE ANOMALIE-REPORT")
     print("=" * 60)
     print(f"Generiert: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print()
+    print(f"Gemeldet wird: über {min_factor} × Median")
 
     if not results:
-        print("Keine Anomalien gefunden.")
+        print("\nKeine Metrik mit mindestens 5 Werten.")
         return
 
     for metric, data in results.items():
         print(f"\n{metric}")
         print("-" * 40)
-        print(f"  Durchschnitt: {data['mean']}")
-        print(f"  Std-Abweichung: {data['std']}")
-        print(f"  Bereich: {data['min']} - {data['max']}")
-        print(f"  Anomalien: {data['count']}")
-
+        if 'skipped' in data:
+            print(f"  Nicht bewertet: {data['skipped']}")
+            continue
+        print(f"  Werte: {data['count']}, Median: {data['median']}, Bereich: {data['min']} - {data['max']}")
+        if not data['anomalies']:
+            print("  Keine Anomalien.")
         for anomaly in data['anomalies']:
-            severity_icon = {
-                'critical': '🔴',
-                'warning': '🟡',
-                'info': '🔵'
-            }.get(anomaly['severity'], '⚪')
-
-            print(f"    {severity_icon} Index {anomaly['index']}: "
-                  f"{anomaly['value']} (Z-Score: {anomaly['z_score']}, "
-                  f"{anomaly['direction']})")
+            print(f"  Anomalie: Index {anomaly['index']}: {anomaly['value']} "
+                  f"({anomaly['factor']} × Median)")
 
     print("\n" + "=" * 60)
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Performance-Anomalie-Erkennung mit ML'
+        description='Performance-Anomalie-Erkennung (Vielfaches des Medians)'
     )
     parser.add_argument(
         '--url',
@@ -220,16 +176,27 @@ def main():
     )
     parser.add_argument(
         '--input',
-        help='JSON-Datei mit historischen Metriken'
+        help='JSON-Datei mit historischen Metriken (collect-metrics.sh)'
     )
     parser.add_argument(
-        '--contamination',
+        '--example',
+        action='store_true',
+        help='Beispiel aus Kapitel 24 ausgeben'
+    )
+    parser.add_argument(
+        '--min-factor',
         type=float,
-        default=0.1,
-        help='Erwarteter Anomalie-Anteil (0.0-0.5, default: 0.1)'
+        default=2.0,
+        help='Gemeldet wird nur, was über diesem Vielfachen des Medians liegt (default: 2.0)'
     )
 
     args = parser.parse_args()
+    if args.min_factor <= 1:
+        parser.error('--min-factor muss grösser als 1 sein')
+
+    if args.example:
+        example()
+        return
 
     if args.input:
         # Aus Datei laden
@@ -260,8 +227,8 @@ def main():
             {'TTFB': 123, 'LCP': 1830, 'FCP': 815, 'CLS': 0.05},
         ]
 
-    results = analyze_metrics(metrics_history)
-    print_report(results)
+    results = analyze_metrics(metrics_history, args.min_factor)
+    print_report(results, args.min_factor)
 
 
 if __name__ == '__main__':

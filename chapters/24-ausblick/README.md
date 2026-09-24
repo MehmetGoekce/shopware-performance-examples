@@ -8,7 +8,7 @@ Code-Beispiele und Konfigurationen für zukunftsweisende Performance-Technologie
 |-------|---------|--------------|
 | HTTP/3 & QUIC | `config/nginx-http3.conf` | HTTP/3-Delta zum vHost aus Anhang C (per `include`, kein eigener server-Block) |
 | Edge Computing | `edge-functions/` | Cloudflare Workers Beispiele |
-| Anomalie-Erkennung | `scripts/detect-anomalies.py` | ML-basierte Performance-Überwachung |
+| Anomalie-Erkennung | `scripts/detect-anomalies.py` | Werte über einem Vielfachen des Medians (MEM-321) |
 | INP-Optimierung | `scripts/analyze-inp.js` | Browser-Script für INP-Analyse |
 | Green IT | `scripts/measure-carbon.sh` | CO2 je Seitenaufruf schätzen (Website Carbon, SWDM v4) |
 
@@ -51,11 +51,17 @@ wrangler deploy
 
 ### Anomalie-Erkennung
 
-```bash
-# Python-Abhängigkeiten
-pip install numpy scikit-learn requests
+Braucht nur Python 3 (Standardbibliothek, getestet mit 3.12, `tests/Python`).
+Auffällig ist, was über `--min-factor` × Median der Reihe liegt (Vorgabe 2).
+Kein Isolation Forest: Mit festem `contamination`-Wert gibt er den Anteil der
+Anomalien vor, und mit `"auto"` markierte er auch in Reihen ohne Ausreisser
+Werte (Messung im Skriptkopf).
 
-# Script ausführen
+```bash
+# Beispiel aus Kapitel 24
+python scripts/detect-anomalies.py --example
+
+# Script ausführen (--url braucht zusätzlich: pip install requests)
 python scripts/detect-anomalies.py --url https://shop.example.com
 ```
 
@@ -128,10 +134,10 @@ chapters/24-ausblick/
 │       ├── src/index.js        # Fassung aus dem Buch
 │       └── wrangler.toml.example
 └── scripts/
-    ├── detect-anomalies.py     # ML Anomalie-Erkennung
+    ├── detect-anomalies.py     # Anomalie-Erkennung (Median)
     ├── analyze-inp.js          # INP-Analyse im Browser
     ├── measure-carbon.sh       # CO2-Schätzung aus übertragenen Bytes
-    └── collect-metrics.sh      # Metrik-Sammlung für ML
+    └── collect-metrics.sh      # Metrik-Sammlung für detect-anomalies.py
 ```
 
 ## Zukunftstechnologien im Überblick
