@@ -1,0 +1,159 @@
+{
+    "quarter": "Q2",
+    "year": 2026,
+    "cwv": {
+        "lcp_ms": {
+            "start": 3200,
+            "end": 2450
+        },
+        "inp_ms": {
+            "start": 220,
+            "end": 175
+        },
+        "cls": {
+            "start": 0.12,
+            "end": 0.06
+        }
+    },
+    "okrs": [
+        {
+            "objective": "User Experience messbar verbessern",
+            "key_results": [
+                {
+                    "title": "LCP p75 < 2.5s auf kritischen Seiten",
+                    "baseline": "3.2s",
+                    "target": "2.5s",
+                    "achieved": "2.45s",
+                    "score": 1.0
+                },
+                {
+                    "title": "Mobile Bounce Rate -15%",
+                    "baseline": "45%",
+                    "target": "38%",
+                    "achieved": "36%",
+                    "score": 1.0
+                },
+                {
+                    "title": "Error Budget > 50%",
+                    "baseline": "35%",
+                    "target": "50%",
+                    "achieved": "65%",
+                    "score": 1.0
+                }
+            ]
+        },
+        {
+            "objective": "Performance-Kultur stärken",
+            "key_results": [
+                {
+                    "title": "80% PRs mit Performance Review",
+                    "baseline": "50%",
+                    "target": "80%",
+                    "achieved": "75%",
+                    "score": 0.83
+                },
+                {
+                    "title": "2 Champions ausgebildet",
+                    "baseline": "0",
+                    "target": "2",
+                    "achieved": "2",
+                    "score": 1.0
+                },
+                {
+                    "title": "Wöchentlicher Report etabliert",
+                    "baseline": "0%",
+                    "target": "100%",
+                    "achieved": "100%",
+                    "score": 1.0
+                }
+            ]
+        }
+    ],
+    "incidents": {
+        "p0": 0,
+        "p1": 1,
+        "p2": 3,
+        "postmortems_done": 4,
+        "mttr_hours": 1.8,
+        "root_causes": [
+            {
+                "cause": "Third-Party Script Blocking",
+                "count": 2
+            },
+            {
+                "cause": "Cache Invalidation Issue",
+                "count": 1
+            },
+            {
+                "cause": "Database Query Timeout",
+                "count": 1
+            }
+        ]
+    },
+    "tech_debt": {
+        "start": {
+            "items": 18,
+            "hours": 240,
+            "score": 410
+        },
+        "end": {
+            "items": 12,
+            "hours": 160,
+            "score": 230
+        },
+        "resolved": [
+            {
+                "title": "Image Optimization Pipeline",
+                "hours": 32
+            },
+            {
+                "title": "Legacy JavaScript Cleanup",
+                "hours": 24
+            },
+            {
+                "title": "Database Index Optimization",
+                "hours": 16
+            },
+            {
+                "title": "Third-Party Script Consolidation",
+                "hours": 8
+            }
+        ]
+    },
+    "budget": {
+        "currency": "CHF",
+        "annual_total": 50000,
+        "spent_year_to_date": 24000,
+        "categories": [
+            {
+                "category": "Tooling",
+                "planned": 3750,
+                "spent": 3550
+            },
+            {
+                "category": "Infrastructure",
+                "planned": 5000,
+                "spent": 5500
+            },
+            {
+                "category": "Training",
+                "planned": 2500,
+                "spent": 2075
+            }
+        ]
+    },
+    "sections": [
+        {
+            "title": "Highlights",
+            "markdown": "### Erfolge\n\n1. **Alle CWV im 'Good' Bereich**\n   - LCP von 3.2s auf 2.45s verbessert\n   - INP von 220ms auf 175ms reduziert\n\n2. **Champion-Programm gestartet**\n   - 2 neue Champions ausgebildet\n   - Monatliche Brown Bags etabliert\n\n3. **Zero P0 Incidents**\n   - Kein kritischer Performance-Incident\n\n### Herausforderungen\n\n1. **Third-Party Scripts**\n   - Marketing-Tags beeinträchtigten LCP\n   - Lösung: Tag-Governance-Prozess eingeführt\n\n2. **PR Review Coverage**\n   - Ziel 80% nicht ganz erreicht (75%)\n   - Aktion: Automatische Label für Performance-relevante PRs"
+        },
+        {
+            "title": "Learnings",
+            "markdown": "### Was hat gut funktioniert?\n\n- Fokus auf Top 10 Pages zuerst\n- Wöchentliche Dashboard-Reviews\n- Champions als Multiplikatoren\n\n### Was können wir verbessern?\n\n- Frühere Third-Party-Integration bei neuen Tools\n- Mehr automatisierte Performance-Checks\n- Bessere Dokumentation der Optimierungen"
+        },
+        {
+            "title": "Planung Q3 2026",
+            "markdown": "### Fokus-Themen\n\n1. **INP < 150ms**\n   - INP ist seit März 2024 Core Web Vital (statt FID)\n   - Ziel: p75 < 150ms auf allen kritischen Seiten\n\n2. **Automatisierung**\n   - Performance Gates in 100% der Pipelines\n   - Automatische Regression Detection\n\n3. **Mobile Excellence**\n   - Mobile CWV weiter verbessern\n   - Spezifische Mobile-Optimierungen\n\n### Vorgeschlagene OKRs\n\n**Objective**: Performance-Automatisierung skalieren\n\n| Key Result | Baseline | Target |\n|------------|----------|--------|\n| Performance Gates in CI/CD | 50% | 100% |\n| Automated Regression Detection | 0 | Active |\n| INP p75 < 150ms | 175ms | 150ms |"
+        }
+    ]
+}
