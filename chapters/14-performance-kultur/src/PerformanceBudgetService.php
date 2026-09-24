@@ -31,7 +31,7 @@ final class PerformanceBudgetService
      * @param iterable<array<string, mixed>> $records    Log-Kontexte, in Log-Reihenfolge
      * @param int                            $minSamples darunter keine Bewertung (wie rum:check-alerts)
      *
-     * @return array<string, array{samples: int, over: int, used_percent: float|null, remaining_percent: float|null, policy: string}>
+     * @return array<string, array{samples: int, over: int, used_percent: float|null, remaining_percent: float|null, policy: 'green'|'yellow'|'orange'|'red'|'no-data'}>
      */
     public static function calculate(iterable $records, int $minSamples = 100): array
     {
@@ -87,6 +87,8 @@ final class PerformanceBudgetService
 
     /**
      * Stufen wie in templates/error-budget-policy.yaml
+     *
+     * @return 'green'|'yellow'|'orange'|'red'
      */
     public static function policy(float $remainingPercent): string
     {
@@ -103,6 +105,8 @@ final class PerformanceBudgetService
      * Welche Metriken ohne Bewertung sind, liefert unrated().
      *
      * @param array<string, array{policy: string}> $budget
+     *
+     * @return 'red'|'orange'|'yellow'|'green'|'no-data'
      */
     public static function overall(array $budget): string
     {
