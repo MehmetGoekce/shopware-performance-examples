@@ -45,8 +45,12 @@ Drei Punkte, die den Rest dieses Verzeichnisses erklären (alle im Testshop geme
 | `shopware-cdn.yaml` | Assets auf die CDN-Domain (`public`, `theme`, `asset`, `sitemap`) + kommentierte Reverse-Proxy-Sektion |
 | `cloudflare-page-rules.json` | Drei Asset-Regeln (= Free-Limit) |
 | `bunny-pull-zone.json` | Pull-Zone mit `IgnoreQueryStrings: false` |
-| `nginx-http3.conf` | QUIC-Listener fürs eigene Origin, in der CI mit `nginx -t` geprüft |
 | `nginx-brotli.conf` | Brotli-Direktiven (braucht `ngx_brotli`), in der CI mit `nginx -t` geprüft |
+
+HTTP/3 am eigenen Origin: kein eigenes Fragment in diesem Kapitel, sondern das
+Delta aus Kapitel 24 (`chapters/24-ausblick/config/nginx-http3.conf`) im vHost
+aus Anhang C. Ein zweites Fragment mit eigenen QUIC-Listenern startet neben
+diesem Delta nicht (`duplicate listen`), MEM-323.
 
 ### src/
 

@@ -80,27 +80,17 @@ dateien() {
     # MEM-318: Zwei Dateien mit `listen ... quic reuseport` im selben Baum
     # starten nicht ("duplicate listen options"), und zwei Fassungen desselben
     # Deltas laufen auseinander.
-    # Bekannte Ausnahme: Kapitel 11 bringt noch ein eigenes HTTP/3-Fragment mit
-    # `listen 443 ssl;` mit, das neben Anhang C nicht startet - MEM-323. Mit
-    # dem Ticket faellt die Ausnahme weg.
+    # Kapitel 11 hatte ein eigenes HTTP/3-Fragment mit `listen 443 ssl;`, das
+    # neben Anhang C nicht startete; es verweist seit MEM-323 auf dieses Delta.
     # Gezaehlt werden Zeilen, nicht Dateien (Review MEM-318): eine doppelte
     # quic-Zeile im Delta selbst startet ebenso wenig.
-    dateien | grep -v '^chapters/11-cdn-integration/config/nginx-http3.conf$' \
-        | while read -r f; do
+    dateien | while read -r f; do
             grep -HE '^[[:space:]]*listen[[:space:]][^;#]*\bquic\b' "$f" 2>/dev/null || true
         done > "$BATS_TEST_TMPDIR/quic"
     cat "$BATS_TEST_TMPDIR/quic"
     [ "$(wc -l < "$BATS_TEST_TMPDIR/quic")" -eq 2 ]
     [ "$(cut -d: -f1 "$BATS_TEST_TMPDIR/quic" | sort -u)" = "${HTTP3#./}" ]
     [ "$(sed 's/^[^:]*://' "$BATS_TEST_TMPDIR/quic" | tr -s ' ' | sort -u | wc -l)" -eq 2 ]
-}
-
-@test "die Ausnahme fuer Kapitel 11 ist noch noetig" {
-    # Schlaegt an, sobald MEM-323 erledigt ist - dann die Ausnahme oben
-    # entfernen, statt eine tote Zeile stehen zu lassen.
-    run grep -qE '^[[:space:]]*listen[[:space:]][^;#]*\bquic\b' \
-        ./chapters/11-cdn-integration/config/nginx-http3.conf
-    [ "$status" -eq 0 ]
 }
 
 @test "das HTTP/3-Delta ist kein eigener vHost" {
