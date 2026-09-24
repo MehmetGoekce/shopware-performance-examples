@@ -26,12 +26,17 @@ gleich aufrufen.
 
 Variablen wie `APP_ENV`, `DATABASE_URL` oder `SHOPWARE_ES_ENABLED` lesen die
 Skripte so, wie `bin/console` sie sieht: Umgebung, dann `.env.local.php`
-(ersetzt alle `.env`-Dateien), sonst `.env`, `.env.local`, `.env.<APP_ENV>`,
+(ersetzt alle `.env`-Dateien, ausser die Umgebung setzt ein anderes
+`APP_ENV`), sonst `.env`, `.env.local`, `.env.<APP_ENV>`,
 `.env.<APP_ENV>.local`, die spätere gewinnt. Die Funktion `dotenv_get` steht
 dafür in jedem dieser Skripte wortgleich, damit jedes einzeln kopierbar bleibt.
 Was der Webserver selbst setzt (FPM `env[]`, Apache `SetEnv`), sieht keine
-Datei; `check-debug-mode.sh` und `check-elasticsearch.sh` fragen deshalb
-zusätzlich den Webserver.
+Datei. Deshalb fragen `check-debug-mode.sh` (Debug an oder aus) und
+`check-elasticsearch.sh` (`storefrontEsEnable`) zusätzlich den Webserver;
+`APP_ENV` des Webservers zeigt nur die Administration. Enthält ein Wert
+einen `$`-Verweis, bewerten die Skripte ihn nicht, und eine nicht lesbare
+`.env`-Datei beendet sie mit Exit 69: dann als Web-User starten
+(`sudo -u www-data …`).
 
 Jedes Skript kennt `--help`. Die Exit-Codes sind einheitlich:
 

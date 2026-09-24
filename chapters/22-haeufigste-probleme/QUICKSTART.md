@@ -30,18 +30,18 @@ Ein Shop, der versehentlich in `APP_ENV=dev` läuft, ist der mit Abstand
 grösste Einzelfund. Das Skript nennt für `APP_ENV` und `APP_DEBUG` die Datei,
 aus der der Wert kommt. Genau dort auf `APP_ENV=prod` und `APP_DEBUG=0`
 ändern: `.env.prod` und `.env.prod.local` schlagen `.env.local`, eine
-`.env.local.php` (aus `composer dump-env prod`) ersetzt alle `.env`-Dateien
-(dann neu erzeugen). Meldet Abschnitt 2 Debug im Web, obwohl Abschnitt 1
+`.env.local.php` (aus `composer dump-env prod`) ersetzt alle `.env`-Dateien,
+ausser die Umgebung setzt ein anderes `APP_ENV` (dann neu erzeugen). Meldet Abschnitt 2 Debug im Web, obwohl Abschnitt 1
 «aus» sagt, setzt der Webserver den Wert (FPM `env[]`, Apache `SetEnv`).
 Danach:
 
 ```bash
 cd /var/www/shopware
-bin/console cache:clear:all
-bin/console assets:install
-bin/console theme:compile --keep-assets --sync
+bin/console cache:clear:all   # ab 6.6.8.0, davor cache:clear
 bin/console cache:warmup
 ```
+
+Assets und Theme bleiben gültig, ihr Pfad hängt nicht an `APP_ENV`.
 
 ### 2. HTTP-Cache
 
