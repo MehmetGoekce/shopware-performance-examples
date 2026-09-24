@@ -7,8 +7,9 @@ parameters:
         - chapters
         - tests
     excludePaths:
-        # Scripts are standalone CLI tools
-        - chapters/*/scripts/*.php
+        # chapters/*/scripts/*.php wird geprueft (MEM-322): error-budget.php ruft
+        # PerformanceBudgetService, ein umbenannter Aufruf faellt sonst nur im
+        # PHPUnit-Test auf. Die Ausnahme kostete 0 Fehler, als sie fiel.
 
         # Controllers extending Shopware/Symfony base classes
         - chapters/*/src/Controller/*.php
@@ -144,9 +145,8 @@ parameters:
             reportUnmatched: false
 
         # Test-specific patterns
-        -
-            message: '#Offset .+ does not exist#'
-            reportUnmatched: false
+        # Kein '#Offset .+ does not exist#' (MEM-322): verdeckte vertippte
+        # Array-Schluessel wie $row['usedPercent'], ohne dass ein Fehler darunter lag
         -
             message: '#Casting to int something that#'
             reportUnmatched: false
