@@ -1,6 +1,6 @@
 [
   {
-    "name": "gemischt, ohne category, unbekannte Werte",
+    "name": "gemischt, ohne category, category null, unbekannte Werte",
     "items": [
       {
         "title": "critical, 2 Wochen",
@@ -36,24 +36,30 @@
         "severity": "high",
         "effort": "medium",
         "category": "database"
+      },
+      {
+        "title": "category null",
+        "severity": "medium",
+        "effort": "small",
+        "category": null
       }
     ],
     "expected": {
-      "total_score": 202,
+      "total_score": 212,
       "status": "attention",
       "by_category": {
         "database": 140,
         "frontend": 50,
-        "other": 2,
+        "other": 12,
         "backend": 10
       },
-      "item_count": 6,
+      "item_count": 7,
       "top_titles": [
         "high, 1 Tag",
         "high, medium",
+        "category null",
         "critical, 2 Wochen",
-        "ohne Kategorie",
-        "blocker, huge"
+        "ohne Kategorie"
       ]
     }
   },
