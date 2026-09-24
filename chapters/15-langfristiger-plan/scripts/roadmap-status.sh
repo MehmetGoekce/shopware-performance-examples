@@ -29,7 +29,7 @@
 # 66 Eingabe fehlt oder ist nicht lesbar.
 #
 # Voraussetzungen:
-#   - jq
+#   - jq ab 1.6
 
 set -euo pipefail
 
@@ -57,7 +57,8 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --stichtag)
-            if [[ ! "${2:-}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || ! date -d "$2" >/dev/null 2>&1; then
+            # Kalenderprüfung später in jq (kein GNU "date -d" nötig)
+            if [[ ! "${2:-}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
                 echo "Fehler: --stichtag braucht ein Datum JJJJ-MM-TT" >&2
                 exit 1
             fi
@@ -98,6 +99,13 @@ if ! command -v jq >/dev/null 2>&1; then
     exit 2
 fi
 
+# Stichtag mit dem Kalender prüfen: 2026-02-30 gibt es nicht
+if [[ -n "${STICHTAG}" ]] && ! jq -en --arg d "${STICHTAG}" \
+    '(try ($d | strptime("%Y-%m-%d") | mktime | strftime("%Y-%m-%d")) catch null) == $d' >/dev/null; then
+    echo "Fehler: --stichtag ${STICHTAG} ist kein gültiges Datum" >&2
+    exit 1
+fi
+
 if [[ ! -f "${ROADMAP_FILE}" || ! -r "${ROADMAP_FILE}" ]]; then
     echo "Fehler: ${ROADMAP_FILE} fehlt oder ist nicht lesbar" >&2
     exit 66
@@ -124,8 +132,9 @@ INPUT_ERRORS=$(jq -r '
     else
         (.milestones | to_entries[] | .key as $i | .value |
             if type != "object" then "milestones.\($i): kein Objekt"
-            elif (.id | type) != "string" or .id == "" then "milestones.\($i): id fehlt"
-            elif (.title | type) != "string" or .title == "" then "milestones.\($i) (\(.id)): title fehlt"
+            elif (.id | type) != "string" or .id == "" then "milestones.\($i): id fehlt oder ist kein Text"
+            elif (.title | type) != "string" or .title == "" then "milestones.\($i) (\(.id)): title fehlt oder ist kein Text"
+            elif .owner != null and (.owner | type) != "string" then "milestones.\($i) (\(.id)): owner ist kein Text"
             elif (.target_date | valid_date | not) then "milestones.\($i) (\(.id)): target_date ist kein Datum JJJJ-MM-TT"
             elif (.status | IN("completed", "in_progress", "at_risk", "pending") | not)
                 then "milestones.\($i) (\(.id)): status muss completed, in_progress, at_risk oder pending sein"
@@ -134,7 +143,9 @@ INPUT_ERRORS=$(jq -r '
             if (.risks | type) != "array" then "risks muss eine Liste sein"
             else .risks | to_entries[] | .key as $i | .value |
                 if type != "object" then "risks.\($i): kein Objekt"
-                elif (.risk | type) != "string" or .risk == "" then "risks.\($i): risk fehlt"
+                elif (.risk | type) != "string" or .risk == "" then "risks.\($i): risk fehlt oder ist kein Text"
+                elif .id != null and (.id | type) != "string" then "risks.\($i): id ist kein Text"
+                elif .mitigation != null and (.mitigation | type) != "string" then "risks.\($i): mitigation ist kein Text"
                 elif (.probability | level | not) or (.impact | level | not)
                     then "risks.\($i): probability und impact müssen low, medium oder high sein"
                 else empty end
@@ -179,7 +190,7 @@ MILESTONE_ROWS=$(jq -r --arg today "${STICHTAG}" '
     (.target_date | day - $t) as $days |
     (if .status != "completed" and $days < 0 then "overdue" else .status end) as $status |
     (.target_date[5:7] | tonumber) as $month |
-    [.id, (.title | gsub("[\t\n]"; " ")), .target_date, $status, $days,
+    [(.id | gsub("[\t\n\r]"; " ")), (.title | gsub("[\t\n\r]"; " ")), .target_date, $status, $days,
      "\(.target_date[0:4])-Q\(($month - 1) / 3 | floor + 1)"] | @tsv' "${ROADMAP_FILE}")
 
 count_status() {
@@ -326,9 +337,12 @@ echo "  Aktive Risiken"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-RISK_ROWS=$(jq -r '.risks // [] | to_entries[] |
-    [(.value.id // "R-\(.key + 1)"), (.value.risk | gsub("[\t\n]"; " ")), .value.probability, .value.impact,
-     ((.value.mitigation // "") | gsub("[\t\n]"; " "))] | @tsv' "${ROADMAP_FILE}")
+# Tabulator ist für "read" Leerraum: leere Felder fielen weg und verschöben
+# die Spalten. Deshalb jede Spalte ausser der letzten nicht leer
+RISK_ROWS=$(jq -r 'def flat: gsub("[\t\n\r]"; " ");
+    .risks // [] | to_entries[] | .key as $k | .value |
+    [(.id // "" | if . == "" then "R-\($k + 1)" else flat end), (.risk | flat), .probability, .impact,
+     ((.mitigation // "") | flat)] | @tsv' "${ROADMAP_FILE}")
 
 if [[ -z "${RISK_ROWS}" ]]; then
     echo "  Keine Risiken in der Statusdatei."
