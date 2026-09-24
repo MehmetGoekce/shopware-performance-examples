@@ -4,6 +4,10 @@
 # für Ihr Shopware-Entwicklungsteam.
 #
 # Anpassen an Ihre Organisation und Team-Größe.
+#
+# Alle Zeit- und Mengenangaben (Stunden, Minuten, Anzahl, Prozent) sind
+# Beispielwerte aus eigener Erfahrung, keine Messwerte. Kapitel 14 druckt
+# einen Auszug dieser Datei.
 
 program:
   name: "Shopware Performance Champions"
@@ -34,8 +38,8 @@ responsibilities:
       time: "ad-hoc"
 
   weekly:
-    - name: "Dashboard Review"
-      description: "Core Web Vitals und Trends analysieren"
+    - name: "RUM-Auswertung Review"
+      description: "rum:report (Kapitel 12) und scripts/error-budget.php: Core Web Vitals, Trends, Budget"
       time: "30 min"
       output: "Kurzes Update in Slack"
 
