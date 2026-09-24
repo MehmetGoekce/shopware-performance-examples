@@ -1,0 +1,15 @@
+{
+    "milestones": [
+        {"id": "M-1", "title": "RUM-Auswertung eingerichtet (rum:report, Kapitel 12)", "target_date": "2026-07-17", "status": "completed", "owner": "DevOps Team"},
+        {"id": "M-2", "title": "Top 10 Pages optimiert", "target_date": "2026-08-16", "status": "completed", "owner": "Frontend Team"},
+        {"id": "M-3", "title": "Performance Champion Program gestartet", "target_date": "2026-09-25", "status": "in_progress", "owner": "Engineering Manager"},
+        {"id": "M-4", "title": "Checkout LCP < 2s", "target_date": "2026-09-10", "status": "pending", "owner": "Checkout Team"},
+        {"id": "M-5", "title": "Mobile CWV alle 'Good'", "target_date": "2026-10-30", "status": "pending", "owner": "Mobile Team"},
+        {"id": "M-6", "title": "Redis produktiv (Kapitel 7)", "target_date": "2026-10-05", "status": "at_risk", "owner": "DevOps Team"}
+    ],
+    "risks": [
+        {"id": "R-001", "risk": "Team-Kapazität durch andere Projekte", "probability": "medium", "impact": "high", "mitigation": "20% Performance-Zeit vertraglich festlegen"},
+        {"id": "R-002", "risk": "Vendor-Delay bei CDN Migration", "probability": "low", "impact": "medium"},
+        {"id": "R-003", "risk": "Black Friday Vorbereitung zu spät", "probability": "high", "impact": "high"}
+    ]
+}
