@@ -114,8 +114,7 @@ python scripts/detect-anomalies.py --input metrics.json
 chapters/24-ausblick/
 ├── README.md
 ├── config/
-│   ├── nginx-http3.conf        # HTTP/3-Delta zum vHost aus Anhang C
-│   └── quic-tuning.conf        # QUIC-Optimierungen
+│   └── nginx-http3.conf        # HTTP/3-Delta zum vHost aus Anhang C
 ├── edge-functions/
 │   ├── ab-testing/             # A/B-Testing auf der Edge
 │   │   ├── src/index.js        # mehrere Tests, Gewichtung
