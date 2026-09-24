@@ -105,6 +105,43 @@ class TechDebtTrackerServiceTest extends TestCase
         );
     }
 
+    /**
+     * Dieselbe Fixture prüft tests/Shell/long-term-plan-scripts.bats gegen
+     * scripts/tech-debt-report.sh --json: Skript und Service rechnen gleich.
+     *
+     * @return iterable<string, array{list<array{title: string, severity: string, effort: string, category?: string}>, array{total_score: int, status: string, by_category: array<string, int>, item_count: int, top_titles: list<string>}}>
+     */
+    public static function equivalenceCases(): iterable
+    {
+        /** @var list<array{name: string, items: list<array{title: string, severity: string, effort: string, category?: string}>, expected: array{total_score: int, status: string, by_category: array<string, int>, item_count: int, top_titles: list<string>}}> $cases */
+        $cases = json_decode(
+            (string) file_get_contents(__DIR__ . '/fixtures/ch15-tech-debt-equivalence.json'),
+            true,
+            512,
+            JSON_THROW_ON_ERROR
+        );
+
+        foreach ($cases as $case) {
+            yield $case['name'] => [$case['items'], $case['expected']];
+        }
+    }
+
+    /**
+     * @param list<array{title: string, severity: string, effort: string, category?: string}> $items
+     * @param array{total_score: int, status: string, by_category: array<string, int>, item_count: int, top_titles: list<string>} $expected
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('equivalenceCases')]
+    public function testSameResultAsTechDebtReportScript(array $items, array $expected): void
+    {
+        $score = self::tracker($items)->getTechDebtScore();
+
+        self::assertSame($expected['total_score'], $score['total_score']);
+        self::assertSame($expected['status'], $score['status']);
+        self::assertSame($expected['by_category'], $score['by_category']);
+        self::assertSame($expected['item_count'], $score['item_count']);
+        self::assertSame($expected['top_titles'], array_column($score['top_priorities'], 'title'));
+    }
+
     public function testTopPrioritiesAreCappedAtFive(): void
     {
         $score = self::tracker(array_fill(0, 7, self::item('m', 'medium', 'medium')))->getTechDebtScore();

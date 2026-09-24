@@ -1,0 +1,858 @@
+[
+  {
+    "name": "gemischt, ohne category, unbekannte Werte",
+    "items": [
+      {
+        "title": "critical, 2 Wochen",
+        "severity": "critical",
+        "effort": "xlarge",
+        "category": "database"
+      },
+      {
+        "title": "high, 1 Tag",
+        "severity": "high",
+        "effort": "small",
+        "category": "frontend"
+      },
+      {
+        "title": "ohne Kategorie",
+        "severity": "low",
+        "effort": "trivial"
+      },
+      {
+        "title": "blocker, huge",
+        "severity": "blocker",
+        "effort": "huge",
+        "category": "backend"
+      },
+      {
+        "title": "medium, large",
+        "severity": "medium",
+        "effort": "large",
+        "category": "frontend"
+      },
+      {
+        "title": "high, medium",
+        "severity": "high",
+        "effort": "medium",
+        "category": "database"
+      }
+    ],
+    "expected": {
+      "total_score": 202,
+      "status": "attention",
+      "by_category": {
+        "database": 140,
+        "frontend": 50,
+        "other": 2,
+        "backend": 10
+      },
+      "item_count": 6,
+      "top_titles": [
+        "high, 1 Tag",
+        "high, medium",
+        "critical, 2 Wochen",
+        "ohne Kategorie",
+        "blocker, huge"
+      ]
+    }
+  },
+  {
+    "name": "198 Punkte: gesund",
+    "items": [
+      {
+        "title": "c",
+        "severity": "critical",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l0",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l1",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l2",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l3",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l4",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l5",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l6",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l7",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l8",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l9",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l10",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l11",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l12",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l13",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l14",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l15",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l16",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l17",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l18",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l19",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l20",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l21",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l22",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l23",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l24",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l25",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l26",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l27",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l28",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l29",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l30",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l31",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l32",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l33",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l34",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l35",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l36",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l37",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l38",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l39",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l40",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l41",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l42",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l43",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l44",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l45",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l46",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l47",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l48",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      }
+    ],
+    "expected": {
+      "total_score": 198,
+      "status": "healthy",
+      "by_category": {
+        "x": 198
+      },
+      "item_count": 50,
+      "top_titles": [
+        "c",
+        "l0",
+        "l1",
+        "l2",
+        "l3"
+      ]
+    }
+  },
+  {
+    "name": "200 Punkte: Aufmerksamkeit",
+    "items": [
+      {
+        "title": "c1",
+        "severity": "critical",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "c2",
+        "severity": "critical",
+        "effort": "small",
+        "category": "x"
+      }
+    ],
+    "expected": {
+      "total_score": 200,
+      "status": "attention",
+      "by_category": {
+        "x": 200
+      },
+      "item_count": 2,
+      "top_titles": [
+        "c1",
+        "c2"
+      ]
+    }
+  },
+  {
+    "name": "498 Punkte: Aufmerksamkeit",
+    "items": [
+      {
+        "title": "c0",
+        "severity": "critical",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "c1",
+        "severity": "critical",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "c2",
+        "severity": "critical",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "c3",
+        "severity": "critical",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l0",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l1",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l2",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l3",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l4",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l5",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l6",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l7",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l8",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l9",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l10",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l11",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l12",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l13",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l14",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l15",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l16",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l17",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l18",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l19",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l20",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l21",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l22",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l23",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l24",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l25",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l26",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l27",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l28",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l29",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l30",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l31",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l32",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l33",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l34",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l35",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l36",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l37",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l38",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l39",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l40",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l41",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l42",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l43",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l44",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l45",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l46",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l47",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      },
+      {
+        "title": "l48",
+        "severity": "low",
+        "effort": "small",
+        "category": "x"
+      }
+    ],
+    "expected": {
+      "total_score": 498,
+      "status": "attention",
+      "by_category": {
+        "x": 498
+      },
+      "item_count": 53,
+      "top_titles": [
+        "c0",
+        "c1",
+        "c2",
+        "c3",
+        "l0"
+      ]
+    }
+  },
+  {
+    "name": "500 Punkte: kritisch",
+    "items": [
+      {
+        "title": "c0",
+        "severity": "critical",
+        "effort": "large",
+        "category": "x"
+      },
+      {
+        "title": "c1",
+        "severity": "critical",
+        "effort": "large",
+        "category": "x"
+      },
+      {
+        "title": "c2",
+        "severity": "critical",
+        "effort": "large",
+        "category": "x"
+      },
+      {
+        "title": "c3",
+        "severity": "critical",
+        "effort": "large",
+        "category": "x"
+      },
+      {
+        "title": "c4",
+        "severity": "critical",
+        "effort": "large",
+        "category": "x"
+      }
+    ],
+    "expected": {
+      "total_score": 500,
+      "status": "critical",
+      "by_category": {
+        "x": 500
+      },
+      "item_count": 5,
+      "top_titles": [
+        "c0",
+        "c1",
+        "c2",
+        "c3",
+        "c4"
+      ]
+    }
+  },
+  {
+    "name": "Gleichstand behaelt die Eingabereihenfolge",
+    "items": [
+      {
+        "title": "a high/small",
+        "severity": "high",
+        "effort": "small"
+      },
+      {
+        "title": "b low/trivial",
+        "severity": "low",
+        "effort": "trivial"
+      },
+      {
+        "title": "c critical/medium",
+        "severity": "critical",
+        "effort": "medium"
+      },
+      {
+        "title": "d medium/medium",
+        "severity": "medium",
+        "effort": "medium"
+      },
+      {
+        "title": "e high/small",
+        "severity": "high",
+        "effort": "small"
+      },
+      {
+        "title": "f low/small",
+        "severity": "low",
+        "effort": "small"
+      }
+    ],
+    "expected": {
+      "total_score": 194,
+      "status": "healthy",
+      "by_category": {
+        "other": 194
+      },
+      "item_count": 6,
+      "top_titles": [
+        "a high/small",
+        "c critical/medium",
+        "e high/small",
+        "b low/trivial",
+        "d medium/medium"
+      ]
+    }
+  },
+  {
+    "name": "leer",
+    "items": [],
+    "expected": {
+      "total_score": 0,
+      "status": "healthy",
+      "by_category": {},
+      "item_count": 0,
+      "top_titles": []
+    }
+  }
+]

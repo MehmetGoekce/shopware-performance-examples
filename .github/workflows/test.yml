@@ -796,14 +796,10 @@ jobs:
         run: make --version
 
       # lighthouse-mobile.bats (Kapitel 19), outlook-scripts.bats (Kapitel 24)
-      # und long-term-plan-scripts.bats (Kapitel 15) ueberspringen ohne jq.
+      # und long-term-plan-scripts.bats (Kapitel 15, alle drei Skripte lesen
+      # ihre Eingabe mit jq) ueberspringen ohne jq.
       - name: jq vorhanden
         run: jq --version
-
-      # long-term-plan-scripts.bats: quarterly-review.sh rechnet mit bc und
-      # ueberspringt ohne bc; das Runner-Image garantiert es nicht.
-      - name: bc installieren
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq bc && bc --version
 
       - name: Run BATS Tests
         run: bats tests/Shell/
