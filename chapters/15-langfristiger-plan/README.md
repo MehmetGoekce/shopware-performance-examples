@@ -22,11 +22,13 @@ Praktische Implementierungen für nachhaltiges Performance-Management:
 
 ### Scripts (`scripts/`)
 
-Alle drei Skripte lesen **eine Eingabedatei (JSON)** und brauchen nur `jq`
-(`apt install jq`). Ohne Eingabe geben sie `Usage` aus und enden mit Exit 1,
-es gibt keinen stillen Rückfall auf Beispieldaten. Eine kaputte Eingabe
-(ungültiges JSON, fehlendes Pflichtfeld, falscher Typ) endet mit einer Meldung
-je Feld und Exit 65, eine fehlende oder nicht lesbare Datei mit Exit 66.
+Alle drei Skripte lesen **eine Eingabedatei (JSON)** und brauchen `jq` ab
+Version 1.6 (`apt install jq`; jq 1.5 aus Ubuntu 18.04 kennt `IN` nicht). Ohne
+Eingabe geben sie `Usage` aus und enden mit Exit 1, es gibt keinen stillen
+Rückfall auf Beispieldaten. Eine kaputte Eingabe (ungültiges JSON, fehlendes
+Pflichtfeld, falscher Typ) endet mit einer Meldung je fehlerhaftem Eintrag und
+Exit 65, eine fehlende oder nicht lesbare Datei mit Exit 66, ein fehlendes `jq`
+mit Exit 2.
 
 - **quarterly-review.sh** - Quarterly-Review-Report (Markdown)
 - **tech-debt-report.sh** - Tech-Debt-Bericht, Skala wie im Buch
@@ -38,7 +40,8 @@ je Feld und Exit 65, eine fehlende oder nicht lesbare Datei mit Exit 66.
 - **quarterly-review.demo.json**
 - **roadmap-status.demo.json** (Zieldaten passend zum Stichtag 2026-09-15)
 
-Die Zahlen sind erfunden und zeigen nur den Aufbau der Berichte. Nur eine Datei,
+Die Zahlen sind erfunden und zeigen nur den Aufbau der Berichte; die
+Quartals-Demo ist unabhängig von der Tech-Debt-Demo. Nur eine Datei,
 deren Name auf `.demo.json` endet, kennzeichnen die Skripte als
 «BEISPIELDATEN … keine Messung». Kopieren Sie eine Demo-Datei als Vorlage, dann
 unter einem anderen Namen.
@@ -84,7 +87,7 @@ echo $score['total_score'], ' ', $score['status'];   // z. B. "230 attention"
 
 Eingabe ist dieselbe Liste, die `TechDebtRepository::findAllPerformanceDebt()`
 liefert, als JSON: nur offene Items, Pflichtfelder `title`, `severity`,
-`effort`, optional `category` (fehlt = `other`). Skript und Service rechnen
+`effort`, optional `category` (fehlt oder `null` = `other`). Skript und Service rechnen
 gleich, das prüfen BATS und PHPUnit mit derselben Fixture
 (`tests/Unit/fixtures/ch15-tech-debt-equivalence.json`).
 
@@ -95,10 +98,16 @@ gleich, das prüfen BATS und PHPUnit mit derselben Fixture
 ]
 ```
 
-Zusätzlich liest das Skript, falls vorhanden: `estimated_hours` (Stundensumme
-und Sprint-Empfehlung im 25-%-Budget; Items ohne Schätzung plant es nicht ein
-und nennt sie), `id` und `status` (`in_progress` = in Arbeit, `resolved` fällt
-heraus). Unbekannte `severity`/`effort` meldet es auf stderr.
+Zusätzlich liest das Skript, falls vorhanden (`null` gilt wie fehlend):
+`estimated_hours` (Stundensumme und Sprint-Empfehlung), `id` und `status`
+(`backlog`, `in_progress` = in Arbeit, `resolved` fällt überall heraus; andere
+Werte zählen als offen). Unbekannte `severity`, `effort` und `status` meldet es
+auf stderr.
+
+Sprint-Empfehlung: Offene critical-Items stehen zuerst und ausserhalb des
+Budgets, wie Kapitel 15 es verlangt («Sofort beheben», SLA < 1 Sprint). Die
+übrigen folgen nach Priorität, soweit sie ins 25-%-Budget (20 h von 80 h)
+passen. Items ohne Stundenschätzung plant das Skript nicht ein, es nennt sie.
 
 ```bash
 ./scripts/tech-debt-report.sh tech-debt.json                          # Text
@@ -109,10 +118,18 @@ heraus). Unbekannte `severity`/`effort` meldet es auf stderr.
 ./scripts/tech-debt-report.sh --trend examples/tech-debt-history.demo.json examples/tech-debt.demo.json
 ```
 
-Den Verlauf für `--trend` legen Sie selbst an: jeden Monat den Score aus
-`--json` (`.summary.tech_debt_score`) als Eintrag
-`{"month": "2026-09", "score": 230, "items": 5, "hours": 68}` anhängen
-(`items` und `hours` optional).
+Den Verlauf für `--trend` legen Sie selbst an: jeden Monat einen Eintrag aus
+der `--json`-Ausgabe anhängen, `score` ← `.summary.tech_debt_score`, `items` ←
+`.summary.total_items` (offene Items), `hours` ← `.summary.total_hours`
+(geschätzte Stunden im Backlog, ohne Items in Arbeit):
+
+```bash
+./scripts/tech-debt-report.sh --json tech-debt.json 2>/dev/null \
+  | jq -c --arg m "$(date +%Y-%m)" '{month: $m, score: .summary.tech_debt_score,
+        items: .summary.total_items, hours: .summary.total_hours}'
+```
+
+`items` und `hours` sind optional.
 
 ### Quarterly Review
 
@@ -128,15 +145,20 @@ Den Verlauf für `--trend` legen Sie selbst an: jeden Monat den Score aus
 Pflicht sind `quarter` (`Q1`-`Q4`) und `year`. Jeder Datenblock ist optional:
 Fehlt er, steht im Report «Keine Daten» statt einer Zahl. Ist er da, müssen
 seine Felder vollständig sein. Summen, Mittelwerte, Veränderungen, Budget-Varianz
-und die Stufen (Tech Debt wie oben, OKR wie `OkrProgressService`: ab 0.9
-Exceptional, ab 0.7 Strong, ab 0.5 On Track, ab 0.3 At Risk) rechnet das Skript.
+und die Stufen rechnet das Skript: Tech Debt wie oben, OKR mit den Grenzen von
+`OkrProgressService` (ab 0.9 Exceptional, ab 0.7 Strong, ab 0.5 On Track, ab 0.3
+At Risk). Wie der Service mittelt es je Objective gewichtet (`weight`, Vorgabe 1),
+rundet auf zwei Stellen und bildet den Gesamtwert aus den gerundeten
+Objective-Scores. Anders als der Service stuft es den **angezeigten** Wert ein:
+Ein Gesamtwert, der als 0.70 erscheint, heisst hier «Strong», auch wenn das
+ungerundete Mittel 0.6967 wäre.
 
 | Block | Felder | Quelle für echte Werte |
 |---|---|---|
 | `cwv` | `lcp_ms`, `inp_ms`, `cls` je `{start, end}` (p75) | `bin/console rum:report` (Kapitel 12). Die RUM-Logs reichen 30 Tage zurück: den Startwert zu Quartalsbeginn ablegen (siehe «Mit Kapitel 12») |
-| `okrs` | `[{objective, key_results: [{title, score (0-1), baseline?, target?, achieved?}]}]` | Ihr OKR-Tracker; ein Error-Budget-Key-Result aus `chapters/14-performance-kultur/scripts/error-budget.php` |
-| `incidents` | `p0`, `p1`, `p2`, optional `postmortems_done`, `mttr_hours`, `root_causes: [{cause, count}]` | Ihr Incident-Tracker |
-| `tech_debt` | `start` und `end` je `{items, hours, score}`, optional `resolved: [{title, hours}]` | `tech-debt-report.sh --json` zu Quartalsbeginn und -ende (`.summary`) |
+| `okrs` | `[{objective, key_results: [{title, score (0-1, 0.7 = 70 %), weight?, baseline?, target?, achieved?}]}]`; weglassen statt leerer Liste | Ihr OKR-Tracker; ein Error-Budget-Key-Result aus `chapters/14-performance-kultur/scripts/error-budget.php` |
+| `incidents` | `p0`, `p1`, `p2` (ganze Zahlen), optional `postmortems_done` (höchstens p0 + p1 + p2), `mttr_hours`, `root_causes: [{cause, count}]` | Ihr Incident-Tracker |
+| `tech_debt` | `start` und `end` je `{items, hours, score}`, optional `resolved: [{title, hours}]` | `tech-debt-report.sh --json` zu Quartalsbeginn und -ende: `items` ← `.summary.total_items`, `hours` ← `.summary.total_hours`, `score` ← `.summary.tech_debt_score` |
 | `budget` | `categories: [{category, planned, spent}]`, optional `currency` (Vorgabe CHF), `annual_total` + `spent_year_to_date` | Ihre Buchhaltung |
 | `sections` | `[{title, markdown}]` | freie Abschnitte (Highlights, Learnings, Planung), unverändert übernommen |
 
@@ -151,8 +173,12 @@ ROADMAP_FILE=roadmap-status.json ./scripts/roadmap-status.sh
 ./scripts/roadmap-status.sh --file examples/roadmap-status.demo.json --stichtag 2026-09-15
 ```
 
-Die Statusdatei übernimmt die Feldnamen der Vorlage und ergänzt den Status aus
-Ihrem Tracker:
+Die Statusdatei übernimmt die Feldnamen der Vorlage (`quarters.Qn.milestones[]`
+und `quarters.Qn.risks[]`, flach in je eine Liste) und ergänzt den Status aus
+Ihrem Tracker. Die Milestones übertragen Sie einmal aus Ihrem Plan, danach
+pflegen Sie nur noch `status`. Der `roadmap.yaml`-Block im Buch (Kapitel 15)
+ist eine kürzere Planungsskizze ohne Milestones und taugt dafür nicht als
+Vorlage.
 
 ```json
 {
@@ -169,7 +195,8 @@ Ihrem Tracker:
 
 `status` ist `completed`, `in_progress`, `at_risk` oder `pending`. Überfällig
 ist ein offener Milestone, dessen Zieldatum vor dem Stichtag liegt (Vorgabe:
-heute); am Zieltag selbst noch nicht. `risks` ist optional. Die YAML-Vorlage
+heute); am Zieltag selbst noch nicht. `risks` ist optional, eine fehlende
+`id` wird zu `R-1`, `R-2` … Die YAML-Vorlage
 weist das Skript mit Exit 65 ab, weil sie keinen Status hat.
 
 ## Wartungskalender
