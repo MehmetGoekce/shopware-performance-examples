@@ -10,7 +10,8 @@
 #   [{"title": "...", "severity": "high", "effort": "small", "category": "frontend"}]
 # Pflicht: title, severity, effort. Optional: category (fehlt = "other"), id,
 # estimated_hours (Stunden, für Stundensumme und Sprint-Empfehlung) und
-# status ("in_progress" zählt als in Arbeit, "resolved" fällt heraus).
+# status ("backlog", "in_progress" = in Arbeit, "resolved" fällt überall heraus;
+# andere Werte zählen als offen, mit Warnung). null gilt wie ein fehlendes Feld.
 #
 # Skala wie Kapitel 15 (src/TechDebtTrackerService.php): Score = Summe der
 # Severity-Punkte offener Items, critical 100, high 40, medium 10, low 2;
@@ -33,7 +34,7 @@
 # 66 Eingabe fehlt oder ist nicht lesbar.
 #
 # Voraussetzungen:
-#   - jq
+#   - jq ab 1.6
 
 set -euo pipefail
 
@@ -123,12 +124,13 @@ INPUT_ERRORS=$(jq -r '
     if type != "array" then "Die Eingabe muss eine JSON-Liste sein, nicht \(type)"
     else to_entries[] | .key as $i | .value |
         if type != "object" then "Item \($i): kein Objekt"
-        elif (.title | type) != "string" or .title == "" then "Item \($i): title fehlt"
-        elif (.severity | type) != "string" then "Item \($i) (\(.title)): severity fehlt"
-        elif (.effort | type) != "string" then "Item \($i) (\(.title)): effort fehlt"
-        elif has("category") and (.category | type) != "string" then "Item \($i) (\(.title)): category ist kein Text"
-        elif has("estimated_hours") and ((.estimated_hours | type) != "number" or .estimated_hours < 0) then "Item \($i) (\(.title)): estimated_hours ist keine Zahl >= 0"
-        elif has("status") and (.status | type) != "string" then "Item \($i) (\(.title)): status ist kein Text"
+        elif (.title | type) != "string" or .title == "" then "Item \($i): title fehlt oder ist kein Text"
+        elif (.severity | type) != "string" then "Item \($i) (\(.title)): severity fehlt oder ist kein Text"
+        elif (.effort | type) != "string" then "Item \($i) (\(.title)): effort fehlt oder ist kein Text"
+        elif .category != null and (.category | type) != "string" then "Item \($i) (\(.title)): category ist kein Text"
+        elif .estimated_hours != null and ((.estimated_hours | type) != "number" or .estimated_hours < 0) then "Item \($i) (\(.title)): estimated_hours ist keine Zahl >= 0"
+        elif .status != null and (.status | type) != "string" then "Item \($i) (\(.title)): status ist kein Text"
+        elif .id != null and (.id | type) != "string" then "Item \($i) (\(.title)): id ist kein Text"
         else empty end
     end' "${INPUT_FILE}")
 if [[ -n "${INPUT_ERRORS}" ]]; then
@@ -144,8 +146,10 @@ if [[ "${SHOW_TREND}" = true ]]; then
         elif length == 0 then "Der Verlauf ist leer"
         else to_entries[] | .key as $i | .value |
             if type != "object" then "Eintrag \($i): kein Objekt"
-            elif (.month | type) != "string" then "Eintrag \($i): month fehlt"
-            elif (.score | type) != "number" then "Eintrag \($i) (\(.month)): score fehlt"
+            elif (.month | type) != "string" then "Eintrag \($i): month fehlt oder ist kein Text"
+            elif (.score | type) != "number" then "Eintrag \($i) (\(.month)): score fehlt oder ist keine Zahl"
+            elif .items != null and (.items | type) != "number" then "Eintrag \($i) (\(.month)): items ist keine Zahl"
+            elif .hours != null and (.hours | type) != "number" then "Eintrag \($i) (\(.month)): hours ist keine Zahl"
             else empty end
         end' "${TREND_FILE}")
     if [[ -n "${TREND_ERRORS}" ]]; then
@@ -160,7 +164,9 @@ jq -r '.[] |
     (select(.severity | IN("critical", "high", "medium", "low") | not)
         | "Warnung: \(.title): severity \"\(.severity)\" unbekannt, zählt wie medium (10 Punkte)"),
     (select(.effort | IN("trivial", "small", "medium", "large", "xlarge") | not)
-        | "Warnung: \(.title): effort \"\(.effort)\" unbekannt, zählt wie medium (Aufwand 5)")' \
+        | "Warnung: \(.title): effort \"\(.effort)\" unbekannt, zählt wie medium (Aufwand 5)"),
+    (select(.status != null and (.status | IN("backlog", "in_progress", "resolved") | not))
+        | "Warnung: \(.title): status \"\(.status)\" unbekannt, zählt als offen im Backlog")' \
     "${INPUT_FILE}" >&2
 
 # Farben
@@ -178,6 +184,7 @@ fi
 # Punkte und Grenzen wie in Kapitel 15, an einer Stelle für Text und JSON
 JQ_DEFS='def points: ({"critical": 100, "high": 40, "medium": 10, "low": 2}[.severity] // 10);
 def prio: (points / ({"trivial": 1, "small": 2, "medium": 5, "large": 13, "xlarge": 21}[.effort] // 5) * 10 | round / 10);
+def num: . * 1000 | round / 1000;
 def open_items: [.[] | select(.status != "resolved")];
 def backlog: [open_items[] | select(.status != "in_progress")];
 def score: (open_items | map(points) | add // 0);
@@ -189,9 +196,12 @@ def by_category: open_items | group_by(.category // "other")
 SPRINT_CAPACITY=80  # Stunden pro Sprint
 TECH_DEBT_BUDGET=$((SPRINT_CAPACITY * 25 / 100))
 
-# Sprint-Empfehlung: nach Priorität, was noch ins 25-%-Budget passt.
-# Items ohne Stundenschätzung plant das Skript nicht ein
-JQ_SPRINT='def sprint($budget): reduce (ranked[] | select(.status != "in_progress")
+# Sprint-Empfehlung: critical-Items kommen nach Kapitel 15 zuerst ("Sofort
+# beheben", SLA < 1 Sprint), unabhängig vom Budget. Die übrigen nach
+# Priorität, soweit sie ins 25-%-Budget passen. Items ohne Stundenschätzung
+# plant das Skript nicht ein
+JQ_SPRINT='def critical_now: [backlog[] | select(.severity == "critical")];
+def sprint($budget): reduce (ranked[] | select(.status != "in_progress") | select(.severity != "critical")
         | select(.estimated_hours != null)) as $i
     ({used: 0, items: []};
      if .used + $i.estimated_hours <= $budget
@@ -202,7 +212,7 @@ JQ_SPRINT='def sprint($budget): reduce (ranked[] | select(.status != "in_progres
 # ============================================================
 
 if [[ "${OUTPUT_FORMAT}" == "json" ]]; then
-    jq --arg now "$(date -Iseconds)" --arg source "$(basename "${INPUT_FILE}")" \
+    jq --arg now "$(date +%Y-%m-%dT%H:%M:%S%z)" --arg source "$(basename "${INPUT_FILE}")" \
         --argjson demo "$(is_demo "${INPUT_FILE}" && echo true || echo false)" \
         --argjson budget "${TECH_DEBT_BUDGET}" "${JQ_DEFS} ${JQ_SPRINT}"'
         {
@@ -210,10 +220,10 @@ if [[ "${OUTPUT_FORMAT}" == "json" ]]; then
             data_source: (if $demo then "BEISPIELDATEN aus \($source), keine Messung" else $source end),
             demo: $demo,
             summary: {
-                total_items: length,
+                total_items: (open_items | length),
                 backlog_items: (backlog | length),
                 in_progress: (open_items | map(select(.status == "in_progress")) | length),
-                total_hours: (backlog | map(.estimated_hours // 0) | add // 0),
+                total_hours: (backlog | map(.estimated_hours // 0) | add // 0 | num),
                 items_without_estimate: (backlog | map(select(.estimated_hours == null)) | length),
                 tech_debt_score: score,
                 health: health
@@ -221,7 +231,7 @@ if [[ "${OUTPUT_FORMAT}" == "json" ]]; then
             items: .,
             by_category: by_category,
             top_priority: (ranked | .[0:5]),
-            sprint: {budget_hours: $budget, items: [sprint($budget)[] | .title]}
+            sprint: {budget_hours: $budget, critical_first: [critical_now[] | .title], items: [sprint($budget)[] | .title]}
         }' "${INPUT_FILE}"
     exit 0
 fi
@@ -254,7 +264,7 @@ echo -e "Tech Debt Score:    ${HEALTH_COLOR}${TECH_DEBT_SCORE}${NC} Punkte (${HE
 jq -r "${JQ_DEFS}"'
     "Backlog Items:      \(backlog | length)",
     "In Progress:        \(open_items | map(select(.status == "in_progress")) | length)",
-    "Geschätzte Stunden: \(backlog | map(.estimated_hours // 0) | add // 0)h (Backlog)"
+    "Geschätzte Stunden: \(backlog | map(.estimated_hours // 0) | add // 0 | num)h (Backlog)"
         + (backlog | map(select(.estimated_hours == null)) | length
            | if . > 0 then ", \(.) Items ohne Schätzung" else "" end)' "${INPUT_FILE}"
 echo ""
@@ -276,7 +286,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 
 jq -r "${JQ_DEFS}"' ranked | .[0:5] | .[] |
-    "\(if .id then "[\(.id)] " else "" end)\(.title)\n    Category: \(.category // "other") | Severity: \(.severity) | Priority: \(.priority) | Hours: \(if .estimated_hours == null then "?" else "\(.estimated_hours)h" end)\n"' \
+    "\(if .id then "[\(.id)] " else "" end)\(.title)\n    Category: \(.category // "other") | Severity: \(.severity) | Priority: \(.priority) | Hours: \(if .estimated_hours == null then "?" else "\(.estimated_hours | num)h" end)\n"' \
     "${INPUT_FILE}"
 
 # Sprint Recommendation
@@ -285,15 +295,16 @@ echo "  Sprint Empfehlung (25% Regel)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 echo "Sprint-Kapazität:    ${SPRINT_CAPACITY}h"
-echo "Tech Debt Budget:    ${TECH_DEBT_BUDGET}h (25%)"
+echo "Tech Debt Budget:    ${TECH_DEBT_BUDGET}h (25%, critical-Items zusätzlich)"
 echo ""
 echo "Empfohlene Items für nächsten Sprint:"
 echo ""
 
 jq -r --argjson budget "${TECH_DEBT_BUDGET}" "${JQ_DEFS} ${JQ_SPRINT}"'
-    [sprint($budget)[] | "☐ \(.title) (\(.estimated_hours)h)"] as $picked
-    | (if ($picked | length) == 0 then "(keins mit Stundenschätzung passt ins Budget)" else $picked[] end),
-      (backlog | map(select(.estimated_hours == null)) | .[]
+    (critical_now[] | "☐ \(.title) (\(if .estimated_hours == null then "ohne Stundenschätzung" else "\(.estimated_hours | num)h" end), critical: sofort, vor dem Budget)"),
+    ([sprint($budget)[] | "☐ \(.title) (\(.estimated_hours | num)h)"] as $picked
+     | if ($picked | length) == 0 then "(im Budget: keins mit Stundenschätzung passt)" else $picked[] end),
+      (backlog | map(select(.estimated_hours == null and .severity != "critical")) | .[]
        | "  ohne Stundenschätzung, nicht eingeplant: \(.title)")' "${INPUT_FILE}"
 
 echo ""
@@ -308,9 +319,10 @@ if [[ "${SHOW_TREND}" = true ]]; then
         echo -e "${YELLOW}HINWEIS: BEISPIELDATEN aus $(basename "${TREND_FILE}"), keine Messung${NC}"
     fi
 
-    jq -r '.[] | "\(.month): Score \(.score)"
-        + (if .items != null then " | Items: \(.items)" else "" end)
-        + (if .hours != null then " | Hours: \(.hours)h" else "" end)' "${TREND_FILE}"
+    jq -r 'def num: . * 1000 | round / 1000;
+        .[] | "\(.month): Score \(.score | num)"
+        + (if .items != null then " | Items: \(.items | num)" else "" end)
+        + (if .hours != null then " | Hours: \(.hours | num)h" else "" end)' "${TREND_FILE}"
 
     # Trend berechnen
     FIRST_SCORE=$(jq '.[0].score' "${TREND_FILE}")
