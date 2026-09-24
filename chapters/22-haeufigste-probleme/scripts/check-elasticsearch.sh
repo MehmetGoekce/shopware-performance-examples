@@ -19,12 +19,23 @@
 # spricht ueber den OpenSearch-PHP-Client mit dem Cluster; Elasticsearch und
 # OpenSearch funktionieren beide.
 #
+# Die Variablen koennen aus sechs Quellen kommen: der Umgebung,
+# .env.local.php und vier .env-Dateien (.env, .env.local, .env.prod,
+# .env.prod.local; die spaetere gewinnt). Gemessen (MEM-327, 6.6.10.6):
+# SHOPWARE_ES_ENABLED=1 in .env.prod, .env.prod.local oder .env.local.php
+# schaltet die Suche um, ein grep ueber .env und .env.local zeigt 0.
+# Setzt der Webserver den Wert (FPM env[], Apache SetEnv), sieht ihn keine
+# Datei und keine CLI. Was der Webserver wirklich benutzt, steht im
+# Quelltext der Admin-Anmeldeseite: storefrontEsEnable (ab 6.5.2.0,
+# AdministrationController, ohne Login). Fuer OPENSEARCH_URL gibt es keine
+# solche Anzeige.
+#
 # Verwendung:
 #   ./check-elasticsearch.sh [SHOP_URL] [SHOP_PATH]
 #
 # Exit-Codes:
 #   0 = Elasticsearch aktiv und erreichbar
-#   1 = nicht aktiv, nicht erreichbar oder ohne Indizes
+#   1 = nicht aktiv, CLI und Webserver uneins, nicht erreichbar oder ohne Indizes
 #   64 = Aufruffehler
 
 set -euo pipefail
@@ -36,12 +47,18 @@ Usage: check-elasticsearch.sh [SHOP_URL] [SHOP_PATH]
 Prueft, ob die Shopware-Suche ueber Elasticsearch/OpenSearch laeuft.
 
 Argumente:
-  SHOP_URL    Wird nicht ausgewertet; nur der Einheitlichkeit halber.
+  SHOP_URL    Basis-URL des Shops. Default: http://localhost
+              Dort liest das Skript storefrontEsEnable aus der Admin-
+              Anmeldeseite: den Schalter, wie der Webserver ihn sieht.
   SHOP_PATH   Wurzel der Shopware-Installation. Default: aktuelles Verzeichnis
 
+Die Variablen liest es wie bin/console: Umgebung, .env.local.php, sonst
+.env, .env.local, .env.<APP_ENV>, .env.<APP_ENV>.local (spaetere gewinnt).
+
 Umgebungsvariablen:
-  ES_HOST     Host:Port des Clusters. Ohne Angabe wird OPENSEARCH_URL aus
-              .env/.env.local benutzt, sonst localhost:9200.
+  ES_HOST     Host:Port des Clusters. Ohne Angabe OPENSEARCH_URL wie oben,
+              sonst localhost:9200.
+  ADMIN_PATH  Pfad der Administration. Default: admin
 USAGE
 }
 
@@ -56,32 +73,108 @@ if [[ $# -gt 2 ]]; then
 fi
 
 # Aufrufkonvention aller Skripte dieses Kapitels: $1 = SHOP_URL, $2 = SHOP_PATH.
-# Dieses Skript braucht nur den Pfad; $1 wird bewusst nicht ausgewertet,
-# damit run-all-diagnostics.sh alle Skripte gleich aufrufen kann.
+SHOP_URL="${1:-http://localhost}"
 SHOP_PATH="${2:-.}"
 # Cluster-Adresse per Umgebungsvariable, damit die Argumentfolge einheitlich bleibt.
 ES_HOST_ARG="${ES_HOST:-}"
+ADMIN_PATH="${ADMIN_PATH:-admin}"
 
-env_value() {
-    # $1 = Variablenname. .env.local sticht .env.
-    local name="$1" value=""
-    for f in "${SHOP_PATH}/.env" "${SHOP_PATH}/.env.local"; do
+# >>> dotenv_get (wortgleich in allen Skripten dieses Kapitels, siehe BATS)
+# Liest eine Variable so, wie Symfonys Dotenv::bootEnv() sie fuer die CLI
+# (bin/console) ermittelt. Setzt DOTENV_VALUE und DOTENV_SOURCE; beide leer,
+# wenn die Variable nirgends steht. Reihenfolge (symfony/dotenv 7.2-7.4):
+#   1. Umgebung dieses Aufrufs — schlaegt jede Datei.
+#   2. .env.local.php (composer dump-env) — ersetzt ALLE .env-Dateien,
+#      ausser die Umgebung setzt ein anderes APP_ENV als die Datei.
+#   3. .env, .env.local, .env.<APP_ENV>, .env.<APP_ENV>.local; die spaetere
+#      Datei gewinnt, auch fuer APP_ENV selbst. Die Dateiwahl folgt dem
+#      APP_ENV nach .env/.env.local (ohne Angabe: dev); bei APP_ENV=test
+#      entfaellt .env.local. Ohne .env, .env.dist und .env.local.php liest
+#      Shopware gar keine Datei.
+# Die Umgebung des Webservers (FPM env[], Apache SetEnv, nginx fastcgi_param)
+# sieht diese Funktion nicht; sie schlaegt im Web ebenfalls jede Datei.
+dotenv_get() {
+    local name="$1" root="${SHOP_PATH:-.}" f env_name line php_env
+    DOTENV_VALUE="" DOTENV_SOURCE=""
+    if line=$(printenv "$name"); then
+        DOTENV_VALUE="$line" DOTENV_SOURCE="Umgebung"
+        return 0
+    fi
+    if [[ -f "$root/.env.local.php" ]]; then
+        php_env=$(dotenv_php_value "$root/.env.local.php" APP_ENV)
+        if ! env_name=$(printenv APP_ENV) || [[ -z "$php_env" || "$env_name" == "$php_env" ]]; then
+            if grep -qE "^[[:space:]]*'${name}'[[:space:]]*=>" "$root/.env.local.php"; then
+                DOTENV_VALUE=$(dotenv_php_value "$root/.env.local.php" "$name")
+                DOTENV_SOURCE=".env.local.php"
+            fi
+            return 0
+        fi
+    fi
+    [[ -f "$root/.env" || -f "$root/.env.dist" ]] || return 0
+    f="$root/.env"; [[ -f "$f" ]] || f="$root/.env.dist"
+    env_name=$(printenv APP_ENV) || env_name=$(dotenv_file_value "$f" APP_ENV)
+    local files=("$f")
+    if [[ "${env_name:-dev}" != "test" && -f "$root/.env.local" ]]; then
+        files+=("$root/.env.local")
+        printenv APP_ENV >/dev/null || env_name=$(dotenv_file_value "$root/.env.local" APP_ENV "$env_name")
+    fi
+    env_name="${env_name:-dev}"
+    if [[ "$env_name" != "local" ]]; then
+        files+=("$root/.env.$env_name" "$root/.env.$env_name.local")
+    fi
+    for f in "${files[@]}"; do
         [[ -f "$f" ]] || continue
-        local line
-        line=$(grep -E "^${name}=" "$f" | tail -1 || true)
-        [[ -n "${line}" ]] && value="${line#*=}"
+        if grep -qE "^[[:space:]]*(export[[:space:]]+)?${name}=" "$f"; then
+            DOTENV_VALUE=$(dotenv_file_value "$f" "$name")
+            DOTENV_SOURCE="${f##*/}"
+        fi
     done
-    printf '%s' "${value}" | tr -d '"'"'"''
+}
+# Letzte Zuweisung NAME=... einer .env-Datei; "export " davor erlaubt.
+# Entfernt umschliessende Anfuehrungszeichen und einen Kommentar hinter
+# einem Wert ohne Anfuehrungszeichen. ${VAR}-Verweise bleiben unaufgeloest.
+# $3 = Rueckgabe, wenn die Datei die Variable nicht setzt.
+dotenv_file_value() {
+    local line v
+    line=$(grep -E "^[[:space:]]*(export[[:space:]]+)?$2=" "$1" | tail -n 1) || { printf '%s' "${3:-}"; return 0; }
+    v="${line#*=}"
+    case "$v" in
+        \"*\"*) v="${v#\"}"; v="${v%%\"*}" ;;
+        \'*\'*) v="${v#\'}"; v="${v%%\'*}" ;;
+        *) v="${v%%[[:space:]]#*}"; v="${v%"${v##*[![:space:]]}"}" ;;
+    esac
+    printf '%s' "$v"
+}
+# Wert aus .env.local.php (var_export-Format von composer dump-env).
+dotenv_php_value() {
+    grep -E "^[[:space:]]*'$2'[[:space:]]*=>" "$1" | tail -n 1 \
+        | sed -E "s/^[^=]*=>[[:space:]]*'(.*)',?[[:space:]]*$/\1/; s/\\\\'/'/g; s/\\\\\\\\/\\\\/g" || true
+}
+# <<< dotenv_get
+
+# Shopware liest den Schalter als %env(bool:SHOPWARE_ES_ENABLED)%.
+is_on() {
+    local v
+    v=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+    case "$v" in
+        1|true|on|yes) return 0 ;;
+        ''|*[!0-9]*) return 1 ;;
+        *) [[ "$((10#$v))" -ne 0 ]] ;;
+    esac
 }
 
 echo "=== Problem 11: Elasticsearch ==="
 echo
 
-ES_ENABLED=$(env_value SHOPWARE_ES_ENABLED)
-ES_INDEXING=$(env_value SHOPWARE_ES_INDEXING_ENABLED)
-ES_URL=$(env_value OPENSEARCH_URL)
-ES_PREFIX=$(env_value SHOPWARE_ES_INDEX_PREFIX)
-ES_PREFIX="${ES_PREFIX:-sw}"
+# Wert und Quelle je Variable, wie bin/console sie sieht.
+show() {
+    dotenv_get "$1"
+    if [[ -n "${DOTENV_SOURCE}" ]]; then
+        printf '   %-28s = %s (%s)\n' "$1" "${DOTENV_VALUE}" "${DOTENV_SOURCE}"
+    else
+        printf '   %-28s = (nicht gesetzt)\n' "$1"
+    fi
+}
 
 # Abschnitte fortlaufend nummerieren. Fest verdrahtete Nummern springen,
 # sobald ein Abschnitt uebersprungen wird (1 -> 2 -> 4).
@@ -91,13 +184,14 @@ section() {
     echo "${SECTION_NO}. $1"
 }
 
-section "Konfiguration in .env / .env.local"
-echo "   SHOPWARE_ES_ENABLED          = ${ES_ENABLED:-(nicht gesetzt)}"
-echo "   SHOPWARE_ES_INDEXING_ENABLED = ${ES_INDEXING:-(nicht gesetzt)}"
-echo "   OPENSEARCH_URL               = ${ES_URL:-(nicht gesetzt)}"
-echo "   SHOPWARE_ES_INDEX_PREFIX     = ${ES_PREFIX}"
+section "Konfiguration aus Sicht der CLI (Umgebung, .env.local.php, .env-Dateien)"
+show SHOPWARE_ES_ENABLED;          ES_ENABLED="${DOTENV_VALUE}"
+show SHOPWARE_ES_INDEXING_ENABLED
+show OPENSEARCH_URL;               ES_URL="${DOTENV_VALUE}"
+show SHOPWARE_ES_INDEX_PREFIX;     ES_PREFIX="${DOTENV_VALUE:-sw}"
 if [[ -f "${SHOP_PATH}/.env.local.php" ]]; then
-    echo "   Achtung: .env.local.php vorhanden — sie hat Vorrang vor .env.local."
+    echo "   .env.local.php vorhanden — Symfony liest dann keine .env-Datei,"
+    echo "   ausser die Umgebung setzt ein anderes APP_ENV als die Datei."
 fi
 
 if [[ -n "${ES_HOST_ARG}" ]]; then
@@ -114,8 +208,31 @@ esac
 
 ISSUES=0
 
+echo
+section "Sicht des Webservers (${SHOP_URL%/}/${ADMIN_PATH})"
+WEB_ES=""
+if ! command -v curl >/dev/null 2>&1; then
+    echo "   curl fehlt — nicht geprueft."
+elif ! ADMIN_HTML=$(curl -sS --max-time 15 "${SHOP_URL%/}/${ADMIN_PATH}" 2>/dev/null); then
+    echo "   ${SHOP_URL%/}/${ADMIN_PATH} nicht erreichbar — nicht geprueft."
+elif [[ "${ADMIN_HTML}" =~ storefrontEsEnable:[[:space:]]*(true|false) ]]; then
+    WEB_ES="${BASH_REMATCH[1]}"
+    echo "   storefrontEsEnable: ${WEB_ES}"
+else
+    echo "   Kein storefrontEsEnable in der Anmeldeseite (vor 6.5.2.0 oder anderer"
+    echo "   Admin-Pfad, siehe ADMIN_PATH) — nicht geprueft."
+fi
 
-if [[ "${ES_ENABLED}" != "1" ]]; then
+CLI_ES=false
+is_on "${ES_ENABLED}" && CLI_ES=true
+if [[ -n "${WEB_ES}" && "${WEB_ES}" != "${CLI_ES}" ]]; then
+    echo "   ✗ Webserver (${WEB_ES}) und CLI (${CLI_ES}) sind uneins: Der Webserver"
+    echo "     setzt eigene Werte (FPM env[], Apache SetEnv, nginx fastcgi_param)."
+    echo "     Dann stimmt auch OPENSEARCH_URL oben nicht sicher; die des Webservers"
+    echo "     zeigt Shopware nirgends an, sie steht in dessen Konfiguration."
+    ISSUES=$((ISSUES + 1))
+fi
+if [[ "${WEB_ES:-${CLI_ES}}" != "true" ]]; then
     echo "   Die Suche laeuft NICHT ueber Elasticsearch."
     ISSUES=$((ISSUES + 1))
 fi
@@ -177,7 +294,9 @@ cat <<EOF
 ${ISSUES} Punkt(e) offen.
 
 Einschalten geschieht ueber Umgebungsvariablen, nicht ueber eine eigene
-config/packages/elasticsearch.yaml:
+config/packages/elasticsearch.yaml. Eintragen dort, wo Abschnitt 1 die
+Quelle nennt; .env.prod und .env.prod.local schlagen .env.local, eine
+.env.local.php ersetzt alle .env-Dateien:
 
   # .env.local
   OPENSEARCH_URL=${ES_BASE#http://}

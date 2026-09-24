@@ -69,6 +69,79 @@ fi
 SHOP_URL="${1:-http://localhost}"
 SHOP_URL="${SHOP_URL%/}"
 SHOP_PATH="${2:-.}"
+
+# >>> dotenv_get (wortgleich in allen Skripten dieses Kapitels, siehe BATS)
+# Liest eine Variable so, wie Symfonys Dotenv::bootEnv() sie fuer die CLI
+# (bin/console) ermittelt. Setzt DOTENV_VALUE und DOTENV_SOURCE; beide leer,
+# wenn die Variable nirgends steht. Reihenfolge (symfony/dotenv 7.2-7.4):
+#   1. Umgebung dieses Aufrufs — schlaegt jede Datei.
+#   2. .env.local.php (composer dump-env) — ersetzt ALLE .env-Dateien,
+#      ausser die Umgebung setzt ein anderes APP_ENV als die Datei.
+#   3. .env, .env.local, .env.<APP_ENV>, .env.<APP_ENV>.local; die spaetere
+#      Datei gewinnt, auch fuer APP_ENV selbst. Die Dateiwahl folgt dem
+#      APP_ENV nach .env/.env.local (ohne Angabe: dev); bei APP_ENV=test
+#      entfaellt .env.local. Ohne .env, .env.dist und .env.local.php liest
+#      Shopware gar keine Datei.
+# Die Umgebung des Webservers (FPM env[], Apache SetEnv, nginx fastcgi_param)
+# sieht diese Funktion nicht; sie schlaegt im Web ebenfalls jede Datei.
+dotenv_get() {
+    local name="$1" root="${SHOP_PATH:-.}" f env_name line php_env
+    DOTENV_VALUE="" DOTENV_SOURCE=""
+    if line=$(printenv "$name"); then
+        DOTENV_VALUE="$line" DOTENV_SOURCE="Umgebung"
+        return 0
+    fi
+    if [[ -f "$root/.env.local.php" ]]; then
+        php_env=$(dotenv_php_value "$root/.env.local.php" APP_ENV)
+        if ! env_name=$(printenv APP_ENV) || [[ -z "$php_env" || "$env_name" == "$php_env" ]]; then
+            if grep -qE "^[[:space:]]*'${name}'[[:space:]]*=>" "$root/.env.local.php"; then
+                DOTENV_VALUE=$(dotenv_php_value "$root/.env.local.php" "$name")
+                DOTENV_SOURCE=".env.local.php"
+            fi
+            return 0
+        fi
+    fi
+    [[ -f "$root/.env" || -f "$root/.env.dist" ]] || return 0
+    f="$root/.env"; [[ -f "$f" ]] || f="$root/.env.dist"
+    env_name=$(printenv APP_ENV) || env_name=$(dotenv_file_value "$f" APP_ENV)
+    local files=("$f")
+    if [[ "${env_name:-dev}" != "test" && -f "$root/.env.local" ]]; then
+        files+=("$root/.env.local")
+        printenv APP_ENV >/dev/null || env_name=$(dotenv_file_value "$root/.env.local" APP_ENV "$env_name")
+    fi
+    env_name="${env_name:-dev}"
+    if [[ "$env_name" != "local" ]]; then
+        files+=("$root/.env.$env_name" "$root/.env.$env_name.local")
+    fi
+    for f in "${files[@]}"; do
+        [[ -f "$f" ]] || continue
+        if grep -qE "^[[:space:]]*(export[[:space:]]+)?${name}=" "$f"; then
+            DOTENV_VALUE=$(dotenv_file_value "$f" "$name")
+            DOTENV_SOURCE="${f##*/}"
+        fi
+    done
+}
+# Letzte Zuweisung NAME=... einer .env-Datei; "export " davor erlaubt.
+# Entfernt umschliessende Anfuehrungszeichen und einen Kommentar hinter
+# einem Wert ohne Anfuehrungszeichen. ${VAR}-Verweise bleiben unaufgeloest.
+# $3 = Rueckgabe, wenn die Datei die Variable nicht setzt.
+dotenv_file_value() {
+    local line v
+    line=$(grep -E "^[[:space:]]*(export[[:space:]]+)?$2=" "$1" | tail -n 1) || { printf '%s' "${3:-}"; return 0; }
+    v="${line#*=}"
+    case "$v" in
+        \"*\"*) v="${v#\"}"; v="${v%%\"*}" ;;
+        \'*\'*) v="${v#\'}"; v="${v%%\'*}" ;;
+        *) v="${v%%[[:space:]]#*}"; v="${v%"${v##*[![:space:]]}"}" ;;
+    esac
+    printf '%s' "$v"
+}
+# Wert aus .env.local.php (var_export-Format von composer dump-env).
+dotenv_php_value() {
+    grep -E "^[[:space:]]*'$2'[[:space:]]*=>" "$1" | tail -n 1 \
+        | sed -E "s/^[^=]*=>[[:space:]]*'(.*)',?[[:space:]]*$/\1/; s/\\\\'/'/g; s/\\\\\\\\/\\\\/g" || true
+}
+# <<< dotenv_get
 ROUNDS="${ROUNDS:-5}"
 CART_MS="${CART_MS:-500}"
 
@@ -111,13 +184,10 @@ echo "   Zum Vergleich die Startseite (die aus dem HTTP-Cache kommen kann):"
 echo "   /: $(measure_ms "${SHOP_URL}/") ms"
 
 # --- Datenbank ---
-DB_URL=""
-for f in "${SHOP_PATH}/.env" "${SHOP_PATH}/.env.local"; do
-    [[ -f "$f" ]] || continue
-    line=$(grep -E '^DATABASE_URL=' "$f" | tail -1 || true)
-    [[ -n "${line}" ]] && DB_URL="${line#DATABASE_URL=}"
-done
-DB_URL="${DB_URL%\"}"; DB_URL="${DB_URL#\"}"
+# DATABASE_URL wie bin/console sie sieht: Umgebung, .env.local.php, sonst
+# .env-Dateien in Symfonys Reihenfolge (spaetere gewinnt).
+dotenv_get DATABASE_URL
+DB_URL="${DOTENV_VALUE}"
 
 if [[ -z "${DB_URL}" ]] || ! command -v mysql >/dev/null 2>&1; then
     echo
