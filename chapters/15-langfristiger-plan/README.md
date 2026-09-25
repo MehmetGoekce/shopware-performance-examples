@@ -179,14 +179,13 @@ ROADMAP_FILE=roadmap-status.json ./scripts/roadmap-status.sh
 Die Statusdatei übernimmt die Feldnamen der Vorlage (`quarters.Qn.milestones[]`
 und `quarters.Qn.risks[]`, flach in je eine Liste) und ergänzt den Status aus
 Ihrem Tracker. Die Milestones übertragen Sie einmal aus Ihrem Plan, danach
-pflegen Sie nur noch `status`. Der `roadmap.yaml`-Block im Buch (Kapitel 15)
-ist eine kürzere Planungsskizze ohne Milestones und taugt dafür nicht als
-Vorlage.
+pflegen Sie nur noch `status`. Kapitel 15 druckt Kopf, Ziele und Q1 der
+Vorlage als Auszug; die Milestones der übrigen Quartale stehen nur hier.
 
 ```json
 {
     "milestones": [
-        {"id": "M-Q1-1", "title": "RUM Dashboard vollständig", "target_date": "2026-01-31",
+        {"id": "M-Q1-1", "title": "RUM-Auswertung eingerichtet", "target_date": "2026-01-31",
          "status": "completed", "owner": "DevOps Team"}
     ],
     "risks": [

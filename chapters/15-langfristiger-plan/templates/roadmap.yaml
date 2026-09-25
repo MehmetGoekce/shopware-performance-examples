@@ -4,14 +4,19 @@
 # Anpassen an eigene Prioritäten und Ressourcen.
 #
 # Verwendung:
-#   cp roadmap.yaml config/roadmap-2025.yaml
+#   cp templates/roadmap.yaml config/roadmap-2026.yaml
 #   # Mit eigenen Werten anpassen
+#
+# Jahr, Zieldaten und Zahlen sind Beispiele (Planjahr 2026). Setzen Sie sie
+# auf Ihr Planjahr und Ihre Messwerte, bevor Sie Milestones in die Statusdatei
+# von scripts/roadmap-status.sh übernehmen; sonst ist ein Jahr später jeder
+# Milestone überfällig. Kapitel 15 druckt Kopf, Ziele und Q1 als Auszug.
 
 ---
 meta:
   version: "1.0"
-  year: 2025
-  created_at: "2025-01-01"
+  year: 2026
+  created_at: "2026-01-01"
   owner: "Performance Champion"
   review_frequency: "quarterly"
 
@@ -33,10 +38,11 @@ strategic_goals:
 
   - id: SG-3
     title: "Technical Debt Reduktion"
-    description: "Performance-relevante Tech Debt um 30% reduzieren"
+    description: "Performance-Tech-Debt unter 200 Punkte (gesund) bringen"
+    # Summe der Severity-Punkte wie in Kapitel 15 und scripts/tech-debt-report.sh
     target_metric: "Tech Debt Score"
-    baseline: 45
-    target: 30
+    baseline: 410
+    target: "< 200"
 
 # Quartalsweise Roadmap
 quarters:
@@ -50,20 +56,20 @@ quarters:
 
     milestones:
       - id: M-Q1-1
-        title: "RUM Dashboard vollständig"
-        target_date: "2025-01-31"
+        title: "RUM-Auswertung eingerichtet (rum:report, Kapitel 12)"
+        target_date: "2026-01-31"
         dependencies: []
         owner: "DevOps Team"
 
       - id: M-Q1-2
         title: "Top 10 Pages optimiert"
-        target_date: "2025-02-28"
+        target_date: "2026-02-28"
         dependencies: ["M-Q1-1"]
         owner: "Frontend Team"
 
       - id: M-Q1-3
         title: "Performance Champion Program gestartet"
-        target_date: "2025-03-15"
+        target_date: "2026-03-15"
         dependencies: []
         owner: "Engineering Manager"
 
@@ -96,19 +102,19 @@ quarters:
     milestones:
       - id: M-Q2-1
         title: "Checkout LCP < 2s"
-        target_date: "2025-04-30"
+        target_date: "2026-04-30"
         dependencies: ["M-Q1-2"]
         owner: "Checkout Team"
 
       - id: M-Q2-2
         title: "Mobile CWV alle 'Good'"
-        target_date: "2025-05-31"
+        target_date: "2026-05-31"
         dependencies: []
         owner: "Mobile Team"
 
       - id: M-Q2-3
         title: "Redis Cluster produktiv"
-        target_date: "2025-06-15"
+        target_date: "2026-06-15"
         dependencies: []
         owner: "DevOps Team"
 
@@ -135,19 +141,19 @@ quarters:
     milestones:
       - id: M-Q3-1
         title: "Performance Gates in CI/CD"
-        target_date: "2025-07-31"
+        target_date: "2026-07-31"
         dependencies: ["M-Q2-3"]
         owner: "Platform Team"
 
       - id: M-Q3-2
         title: "Automated Performance Reports"
-        target_date: "2025-08-31"
+        target_date: "2026-08-31"
         dependencies: ["M-Q3-1"]
         owner: "DevOps Team"
 
       - id: M-Q3-3
         title: "Developer Self-Service Portal"
-        target_date: "2025-09-30"
+        target_date: "2026-09-30"
         dependencies: []
         owner: "Platform Team"
 
@@ -174,19 +180,19 @@ quarters:
     milestones:
       - id: M-Q4-1
         title: "Load Testing abgeschlossen"
-        target_date: "2025-10-31"
+        target_date: "2026-10-31"
         dependencies: []
         owner: "QA Team"
 
       - id: M-Q4-2
         title: "Black Friday Ready"
-        target_date: "2025-11-15"
+        target_date: "2026-11-15"
         dependencies: ["M-Q4-1"]
         owner: "All Teams"
 
       - id: M-Q4-3
-        title: "2026 Roadmap erstellt"
-        target_date: "2025-12-15"
+        title: "Roadmap 2027 erstellt"
+        target_date: "2026-12-15"
         dependencies: []
         owner: "Engineering Manager"
 
@@ -248,7 +254,7 @@ success_criteria:
 
   should_have:
     - "CWV Good Rate > 90%"
-    - "Tech Debt Score < 35"
+    - "Tech Debt Score < 200"
     - "All Champions trained"
 
   nice_to_have:
