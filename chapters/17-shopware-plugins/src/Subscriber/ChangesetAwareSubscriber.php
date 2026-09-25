@@ -54,8 +54,9 @@ class ChangesetAwareSubscriber implements EventSubscriberInterface
             }
 
             // Nur für Produktänderungen, die den Preis schreiben
-            // (der Payload trägt Spaltennamen)
-            if ($command->getDefinition()->getEntityName() === 'product'
+            // (der Payload trägt Spaltennamen). getEntityName(), nicht
+            // getDefinition(): das ist seit 6.6.3 deprecated und fehlt ab 6.7.
+            if ($command->getEntityName() === 'product'
                 && \array_key_exists('price', $command->getPayload())) {
                 $command->requestChangeSet();
             }
