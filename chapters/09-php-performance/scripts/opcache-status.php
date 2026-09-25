@@ -90,6 +90,12 @@ $memoryPercent = round($memoryUsed / $memoryTotal * 100, 1);
 
 $scriptsUsed = $status['opcache_statistics']['num_cached_scripts'];
 
+// Das Limit gilt fuer Schluessel, nicht fuer Skripte: Eine Datei, die per
+// include/require ueber einen nicht kanonischen Pfad eingebunden wird
+// (Composer: __DIR__ . '/..'), belegt einen zweiten Schluessel. Gemessen im warmen Shopware-Pool: 4552
+// Schluessel fuer 2315 Skripte. Die Auslastung deshalb aus den Schluesseln rechnen.
+$keysUsed = $status['opcache_statistics']['num_cached_keys'];
+
 // Das WIRKSAME Maximum, nicht das eingetragene. PHP rundet
 // opcache.max_accelerated_files auf die naechste Zahl einer festen Reihe auf
 // (... 32531, 65407, 130987, 262237, ...), und opcache_get_configuration() meldet
@@ -97,15 +103,18 @@ $scriptsUsed = $status['opcache_statistics']['num_cached_scripts'];
 // rechnet, meldet eine Auslastung, die es nicht gibt.
 $scriptsMax     = $status['opcache_statistics']['max_cached_keys'];
 $scriptsEntered = $config['directives']['opcache.max_accelerated_files'];
-$scriptsPercent = round($scriptsUsed / $scriptsMax * 100, 1);
+$keysPercent    = round($keysUsed / $scriptsMax * 100, 1);
 
 $hitRate = round($status['opcache_statistics']['opcache_hit_rate'], 2);
 
-// Hits und Misses zaehlen seit dem Start des Pools. Nach jedem Neustart oder
-// Reload - also nach jedem Deploy - beginnt die Rate bei 0 und steigt erst mit
-// dem Verkehr. Gemessen (Dockware 6.6.10.6, PHP 8.3.23, nach cache:clear):
-// 93 % nach einem Durchgang ueber 23 Seiten, 99 % erst nach rund 1000 Requests.
-$uptime     = time() - $status['opcache_statistics']['start_time'];
+// Hits und Misses zaehlen seit dem Start des Pools oder dem letzten Reset.
+// Nach jedem Neustart oder Reload - also nach jedem Deploy - und nach
+// opcache_reset() beginnt die Rate bei 0 und steigt erst mit dem Verkehr.
+// Ein Reset setzt nur last_restart_time neu, start_time bleibt stehen.
+// Gemessen (Dockware 6.6.10.6, PHP 8.3.23, nach cache:clear): 93 % nach
+// einem Durchgang ueber 23 Seiten, 99 % zwischen 500 und 1000 Requests.
+$since      = max($status['opcache_statistics']['start_time'], $status['opcache_statistics']['last_restart_time']);
+$uptime     = max(0, time() - $since);
 $uptimeText = intdiv($uptime, 3600) . ' h ' . intdiv($uptime % 3600, 60) . ' min';
 
 echo "=== OPcache Status ===\n\n";
@@ -116,7 +125,8 @@ echo "  Frei: " . round($memoryFree / 1024 / 1024, 1) . " MB\n";
 echo "  Gesamt: " . round($memoryTotal / 1024 / 1024, 1) . " MB\n\n";
 
 echo "Skripte:\n";
-echo "  Gecached: {$scriptsUsed} ({$scriptsPercent}%)\n";
+echo "  Gecached: {$scriptsUsed}\n";
+echo "  Schluessel: {$keysUsed} ({$keysPercent}%)\n";
 echo "  Maximum: {$scriptsMax}";
 if ($scriptsMax !== $scriptsEntered) {
     echo " (eingetragen: {$scriptsEntered}, aufgerundet)";
@@ -127,7 +137,7 @@ echo "Performance:\n";
 echo "  Hit Rate: {$hitRate}%\n";
 echo "  Hits: " . number_format($status['opcache_statistics']['hits']) . "\n";
 echo "  Misses: " . number_format($status['opcache_statistics']['misses']) . "\n";
-echo "  Laufzeit seit Start: {$uptimeText}\n";
+echo "  Zaehlt seit: {$uptimeText} (Start oder letzter Reset)\n";
 echo "  Cache voll: " . ($status['cache_full'] ? 'Ja' : 'Nein') . "\n\n";
 
 // JIT-Status (PHP 8.0+)
@@ -161,13 +171,12 @@ if ($memoryPercent > 90) {
     $warnings[] = "WARNUNG: Speicher bei {$memoryPercent}% - opcache.memory_consumption erhoehen!";
 }
 
-if ($scriptsPercent > 90) {
-    $warnings[] = "WARNUNG: Skript-Limit bei {$scriptsPercent}% - opcache.max_accelerated_files erhoehen!";
+if ($keysPercent > 90) {
+    $warnings[] = "WARNUNG: Schluessel-Limit bei {$keysPercent}% - opcache.max_accelerated_files erhoehen!";
 }
 
 // cache_full deckt beide Grenzen ab, Speicher und Schluessel. Gemessen: Mit
-// max_accelerated_files=200 war der Cache voll, die Skript-Auslastung oben
-// stand bei 52 % und schlug nicht an.
+// opcache.memory_consumption=32 blieb die Hit Rate bei 71 %.
 if ($status['cache_full']) {
     $warnings[] = "WARNUNG: OPcache ist voll - neue Skripte werden nicht mehr gecacht. opcache.memory_consumption bzw. opcache.max_accelerated_files erhoehen!";
 }
@@ -175,7 +184,7 @@ if ($status['cache_full']) {
 // validate_timestamps senkt die Hit Rate nicht: Eine unveraenderte Datei
 // zaehlt auch mit Pruefung als Hit (gemessen: 93,30 % mit, 93,23 % ohne).
 if ($hitRate < 95) {
-    $warnings[] = "WARNUNG: Hit Rate nur {$hitRate}% seit dem Start vor {$uptimeText}. Kurz nach einem Neustart oder Reload ist das normal - spaeter erneut pruefen. Bleibt sie niedrig: Ist der Cache voll?";
+    $warnings[] = "WARNUNG: Hit Rate nur {$hitRate}% seit {$uptimeText}. Kurz nach einem Neustart, Reload oder Reset ist das normal - spaeter erneut pruefen. Bleibt sie niedrig: Ist der Cache voll?";
 }
 
 if (! empty($warnings)) {

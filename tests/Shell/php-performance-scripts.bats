@@ -605,13 +605,21 @@ fliesstext() {
     [ "$output" -eq 0 ]
 }
 
-@test "opcache-status ordnet die Hit Rate an der Laufzeit seit Poolstart ein" {
-    # MEM-328: Die Zaehler beginnen nach jedem Reload bei 0. Ohne Laufzeit
-    # schlaegt die Warnung nach jedem Deploy an und sagt nicht, warum.
-    run grep -c "opcache_statistics'\]\['start_time'\]" "$DIR/opcache-status.php"
+@test "opcache-status rechnet die Zaehlzeit ab Start oder letztem Reset" {
+    # MEM-328: Die Zaehler beginnen nach jedem Reload bei 0 - und nach
+    # opcache_reset(), das nur last_restart_time neu setzt, nicht start_time.
+    # Das Verhalten prueft tests/Unit/OpcacheStatusScriptTest.php.
+    run grep -cF "max(\$status['opcache_statistics']['start_time'], \$status['opcache_statistics']['last_restart_time'])" "$DIR/opcache-status.php"
     [ "$output" -eq 1 ]
-    run grep -c 'seit dem Start vor {\$uptimeText}' "$DIR/opcache-status.php"
+}
+
+@test "opcache-status rechnet die Auslastung aus Schluesseln, nicht aus Skripten" {
+    # MEM-328: Im warmen Shopware-Pool 4552 Schluessel fuer 2315 Skripte - gegen die
+    # Skripte gerechnet schlug die 90-%-Warnung nie vor dem vollen Cache an.
+    run grep -cxF "\$keysPercent    = round(\$keysUsed / \$scriptsMax * 100, 1);" "$DIR/opcache-status.php"
     [ "$output" -eq 1 ]
+    run grep -c "scriptsPercent" "$DIR/opcache-status.php"
+    [ "$output" -eq 0 ]
 }
 
 @test "das Kapitel-Listing des Monitoring-Skripts hat genau einen PHP-Opener" {
