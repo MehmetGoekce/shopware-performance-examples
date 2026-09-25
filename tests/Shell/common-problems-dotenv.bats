@@ -452,8 +452,9 @@ run_debug() {
 # ---------------------------------------------------------------------------
 
 # curl-Stub: Admin-Seite mit storefrontEsEnable=$1 (oder NONE), ES antwortet gesund.
-# Jeder Aufruf landet mit URL in calls. STUB_INDICES und STUB_ALIAS (leer =
-# kein Alias) aendern die Antworten auf _cat/indices und _cat/aliases.
+# Jeder Aufruf landet mit URL in calls. STUB_INDICES, STUB_ALIAS (leer = kein
+# Alias, wie ES 8: HTTP 200, leerer Body, Exit 0) und STUB_COUNT aendern die
+# Antworten auf _cat/indices, _cat/aliases und <alias>/_count.
 es_stub() {
     cat > "$stub_dir/curl" <<EOF
 #!/bin/bash
@@ -464,7 +465,8 @@ case "\$url" in
     */admin) [ "$1" = NONE ] && echo '<html></html>' || echo "      storefrontEsEnable: $1," ;;
     */_cluster/health) echo '{"status":"green"}' ;;
     */_cat/indices/*) printf '%b\n' "\${STUB_INDICES-sw_product_1 100 1mb}" ;;
-    */_cat/aliases/*) [ -n "\${STUB_ALIAS-sw_product_1}" ] && echo "\${STUB_ALIAS-sw_product_1}" ;;
+    */_cat/aliases/*) [ -z "\${STUB_ALIAS-sw_product_1}" ] || echo "\${STUB_ALIAS-sw_product_1}" ;;
+    */_count) printf '{"count":%s,"_shards":{"total":1}}\n' "\${STUB_COUNT-14}" ;;
     *) printf '%s\n' "\${STUB_ROOT-{\"version\":{\"number\":\"2.19.1\",\"distribution\":\"opensearch\"}}}" ;;
 esac
 EOF
@@ -576,13 +578,24 @@ run_es() {
     run_es
     [ "$status" -eq 0 ]
     grep -qx 'http://localhost:9200/_cat/aliases/sw_product?h=index' "$BATS_TEST_TMPDIR/calls"
-    printf '%s\n' "$output" | grep -qxF '   Alias sw_product -> sw_product_1 (100 Dokumente)'
+    printf '%s\n' "$output" | grep -qxF '   Alias sw_product -> sw_product_1 (14 Dokumente)'
+    grep -qx 'http://localhost:9200/sw_product/_count' "$BATS_TEST_TMPDIR/calls"
+}
+
+@test "check-elasticsearch.sh: Alias und Zaehlung folgen SHOPWARE_ES_INDEX_PREFIX" {
+    printf 'APP_ENV=prod\nSHOPWARE_ES_ENABLED=1\nSHOPWARE_ES_INDEX_PREFIX=shop\n' > "$shop/.env"
+    es_stub true
+    STUB_ALIAS=shop_product_1 run_es
+    [ "$status" -eq 0 ]
+    grep -qx 'http://localhost:9200/_cat/aliases/shop_product?h=index' "$BATS_TEST_TMPDIR/calls"
+    grep -qx 'http://localhost:9200/shop_product/_count' "$BATS_TEST_TMPDIR/calls"
+    printf '%s\n' "$output" | grep -qxF '   Alias shop_product -> shop_product_1 (14 Dokumente)'
 }
 
 @test "check-elasticsearch.sh: Alias auf leerem Index = Exit 1 (gemessen: es:index ohne --no-queue, MEM-330)" {
     printf 'APP_ENV=prod\nSHOPWARE_ES_ENABLED=1\n' > "$shop/.env"
     es_stub true
-    STUB_INDICES='sw_product_2 234 1mb\nsw_product_3 0 1kb' STUB_ALIAS=sw_product_3 run_es
+    STUB_INDICES='sw_product_2 234 1mb\nsw_product_3 0 1kb' STUB_ALIAS=sw_product_3 STUB_COUNT=0 run_es
     [ "$status" -eq 1 ]
     printf '%s\n' "$output" | grep -qxF '   Alias sw_product -> sw_product_3 (0 Dokumente)'
     [[ "$output" == *"Der Alias zeigt auf einen leeren Index"* ]]
@@ -593,7 +606,7 @@ run_es() {
     es_stub true
     STUB_INDICES='sw_product_2 234 1mb\nsw_product_3 0 1kb' STUB_ALIAS=sw_product_2 run_es
     [ "$status" -eq 0 ]
-    printf '%s\n' "$output" | grep -qxF '   Alias sw_product -> sw_product_2 (234 Dokumente)'
+    printf '%s\n' "$output" | grep -qxF '   Alias sw_product -> sw_product_2 (14 Dokumente)'
 }
 
 @test "check-elasticsearch.sh: Elasticsearch ohne distribution-Feld laeuft durch (MEM-330, ES 8.15.3 live)" {
@@ -614,6 +627,14 @@ run_es() {
     printf '%s\n' "$output" | grep -qxF '   erreichbar — opensearch 2.19.1'
 }
 
+@test "check-elasticsearch.sh: Wurzelantwort ohne Versionsnummer bricht nicht still ab" {
+    printf 'APP_ENV=prod\nSHOPWARE_ES_ENABLED=1\n' > "$shop/.env"
+    es_stub true
+    STUB_ROOT='<html>ok</html>' run_es
+    [ "$status" -eq 0 ]
+    printf '%s\n' "$output" | grep -qxF '   erreichbar — elasticsearch ?'
+}
+
 @test "check-elasticsearch.sh: Index ohne Alias = Exit 1" {
     printf 'APP_ENV=prod\nSHOPWARE_ES_ENABLED=1\n' > "$shop/.env"
     es_stub true
@@ -632,6 +653,24 @@ run_es() {
     [ -n "$idx" ] && [ -n "$on" ]
     [ "$on" -gt "$idx" ]
     [ "$(printf '%s\n' "$output" | grep -cx '  SHOPWARE_ES_ENABLED=1')" -eq 1 ]
+    # Schema bleibt stehen (Anhang C: "Schreiben Sie das Schema aus")
+    printf '%s\n' "$output" | grep -qxF '  OPENSEARCH_URL=http://localhost:9200'
+    [[ "$output" == *"bin/console es:create:alias"* ]]
+}
+
+@test "check-elasticsearch.sh: OPENSEARCH_URL unsicher = Platzhalter in der Abhilfe, nicht leer" {
+    printf 'APP_ENV=prod\nSHOPWARE_ES_ENABLED=0\nOPENSEARCH_URL=http://${ES_HOST_NAME}:9200\n' > "$shop/.env"
+    es_stub false
+    run_es
+    [ "$status" -eq 1 ]
+    printf '%s\n' "$output" | grep -qxF '  OPENSEARCH_URL=http://host:9200'
+    ! printf '%s\n' "$output" | grep -qx '  OPENSEARCH_URL='
+}
+
+@test "check-elasticsearch.sh: --help nennt die Exit-Codes samt 69" {
+    run bash "$DIR/check-elasticsearch.sh" --help
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"69 = .env-Datei nicht lesbar"* ]]
 }
 
 # ---------------------------------------------------------------------------

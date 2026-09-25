@@ -5,10 +5,11 @@
 # Problem 11: Elasticsearch nicht konfiguriert.
 # Kapitel 22: Die 20 haeufigsten Performance-Probleme
 #
-# Zur Konfiguration: Seit Oktober 2024 legt Shopwares Flex-Rezept KEINE
-# config/packages/elasticsearch.yaml mehr an. Aeltere Rezepte (6.4 fuer
-# 6.4/6.5, 6.6 bis zum 2024-10-01) taten es; solche Shops haben meist eine,
-# die nur hosts an OPENSEARCH_URL bindet, denselben Wert wie die Bundle-Datei
+# Zur Konfiguration: Das Flex-Rezept fuer 6.6 und neuer legt seit dem
+# 2024-10-01 KEINE config/packages/elasticsearch.yaml mehr an; das Rezept 6.4
+# (fuer 6.4 und 6.5) legt sie weiterhin an. Shops aus 6.4/6.5 oder fruehem
+# 6.6 haben also meist eine, die nur hosts an OPENSEARCH_URL bindet,
+# denselben Wert wie die Bundle-Datei
 # (vendor/shopware/elasticsearch/Resources/config/packages/elasticsearch.yaml).
 # Die bindet alles an Umgebungsvariablen:
 #
@@ -36,10 +37,11 @@
 #   ./check-elasticsearch.sh [SHOP_URL] [SHOP_PATH]
 #
 # Exit-Codes:
-#   0 = Elasticsearch aktiv und erreichbar
+#   0 = Elasticsearch aktiv, erreichbar, Alias auf einem gefuellten Index
 #   1 = nicht aktiv, CLI und Webserver uneins, nicht erreichbar, ohne Indizes
 #       oder der Alias fehlt bzw. zeigt auf einen leeren Index
 #   64 = Aufruffehler
+#   69 = eine vorhandene .env-Datei ist nicht lesbar
 
 set -euo pipefail
 
@@ -63,6 +65,9 @@ Umgebungsvariablen:
               sonst localhost:9200.
   ADMIN_PATH  Pfad der Administration. Default: SHOPWARE_ADMINISTRATION_PATH_NAME
               wie oben, sonst admin
+
+Exit-Codes: 0 = aktiv, erreichbar, Alias auf gefuelltem Index, 1 = Problem
+            gefunden, 64 = Aufruffehler, 69 = .env-Datei nicht lesbar
 USAGE
 }
 
@@ -329,7 +334,11 @@ else
                 echo "   ✗ Kein Alias ${ES_PREFIX}_product: Die Suche findet keinen Index."
                 ISSUES=$((ISSUES + 1))
             else
-                ALIAS_DOCS=$(printf '%s\n' "${INDICES}" | awk -v i="${ALIAS_INDEX}" '$1 == i {print $2}')
+                # _count am Alias zaehlt die Produkt-Dokumente; docs.count aus
+                # _cat/indices zaehlt verschachtelte Lucene-Dokumente mit (live
+                # 234 gegen 14, Review MEM-330).
+                ALIAS_DOCS=$(curl -sS "${ES_BASE}/${ES_PREFIX}_product/_count" 2>/dev/null \
+                    | grep -oE '"count"[[:space:]]*:[[:space:]]*[0-9]+' | grep -oE '[0-9]+$' || true)
                 echo "   Alias ${ES_PREFIX}_product -> ${ALIAS_INDEX} (${ALIAS_DOCS:-?} Dokumente)"
                 if [[ "${ALIAS_DOCS}" == "0" ]]; then
                     echo "   ✗ Der Alias zeigt auf einen leeren Index; die Suche findet nichts."
@@ -376,12 +385,12 @@ Quelle nennt; .env.prod und .env.prod.local schlagen .env.local, eine
 umschalten:
 
   # .env.local
-  OPENSEARCH_URL=${ES_BASE#http://}
+  OPENSEARCH_URL=${ES_BASE:-http://host:9200}
   SHOPWARE_ES_INDEXING_ENABLED=1
   SHOPWARE_ES_INDEX_PREFIX=${ES_PREFIX}
 
   bin/console es:index --no-queue
-  curl -s '${ES_BASE:-http://localhost:9200}/_cat/indices/${ES_PREFIX}_*?h=index,docs.count'
+  curl -s '${ES_BASE:-http://host:9200}/${ES_PREFIX}_product/_count'   # "count" > 0?
 
   # danach in derselben Datei:
   SHOPWARE_ES_ENABLED=1
@@ -397,10 +406,12 @@ Administration angemeldet ist, von deren Admin-Worker (ab Werk an). Laeuft
 keiner von beiden, bleibt der Index leer, und beim ersten Aufbau zeigt der
 Alias sofort auf ihn: Im Test fand die Suche mit SHOPWARE_ES_ENABLED=1 dann
 0 statt 4 Produkte. Bei einem Neuaufbau schwenkt ein Scheduled Task den
-Alias um, und der laeuft nur mit SHOPWARE_ES_ENABLED=1. Im Regelbetrieb
-laufen Worker ohnehin — dann ist der Queue-Weg der richtige.
+Alias um, und der laeuft nur mit SHOPWARE_ES_ENABLED=1; von Hand:
+bin/console es:create:alias. Im Regelbetrieb laufen Worker ohnehin — dann
+ist der Queue-Weg der richtige.
 
-Ein naechtlicher Vollindex per Cron ist nicht noetig: Aenderungen gehen
-laufend inkrementell ueber die Queue.
+Ein naechtlicher Vollindex per Cron ist nicht noetig: Shopware schreibt ein
+gespeichertes Produkt beim Indexieren mit in den Index (im Test sofort, im
+selben Request, ohne Worker).
 EOF
 exit 1
