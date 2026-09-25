@@ -24,22 +24,24 @@ meta:
 strategic_goals:
   - id: SG-1
     title: "Core Web Vitals Optimierung"
-    description: "Alle kritischen Seiten erreichen 'Good' Status"
+    description: "Anteil 'Good' je Core Web Vital (LCP, INP, CLS) auf 90%"
+    # Quelle festlegen, z. B. CrUX (Anteil im Bereich 'good'); rum:report
+    # liefert Perzentile, keinen Anteil
     target_metric: "CWV Good Rate"
     baseline: 60%
     target: 90%
 
   - id: SG-2
     title: "Error Budget Stabilität"
-    description: "Error Budget bleibt ganzjährig über 50%"
+    description: "Error Budget ab Q2 durchgehend über 50%"
     target_metric: "Error Budget Remaining"
     baseline: 35%
-    target: ">50% durchgehend"
+    target: ">50% ab Q2"
 
   - id: SG-3
     title: "Technical Debt Reduktion"
     description: "Performance-Tech-Debt unter 200 Punkte (gesund) bringen"
-    # Summe der Severity-Punkte wie in Kapitel 15 und scripts/tech-debt-report.sh
+    # Summe der Severity-Punkte, < 200 gesund (scripts/tech-debt-report.sh)
     target_metric: "Tech Debt Score"
     baseline: 410
     target: "< 200"
@@ -56,7 +58,7 @@ quarters:
 
     milestones:
       - id: M-Q1-1
-        title: "RUM-Auswertung eingerichtet (rum:report, Kapitel 12)"
+        title: "RUM-Monatsablage für den Jahresverlauf (rum:report, Kapitel 12)"
         target_date: "2026-01-31"
         dependencies: []
         owner: "DevOps Team"
@@ -68,7 +70,7 @@ quarters:
         owner: "Frontend Team"
 
       - id: M-Q1-3
-        title: "Performance Champion Program gestartet"
+        title: "Champion in jedem Produktteam benannt (Kapitel 14)"
         target_date: "2026-03-15"
         dependencies: []
         owner: "Engineering Manager"
@@ -77,8 +79,8 @@ quarters:
       - objective: "Performance-Monitoring etablieren"
         key_results:
           - "RUM auf 100% der kritischen Seiten"
-          - "Alerting für alle Core Web Vitals"
-          - "Weekly Performance Review eingeführt"
+          - "rum:check-alerts für LCP, INP und CLS aktiv (0 → 3)"
+          - "Weekly Performance Review in 12 von 13 Wochen"
 
     budget_allocation:
       tooling: 30%
@@ -113,7 +115,7 @@ quarters:
         owner: "Mobile Team"
 
       - id: M-Q2-3
-        title: "Redis Cluster produktiv"
+        title: "Redis Sentinel produktiv (Kapitel 10)"
         target_date: "2026-06-15"
         dependencies: []
         owner: "DevOps Team"
@@ -142,7 +144,7 @@ quarters:
       - id: M-Q3-1
         title: "Performance Gates in CI/CD"
         target_date: "2026-07-31"
-        dependencies: ["M-Q2-3"]
+        dependencies: []
         owner: "Platform Team"
 
       - id: M-Q3-2
@@ -201,7 +203,7 @@ quarters:
         key_results:
           - "Black Friday 99.9% Uptime"
           - "Keine Performance-Incidents während Peak"
-          - "LCP während Peak < 2.5s (p95)"
+          - "LCP während Peak < 2.5s (p75)"
 
     budget_allocation:
       tooling: 20%
@@ -214,7 +216,7 @@ resources:
   team_allocation:
     performance_champions: 2
     dedicated_performance_time: "20% pro Developer"
-    external_consultants: "Nach Bedarf (Budget: CHF 20.000)"
+    external_consultants: "Nach Bedarf (zusätzlich zu annual_total: CHF 20'000)"
 
   budget:
     annual_total: 50000  # CHF
@@ -227,7 +229,7 @@ resources:
 # Review-Checkpoints
 review_schedule:
   weekly:
-    - "Dashboard Review"
+    - "RUM-Report Review (rum:report)"
     - "Alert Triage"
 
   monthly:

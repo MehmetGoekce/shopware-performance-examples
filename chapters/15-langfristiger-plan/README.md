@@ -60,7 +60,7 @@ unter einem anderen Namen.
 ### Roadmap planen
 
 ```bash
-# Plan aus der Vorlage (Themen, Milestones, OKRs, Risiken je Quartal)
+# Plan aus der Vorlage (Themen, Milestones, OKRs und Budget je Quartal, Risiken in Q1)
 cp templates/roadmap.yaml config/roadmap-2026.yaml
 vi config/roadmap-2026.yaml
 ```
@@ -187,7 +187,7 @@ Vorlage als Auszug; die Milestones der übrigen Quartale stehen nur hier.
 ```json
 {
     "milestones": [
-        {"id": "M-Q1-1", "title": "RUM-Auswertung eingerichtet", "target_date": "2026-01-31",
+        {"id": "M-Q1-1", "title": "RUM-Monatsablage für den Jahresverlauf", "target_date": "2026-01-31",
          "status": "completed", "owner": "DevOps Team"}
     ],
     "risks": [
