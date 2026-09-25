@@ -452,7 +452,8 @@ run_debug() {
 # ---------------------------------------------------------------------------
 
 # curl-Stub: Admin-Seite mit storefrontEsEnable=$1 (oder NONE), ES antwortet gesund.
-# Jeder Aufruf landet mit URL in calls.
+# Jeder Aufruf landet mit URL in calls. STUB_INDICES und STUB_ALIAS (leer =
+# kein Alias) aendern die Antworten auf _cat/indices und _cat/aliases.
 es_stub() {
     cat > "$stub_dir/curl" <<EOF
 #!/bin/bash
@@ -462,8 +463,9 @@ printf '%s\n' "\$@" >> "$BATS_TEST_TMPDIR/curl-args"
 case "\$url" in
     */admin) [ "$1" = NONE ] && echo '<html></html>' || echo "      storefrontEsEnable: $1," ;;
     */_cluster/health) echo '{"status":"green"}' ;;
-    */_cat/indices/*) echo 'sw_product_1 100 1mb' ;;
-    *) echo '{"version":{"number":"8.15.3","distribution":"elasticsearch"}}' ;;
+    */_cat/indices/*) printf '%b\n' "\${STUB_INDICES-sw_product_1 100 1mb}" ;;
+    */_cat/aliases/*) [ -n "\${STUB_ALIAS-sw_product_1}" ] && echo "\${STUB_ALIAS-sw_product_1}" ;;
+    *) printf '%s\n' "\${STUB_ROOT-{\"version\":{\"number\":\"2.19.1\",\"distribution\":\"opensearch\"}}}" ;;
 esac
 EOF
     chmod +x "$stub_dir/curl"
@@ -566,6 +568,70 @@ run_es() {
     [ "$status" -eq 1 ]
     [[ "$output" == *"SHOPWARE_ES_ENABLED          = (nicht gesetzt)"* ]]
     [[ "$output" == *"Die Suche laeuft NICHT ueber Elasticsearch"* ]]
+}
+
+@test "check-elasticsearch.sh: Alias auf gesundem Index wird genannt, Exit 0" {
+    printf 'APP_ENV=prod\nSHOPWARE_ES_ENABLED=1\n' > "$shop/.env"
+    es_stub true
+    run_es
+    [ "$status" -eq 0 ]
+    grep -qx 'http://localhost:9200/_cat/aliases/sw_product?h=index' "$BATS_TEST_TMPDIR/calls"
+    printf '%s\n' "$output" | grep -qxF '   Alias sw_product -> sw_product_1 (100 Dokumente)'
+}
+
+@test "check-elasticsearch.sh: Alias auf leerem Index = Exit 1 (gemessen: es:index ohne --no-queue, MEM-330)" {
+    printf 'APP_ENV=prod\nSHOPWARE_ES_ENABLED=1\n' > "$shop/.env"
+    es_stub true
+    STUB_INDICES='sw_product_2 234 1mb\nsw_product_3 0 1kb' STUB_ALIAS=sw_product_3 run_es
+    [ "$status" -eq 1 ]
+    printf '%s\n' "$output" | grep -qxF '   Alias sw_product -> sw_product_3 (0 Dokumente)'
+    [[ "$output" == *"Der Alias zeigt auf einen leeren Index"* ]]
+}
+
+@test "check-elasticsearch.sh: leerer Neuaufbau-Index neben gefuelltem Alias ist kein Befund" {
+    printf 'APP_ENV=prod\nSHOPWARE_ES_ENABLED=1\n' > "$shop/.env"
+    es_stub true
+    STUB_INDICES='sw_product_2 234 1mb\nsw_product_3 0 1kb' STUB_ALIAS=sw_product_2 run_es
+    [ "$status" -eq 0 ]
+    printf '%s\n' "$output" | grep -qxF '   Alias sw_product -> sw_product_2 (234 Dokumente)'
+}
+
+@test "check-elasticsearch.sh: Elasticsearch ohne distribution-Feld laeuft durch (MEM-330, ES 8.15.3 live)" {
+    printf 'APP_ENV=prod\nSHOPWARE_ES_ENABLED=1\n' > "$shop/.env"
+    es_stub true
+    # Wortlaut der Wurzelantwort von Elasticsearch 8.15.3 (gekuerzt, mehrzeilig)
+    STUB_ROOT=$'{\n  "name" : "n1",\n  "version" : {\n    "number" : "8.15.3",\n    "build_flavor" : "default"\n  },\n  "tagline" : "You Know, for Search"\n}' run_es
+    [ "$status" -eq 0 ]
+    printf '%s\n' "$output" | grep -qxF '   erreichbar — elasticsearch 8.15.3'
+    printf '%s\n' "$output" | grep -qxF 'Elasticsearch ist aktiv, erreichbar und hat Indizes.'
+}
+
+@test "check-elasticsearch.sh: OpenSearch nennt seine Distribution" {
+    printf 'APP_ENV=prod\nSHOPWARE_ES_ENABLED=1\n' > "$shop/.env"
+    es_stub true
+    run_es
+    [ "$status" -eq 0 ]
+    printf '%s\n' "$output" | grep -qxF '   erreichbar — opensearch 2.19.1'
+}
+
+@test "check-elasticsearch.sh: Index ohne Alias = Exit 1" {
+    printf 'APP_ENV=prod\nSHOPWARE_ES_ENABLED=1\n' > "$shop/.env"
+    es_stub true
+    STUB_ALIAS= run_es
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"Kein Alias sw_product: Die Suche findet keinen Index."* ]]
+}
+
+@test "check-elasticsearch.sh: Abhilfe schaltet SHOPWARE_ES_ENABLED erst nach es:index ein (MEM-330)" {
+    printf 'APP_ENV=prod\nSHOPWARE_ES_ENABLED=0\n' > "$shop/.env"
+    es_stub false
+    run_es
+    [ "$status" -eq 1 ]
+    idx=$(printf '%s\n' "$output" | grep -nxF '  bin/console es:index --no-queue' | cut -d: -f1)
+    on=$(printf '%s\n' "$output" | grep -nxF '  SHOPWARE_ES_ENABLED=1' | cut -d: -f1)
+    [ -n "$idx" ] && [ -n "$on" ]
+    [ "$on" -gt "$idx" ]
+    [ "$(printf '%s\n' "$output" | grep -cx '  SHOPWARE_ES_ENABLED=1')" -eq 1 ]
 }
 
 # ---------------------------------------------------------------------------

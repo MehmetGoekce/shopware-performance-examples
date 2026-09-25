@@ -5,10 +5,12 @@
 # Problem 11: Elasticsearch nicht konfiguriert.
 # Kapitel 22: Die 20 haeufigsten Performance-Probleme
 #
-# Zur Konfiguration: in einer Standardinstallation gibt es KEINE
-# config/packages/elasticsearch.yaml. Die Datei liegt im Bundle
-# (vendor/shopware/elasticsearch/Resources/config/packages/elasticsearch.yaml)
-# und bindet alles an Umgebungsvariablen:
+# Zur Konfiguration: Seit Oktober 2024 legt Shopwares Flex-Rezept KEINE
+# config/packages/elasticsearch.yaml mehr an. Aeltere Rezepte (6.4 fuer
+# 6.4/6.5, 6.6 bis zum 2024-10-01) taten es; solche Shops haben meist eine,
+# die nur hosts an OPENSEARCH_URL bindet, denselben Wert wie die Bundle-Datei
+# (vendor/shopware/elasticsearch/Resources/config/packages/elasticsearch.yaml).
+# Die bindet alles an Umgebungsvariablen:
 #
 #   SHOPWARE_ES_ENABLED            Suche laeuft ueber Elasticsearch
 #   SHOPWARE_ES_INDEXING_ENABLED   Indizierung ist erlaubt
@@ -35,7 +37,8 @@
 #
 # Exit-Codes:
 #   0 = Elasticsearch aktiv und erreichbar
-#   1 = nicht aktiv, CLI und Webserver uneins, nicht erreichbar oder ohne Indizes
+#   1 = nicht aktiv, CLI und Webserver uneins, nicht erreichbar, ohne Indizes
+#       oder der Alias fehlt bzw. zeigt auf einen leeren Index
 #   64 = Aufruffehler
 
 set -euo pipefail
@@ -292,8 +295,10 @@ if [[ -z "${ES_BASE}" ]]; then
 else
     section "Cluster unter ${ES_BASE}"
     if ROOT=$(curl -sS --connect-timeout 5 "${ES_BASE}" 2>/dev/null) && [[ -n "${ROOT}" ]]; then
-        VERSION=$(printf '%s' "${ROOT}" | grep -oE '"number"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | cut -d'"' -f4)
-        DISTRO=$(printf '%s' "${ROOT}" | grep -oE '"distribution"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | cut -d'"' -f4)
+        # Elasticsearch meldet kein "distribution" (nur OpenSearch); ohne
+        # "|| true" beendete set -e das Skript hier still mit Exit 1 (MEM-330).
+        VERSION=$(printf '%s' "${ROOT}" | grep -oE '"number"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | cut -d'"' -f4 || true)
+        DISTRO=$(printf '%s' "${ROOT}" | grep -oE '"distribution"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | cut -d'"' -f4 || true)
         echo "   erreichbar — ${DISTRO:-elasticsearch} ${VERSION:-?}"
 
         HEALTH=$(curl -sS "${ES_BASE}/_cluster/health" 2>/dev/null \
@@ -315,6 +320,24 @@ else
             ISSUES=$((ISSUES + 1))
         else
             printf '%s\n' "${INDICES}" | sed 's/^/   /'
+            # Die Suche fragt den Alias, nicht den Index. Nach es:index ohne
+            # --no-queue und ohne Worker zeigt er beim ersten Aufbau auf einen
+            # leeren Index (gemessen, MEM-330: 0 statt 4 Treffer).
+            ALIAS_INDEX=$(curl -sS "${ES_BASE}/_cat/aliases/${ES_PREFIX}_product?h=index" 2>/dev/null \
+                | head -1 | tr -d '[:space:]' || true)
+            if [[ -z "${ALIAS_INDEX}" ]]; then
+                echo "   ✗ Kein Alias ${ES_PREFIX}_product: Die Suche findet keinen Index."
+                ISSUES=$((ISSUES + 1))
+            else
+                ALIAS_DOCS=$(printf '%s\n' "${INDICES}" | awk -v i="${ALIAS_INDEX}" '$1 == i {print $2}')
+                echo "   Alias ${ES_PREFIX}_product -> ${ALIAS_INDEX} (${ALIAS_DOCS:-?} Dokumente)"
+                if [[ "${ALIAS_DOCS}" == "0" ]]; then
+                    echo "   ✗ Der Alias zeigt auf einen leeren Index; die Suche findet nichts."
+                    echo "     So bleibt es nach es:index ohne --no-queue, solange kein Worker"
+                    echo "     die Queue abarbeitet."
+                    ISSUES=$((ISSUES + 1))
+                fi
+            fi
         fi
     else
         echo "   NICHT erreichbar."
@@ -349,23 +372,33 @@ ${ISSUES} Punkt(e) offen.
 Einschalten geschieht ueber Umgebungsvariablen, nicht ueber eine eigene
 config/packages/elasticsearch.yaml. Eintragen dort, wo Abschnitt 1 die
 Quelle nennt; .env.prod und .env.prod.local schlagen .env.local, eine
-.env.local.php ersetzt alle .env-Dateien:
+.env.local.php ersetzt alle .env-Dateien. Erst indexieren, dann die Suche
+umschalten:
 
   # .env.local
   OPENSEARCH_URL=${ES_BASE#http://}
-  SHOPWARE_ES_ENABLED=1
   SHOPWARE_ES_INDEXING_ENABLED=1
   SHOPWARE_ES_INDEX_PREFIX=${ES_PREFIX}
 
-Danach den Index aufbauen:
-
   bin/console es:index --no-queue
+  curl -s '${ES_BASE:-http://localhost:9200}/_cat/indices/${ES_PREFIX}_*?h=index,docs.count'
 
-Das --no-queue ist wichtig. Ohne den Schalter stellt es:index die
-Indexing-Messages nur in die Queue und schwenkt den Alias nicht um; ohne
-laufenden "messenger:consume async"-Worker passiert dann gar nichts.
-Im Regelbetrieb laufen solche Worker ohnehin — dann ist der Queue-Weg der
-richtige, und der Scheduled Task uebernimmt das Umschwenken.
+  # danach in derselben Datei:
+  SHOPWARE_ES_ENABLED=1
+
+Mit SHOPWARE_ES_ENABLED=1 vor dem Index antwortete die Suchvorschau
+(/suggest) im Test mit HTTP 500, weil SHOPWARE_ES_THROW_EXCEPTION ab Werk
+an ist.
+
+Das --no-queue ist wichtig. Ohne den Schalter legt es:index nur den neuen
+Index an und stellt die Indexing-Messages in die Queue. Abgearbeitet werden
+sie von einem "messenger:consume"-Worker oder, solange jemand in der
+Administration angemeldet ist, von deren Admin-Worker (ab Werk an). Laeuft
+keiner von beiden, bleibt der Index leer, und beim ersten Aufbau zeigt der
+Alias sofort auf ihn: Im Test fand die Suche mit SHOPWARE_ES_ENABLED=1 dann
+0 statt 4 Produkte. Bei einem Neuaufbau schwenkt ein Scheduled Task den
+Alias um, und der laeuft nur mit SHOPWARE_ES_ENABLED=1. Im Regelbetrieb
+laufen Worker ohnehin — dann ist der Queue-Weg der richtige.
 
 Ein naechtlicher Vollindex per Cron ist nicht noetig: Aenderungen gehen
 laufend inkrementell ueber die Queue.
