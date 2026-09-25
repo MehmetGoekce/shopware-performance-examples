@@ -8,7 +8,9 @@
 -- (Gegenbeispiele und Einzelbefehle stehen nur im Buch).
 --
 -- Verwendung - mit einem administrativen Zugang und der Shop-Datenbank; den
--- Namen nennt DATABASE_URL in der .env:
+-- Namen nennt DATABASE_URL. Die steht nicht unbedingt in der .env:
+-- .env.local, .env.prod, .env.prod.local, eine .env.local.php und die
+-- Umgebung des Prozesses schlagen sie (Kapitel 22, Problem 13):
 --   mysql -u root -p shopware < chapter-queries.sql
 -- Ubuntus Paket mysql-server und MariaDB aus Debian/Ubuntu richten root ab
 -- Werk ueber den Unix-Socket ein statt mit Passwort; der Aufruf oben endet
