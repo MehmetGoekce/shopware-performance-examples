@@ -590,6 +590,30 @@ fliesstext() {
     [ "$output" -ge 3 ]
 }
 
+@test "opcache-status meldet einen vollen Cache ueber cache_full" {
+    # MEM-328: Mit max_accelerated_files=200 war der Cache voll, die
+    # Skript-Auslastung stand bei 52 % und schlug nicht an. Nur cache_full
+    # deckt Speicher und Schluessel gemeinsam ab.
+    run grep -cxF "if (\$status['cache_full']) {" "$DIR/opcache-status.php"
+    [ "$output" -eq 1 ]
+}
+
+@test "opcache-status raet bei niedriger Hit Rate nicht zu validate_timestamps" {
+    # MEM-328: validate_timestamps=1 aenderte die Hit Rate nicht (93,30 gegen
+    # 93,23 %). Der alte Rat zeigte auf den falschen Hebel.
+    run grep -c "validate_timestamps=0 setzen" "$DIR/opcache-status.php"
+    [ "$output" -eq 0 ]
+}
+
+@test "opcache-status ordnet die Hit Rate an der Laufzeit seit Poolstart ein" {
+    # MEM-328: Die Zaehler beginnen nach jedem Reload bei 0. Ohne Laufzeit
+    # schlaegt die Warnung nach jedem Deploy an und sagt nicht, warum.
+    run grep -c "opcache_statistics'\]\['start_time'\]" "$DIR/opcache-status.php"
+    [ "$output" -eq 1 ]
+    run grep -c 'seit dem Start vor {\$uptimeText}' "$DIR/opcache-status.php"
+    [ "$output" -eq 1 ]
+}
+
 @test "das Kapitel-Listing des Monitoring-Skripts hat genau einen PHP-Opener" {
     # Beim programmatischen Uebernehmen entstand ein zweites <?php - das
     # abgedruckte Listing war damit ein Parse-Error.

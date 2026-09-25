@@ -101,6 +101,13 @@ $scriptsPercent = round($scriptsUsed / $scriptsMax * 100, 1);
 
 $hitRate = round($status['opcache_statistics']['opcache_hit_rate'], 2);
 
+// Hits und Misses zaehlen seit dem Start des Pools. Nach jedem Neustart oder
+// Reload - also nach jedem Deploy - beginnt die Rate bei 0 und steigt erst mit
+// dem Verkehr. Gemessen (Dockware 6.6.10.6, PHP 8.3.23, nach cache:clear):
+// 93 % nach einem Durchgang ueber 23 Seiten, 99 % erst nach rund 1000 Requests.
+$uptime     = time() - $status['opcache_statistics']['start_time'];
+$uptimeText = intdiv($uptime, 3600) . ' h ' . intdiv($uptime % 3600, 60) . ' min';
+
 echo "=== OPcache Status ===\n\n";
 
 echo "Speicher:\n";
@@ -119,7 +126,9 @@ echo "\n\n";
 echo "Performance:\n";
 echo "  Hit Rate: {$hitRate}%\n";
 echo "  Hits: " . number_format($status['opcache_statistics']['hits']) . "\n";
-echo "  Misses: " . number_format($status['opcache_statistics']['misses']) . "\n\n";
+echo "  Misses: " . number_format($status['opcache_statistics']['misses']) . "\n";
+echo "  Laufzeit seit Start: {$uptimeText}\n";
+echo "  Cache voll: " . ($status['cache_full'] ? 'Ja' : 'Nein') . "\n\n";
 
 // JIT-Status (PHP 8.0+)
 if (isset($status['jit'])) {
@@ -156,8 +165,17 @@ if ($scriptsPercent > 90) {
     $warnings[] = "WARNUNG: Skript-Limit bei {$scriptsPercent}% - opcache.max_accelerated_files erhoehen!";
 }
 
+// cache_full deckt beide Grenzen ab, Speicher und Schluessel. Gemessen: Mit
+// max_accelerated_files=200 war der Cache voll, die Skript-Auslastung oben
+// stand bei 52 % und schlug nicht an.
+if ($status['cache_full']) {
+    $warnings[] = "WARNUNG: OPcache ist voll - neue Skripte werden nicht mehr gecacht. opcache.memory_consumption bzw. opcache.max_accelerated_files erhoehen!";
+}
+
+// validate_timestamps senkt die Hit Rate nicht: Eine unveraenderte Datei
+// zaehlt auch mit Pruefung als Hit (gemessen: 93,30 % mit, 93,23 % ohne).
 if ($hitRate < 95) {
-    $warnings[] = "WARNUNG: Hit Rate nur {$hitRate}% - validate_timestamps=0 setzen?";
+    $warnings[] = "WARNUNG: Hit Rate nur {$hitRate}% seit dem Start vor {$uptimeText}. Kurz nach einem Neustart oder Reload ist das normal - spaeter erneut pruefen. Bleibt sie niedrig: Ist der Cache voll?";
 }
 
 if (! empty($warnings)) {
