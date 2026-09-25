@@ -9,10 +9,11 @@ use Psr\Log\LoggerInterface;
 /**
  * OKR Progress Tracking Service
  *
- * SKIZZE, nicht lauffaehig: OkrRepository und RumDataRepository stehen fuer
- * Ihre eigene Ablage; der Companion hat sie nur als Schnittstellen fuer den
- * Test (tests/Unit/fixtures/ch15-*). Getestet ist die Gesamtstufe von
- * getQuarterProgress() (tests/Unit/OkrProgressServiceTest.php). Das Plugin aus
+ * SKIZZE, ohne eigene Ablage nicht lauffaehig: OkrRepository und
+ * RumDataRepository binden Sie selbst an; der Companion hat sie nur als
+ * Schnittstellen fuer den Test (tests/Unit/fixtures/ch15-*). Getestet sind
+ * Scores, Stufen und Resttage von getQuarterProgress()
+ * (tests/Unit/OkrProgressServiceTest.php). Das Plugin aus
  * Kapitel 12 liefert keine Lese-API; Key Results zu Core Web Vitals lesen Sie
  * aus "bin/console rum:report" (p75 der letzten Stunden, hoechstens 29 Tage).
  * Die Bewertungsstufen (0.7 = Erfolg) folgen der OKR-Praxis aus Kapitel 15.
@@ -164,13 +165,36 @@ class OkrProgressService
             }
 
             $objective['score'] = $totalWeight > 0
-                ? round($weightedScore / $totalWeight, 2)
+                ? self::round2($weightedScore / $totalWeight)
                 : 0;
 
             $objective['status'] = $this->determineStatus($objective['score']);
         }
 
         return $okrSet;
+    }
+
+    /**
+     * Rundet auf zwei Stellen wie round($x, 2) ab PHP 8.4 und wie r2 in
+     * scripts/quarterly-review.sh: gerundet wird die kuerzeste Dezimaldarstellung,
+     * halbe Stellen von null weg. PHP 8.2/8.3 runden vorher auf 15 Stellen:
+     * (0.96 + 0.85 + 0.95 + 0.82) / 4 = 0.89499999999999991 ergab dort 0.90
+     * (exceptional), hier und im Skript 0.89 (strong). Setzt die Vorgabe
+     * serialize_precision = -1 voraus.
+     */
+    private static function round2(float $x): float
+    {
+        $s = var_export($x, true);
+        if (stripos($s, 'e') !== false) {
+            return round($x * 100) / 100;
+        }
+
+        $negative = str_starts_with($s, '-');
+        $parts = explode('.', ltrim($s, '-'));
+        $fraction = ($parts[1] ?? '') . '000';
+        $hundredths = (int) ($parts[0] . substr($fraction, 0, 2)) + ((int) $fraction[2] >= 5 ? 1 : 0);
+
+        return ($negative ? -1 : 1) * $hundredths / 100;
     }
 
     /**
@@ -258,7 +282,7 @@ class OkrProgressService
         // Stufe am angezeigten, gerundeten Wert wie scripts/quarterly-review.sh:
         // Ein Mittel von 0.6967 erscheint als 0.70 und heisst dann "strong",
         // nicht "on_track" neben derselben Zahl
-        $avgScore = $objectiveCount > 0 ? round($overallScore / $objectiveCount, 2) : 0.0;
+        $avgScore = $objectiveCount > 0 ? self::round2($overallScore / $objectiveCount) : 0.0;
 
         return [
             'quarter' => $quarter,
@@ -289,7 +313,8 @@ class OkrProgressService
         $now = new \DateTimeImmutable();
         $diff = $now->diff($endDate);
 
-        return max($diff->days, 0);
+        // days zaehlt immer positiv; nach Quartalsende bleiben 0 Tage
+        return $diff->invert === 1 ? 0 : (int) $diff->days;
     }
 
     /**

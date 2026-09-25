@@ -52,7 +52,7 @@ parameters:
         # Datenquellen, die jedes Team selbst anbindet. Nur diese Datei - eine
         # pauschale Ausnahme fuer App\Service verdeckte frueher Aufrufe auf
         # Methoden, die es nicht gibt (MEM-317). OkrProgressService wird seit
-        # MEM-331 geprueft, gegen die Test-Doubles in tests/Unit/fixtures/ch15-*
+        # MEM-331 geprueft, gegen die Schnittstellen in tests/Unit/fixtures/ch15-*
         - chapters/15-langfristiger-plan/src/AnnualPerformanceReportService.php
 
     # Ein Muster, das nichts trifft, ist ein Fehler (MEM-332): 17 Muster trafen

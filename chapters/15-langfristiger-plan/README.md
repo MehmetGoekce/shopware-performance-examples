@@ -18,8 +18,9 @@ Praktische Implementierungen für nachhaltiges Performance-Management:
   und Priorisierung wie im Buch, lauffähig und getestet
   (`tests/Unit/TechDebtTrackerServiceTest.php`)
 - **AnnualPerformanceReportService.php** - Jahresbericht, **Skizze** (nicht lauffähig)
-- **OkrProgressService.php** - OKR-Fortschritts-Tracking, **Skizze** (nicht lauffähig);
-  die Gesamtstufe prüft `tests/Unit/OkrProgressServiceTest.php`
+- **OkrProgressService.php** - OKR-Fortschritts-Tracking, **Skizze** (ohne eigene
+  `OkrRepository`-/`RumDataRepository`-Anbindung nicht lauffähig); Scores und Stufen
+  prüft `tests/Unit/OkrProgressServiceTest.php`
 
 ### Scripts (`scripts/`)
 
@@ -152,9 +153,10 @@ At Risk). Wie der Service mittelt es je Objective gewichtet (`weight`, Vorgabe 1
 rundet auf zwei Stellen, bildet den Gesamtwert aus den gerundeten
 Objective-Scores und stuft den **angezeigten** Wert ein: Ein Gesamtwert, der als
 0.70 erscheint, heisst «Strong», auch wenn das ungerundete Mittel 0.6967 wäre.
-Das Skript rundet wie `round()` ab PHP 8.4. Unter PHP 8.2 und 8.3 rundet der
-Service eine Mitte wie 0.655 auf 0.66, das Skript auf 0.65 (in 17 von 400
-Zufallsfällen je 0.01 Unterschied, die Stufe folgt jeweils der eigenen Zahl).
+Beide runden wie `round()` ab PHP 8.4, der Service auch unter PHP 8.2 und 8.3:
+(0.96 + 0.85 + 0.95 + 0.82) / 4 = 0.89499999999999991 ergibt 0.89 «Strong»;
+`round()` von PHP 8.2/8.3 machte daraus 0.90 «Exceptional». Die gemeinsamen
+Fälle stehen in `tests/Unit/fixtures/ch15-okr-equivalence.json`.
 
 | Block | Felder | Quelle für echte Werte |
 |---|---|---|

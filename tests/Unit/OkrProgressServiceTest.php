@@ -26,13 +26,13 @@ class OkrProgressServiceTest extends TestCase
 {
     /**
      * @param list<array{objective: string, key_results: list<array{title: string, score: float|int, weight?: float|int}>}> $okrs
-     * @return array{overall_score: float, status: string}
+     * @return array{overall_score: float, status: string, objectives_summary: list<array{score: float, status: string}>, days_remaining: int}
      */
-    private static function progress(array $okrs): array
+    private static function progress(array $okrs, string $quarter = 'Q1-2026'): array
     {
         $okrSet = [
             'id' => 'OKR-TEST',
-            'quarter' => 'Q1-2026',
+            'quarter' => $quarter,
             'objectives' => array_map(static fn (array $o): array => [
                 'title' => $o['objective'],
                 'key_results' => array_map(static fn (array $kr): array => [
@@ -86,9 +86,7 @@ class OkrProgressServiceTest extends TestCase
         $recalculate = new \ReflectionMethod($service, 'recalculateScores');
         $repository->save($recalculate->invoke($service, $okrSet));
 
-        $progress = $service->getQuarterProgress('Q1-2026');
-
-        return ['overall_score' => $progress['overall_score'], 'status' => $progress['status']];
+        return $service->getQuarterProgress($quarter);
     }
 
     private static function statusOf(float $score): string
@@ -139,18 +137,28 @@ class OkrProgressServiceTest extends TestCase
         for ($run = 0; $run < 400; $run++) {
             $okrs = [];
             for ($o = 0, $n = mt_rand(1, 4); $o < $n; $o++) {
-                $okrs[] = ['objective' => "O$o", 'key_results' => [
-                    ['title' => 'k', 'score' => mt_rand(0, 100) / 100],
-                ]];
+                $krs = [];
+                for ($k = 0, $m = mt_rand(1, 3); $k < $m; $k++) {
+                    $krs[] = ['title' => "k$k", 'score' => mt_rand(0, 100) / 100, 'weight' => mt_rand(1, 3)];
+                }
+                $okrs[] = ['objective' => "O$o", 'key_results' => $krs];
             }
 
             $progress = self::progress($okrs);
+            $context = sprintf('Lauf %d: %s', $run, json_encode($okrs));
 
-            self::assertSame(
-                self::statusOf($progress['overall_score']),
-                $progress['status'],
-                sprintf('Lauf %d: %s', $run, json_encode($okrs))
-            );
+            self::assertSame(self::statusOf($progress['overall_score']), $progress['status'], $context);
+            foreach ($progress['objectives_summary'] as $objective) {
+                self::assertSame(self::statusOf($objective['score']), $objective['status'], $context);
+            }
         }
+    }
+
+    public function testDaysRemainingIsZeroAfterTheQuarterEnded(): void
+    {
+        $okrs = [['objective' => 'A', 'key_results' => [['title' => 'a', 'score' => 0.5]]]];
+
+        self::assertSame(0, self::progress($okrs, 'Q1-2020')['days_remaining']);
+        self::assertGreaterThan(0, self::progress($okrs, 'Q4-2099')['days_remaining']);
     }
 }
