@@ -9,8 +9,10 @@ use Psr\Log\LoggerInterface;
 /**
  * OKR Progress Tracking Service
  *
- * SKIZZE, nicht lauffaehig: OkrRepository und RumDataRepository gibt es im
- * Companion nicht, sie stehen fuer Ihre eigene Ablage. Das Plugin aus
+ * SKIZZE, nicht lauffaehig: OkrRepository und RumDataRepository stehen fuer
+ * Ihre eigene Ablage; der Companion hat sie nur als Schnittstellen fuer den
+ * Test (tests/Unit/fixtures/ch15-*). Getestet ist die Gesamtstufe von
+ * getQuarterProgress() (tests/Unit/OkrProgressServiceTest.php). Das Plugin aus
  * Kapitel 12 liefert keine Lese-API; Key Results zu Core Web Vitals lesen Sie
  * aus "bin/console rum:report" (p75 der letzten Stunden, hoechstens 29 Tage).
  * Die Bewertungsstufen (0.7 = Erfolg) folgen der OKR-Praxis aus Kapitel 15.
@@ -242,7 +244,7 @@ class OkrProgressService
     {
         $okrSet = $this->repository->findByQuarter($quarter);
 
-        if (!$okrSet) {
+        if ($okrSet === null || $okrSet === []) {
             return ['error' => 'OKR set not found for quarter'];
         }
 
@@ -253,11 +255,14 @@ class OkrProgressService
             $overallScore += $obj['score'];
         }
 
-        $avgScore = $objectiveCount > 0 ? $overallScore / $objectiveCount : 0;
+        // Stufe am angezeigten, gerundeten Wert wie scripts/quarterly-review.sh:
+        // Ein Mittel von 0.6967 erscheint als 0.70 und heisst dann "strong",
+        // nicht "on_track" neben derselben Zahl
+        $avgScore = $objectiveCount > 0 ? round($overallScore / $objectiveCount, 2) : 0.0;
 
         return [
             'quarter' => $quarter,
-            'overall_score' => round($avgScore, 2),
+            'overall_score' => $avgScore,
             'status' => $this->determineStatus($avgScore),
             'objectives_summary' => array_map(fn($obj) => [
                 'title' => $obj['title'],

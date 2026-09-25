@@ -17,6 +17,7 @@ bats_require_minimum_version 1.5.0
 DIR="./chapters/15-langfristiger-plan/scripts"
 EX="./chapters/15-langfristiger-plan/examples"
 EQUIV="./tests/Unit/fixtures/ch15-tech-debt-equivalence.json"
+OKR_EQUIV="./tests/Unit/fixtures/ch15-okr-equivalence.json"
 DEMO_NOTE="BEISPIELDATEN"
 
 setup() {
@@ -443,6 +444,29 @@ CASES
           {"objective": "B", "key_results": [{"title": "b", "score": 0.105}]}]}' > "$TMP/okr.json"
     run bash "$DIR/quarterly-review.sh" "$TMP/okr.json"
     has_line "  - OKR Score: 0.06 (Off Track)"
+}
+
+@test "quarterly-review: OKR-Gesamtstufe wie OkrProgressService (gemeinsame Fixture)" {
+    need_jq
+    n="$(jq 'length' "$OKR_EQUIV")"
+    [ "$n" -ge 10 ]
+    for i in $(seq 0 $((n - 1))); do
+        name="$(jq -r ".[$i].name" "$OKR_EQUIV")"
+        jq "{quarter: \"Q1\", year: 2027, okrs: .[$i].okrs}" "$OKR_EQUIV" > "$TMP/okr.json"
+        run bash "$DIR/quarterly-review.sh" "$TMP/okr.json"
+        [ "$status" -eq 0 ] || { echo "Fall $name: Exit $status"; false; }
+        read -r score key < <(jq -r ".[$i].expected | \"\\(.overall_score) \\(.status)\"" "$OKR_EQUIV")
+        # Stufe des Service (on_track) -> Anzeige im Report (On Track)
+        case "$key" in
+            exceptional) label="Exceptional" ;;
+            strong) label="Strong" ;;
+            on_track) label="On Track" ;;
+            at_risk) label="At Risk" ;;
+            off_track) label="Off Track" ;;
+            *) echo "Fall $name: unbekannte Stufe [$key]"; false ;;
+        esac
+        has_line "  - OKR Score: $(LC_ALL=C printf '%.2f' "$score") ($label)" || { echo "Fall $name"; false; }
+    done
 }
 
 @test "quarterly-review: CWV-Grenzen 2500 ms, 200 ms, 0.1 sind noch Good" {

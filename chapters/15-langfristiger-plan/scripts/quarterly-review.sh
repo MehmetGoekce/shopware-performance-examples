@@ -281,7 +281,8 @@ def cell: tostring | gsub("\\|"; "\\|");
 def val: if type == "number" then num | tostring else cell end;
 # wie OkrProgressService: gewichtetes Mittel je Objective (weight, Vorgabe 1),
 # gerundet; Gesamtwert = Mittel der gerundeten Objective-Scores. Die Stufe
-# hängt hier am angezeigten Wert, der Service stuft das ungerundete Mittel ein
+# hängt wie im Service am angezeigten Wert (MEM-331). Gleiche Fälle:
+# tests/Unit/fixtures/ch15-okr-equivalence.json
 def objective_score: ([.key_results[] | .score * (.weight // 1)] | add)
     / ([.key_results[] | .weight // 1] | add) | r2;
 def okr_total: [.okrs[] | objective_score] | add / length | r2;

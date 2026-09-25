@@ -18,7 +18,8 @@ Praktische Implementierungen für nachhaltiges Performance-Management:
   und Priorisierung wie im Buch, lauffähig und getestet
   (`tests/Unit/TechDebtTrackerServiceTest.php`)
 - **AnnualPerformanceReportService.php** - Jahresbericht, **Skizze** (nicht lauffähig)
-- **OkrProgressService.php** - OKR-Fortschritts-Tracking, **Skizze** (nicht lauffähig)
+- **OkrProgressService.php** - OKR-Fortschritts-Tracking, **Skizze** (nicht lauffähig);
+  die Gesamtstufe prüft `tests/Unit/OkrProgressServiceTest.php`
 
 ### Scripts (`scripts/`)
 
@@ -148,10 +149,12 @@ seine Felder vollständig sein. Summen, Mittelwerte, Veränderungen, Budget-Vari
 und die Stufen rechnet das Skript: Tech Debt wie oben, OKR mit den Grenzen von
 `OkrProgressService` (ab 0.9 Exceptional, ab 0.7 Strong, ab 0.5 On Track, ab 0.3
 At Risk). Wie der Service mittelt es je Objective gewichtet (`weight`, Vorgabe 1),
-rundet auf zwei Stellen und bildet den Gesamtwert aus den gerundeten
-Objective-Scores. Anders als der Service stuft es den **angezeigten** Wert ein:
-Ein Gesamtwert, der als 0.70 erscheint, heisst hier «Strong», auch wenn das
-ungerundete Mittel 0.6967 wäre.
+rundet auf zwei Stellen, bildet den Gesamtwert aus den gerundeten
+Objective-Scores und stuft den **angezeigten** Wert ein: Ein Gesamtwert, der als
+0.70 erscheint, heisst «Strong», auch wenn das ungerundete Mittel 0.6967 wäre.
+Das Skript rundet wie `round()` ab PHP 8.4. Unter PHP 8.2 und 8.3 rundet der
+Service eine Mitte wie 0.655 auf 0.66, das Skript auf 0.65 (in 17 von 400
+Zufallsfällen je 0.01 Unterschied, die Stufe folgt jeweils der eigenen Zahl).
 
 | Block | Felder | Quelle für echte Werte |
 |---|---|---|

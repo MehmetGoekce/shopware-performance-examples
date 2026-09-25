@@ -48,12 +48,12 @@ parameters:
         - chapters/20-ab-testing/AbTesting/src/AbTesting.php
         - chapters/20-ab-testing/AbTesting/src/Log/ExperimentLogProcessor.php
 
-        # Skizzen, ausdruecklich nicht lauffaehig (Kopfkommentar der Dateien):
-        # Datenquellen, die jedes Team selbst anbindet. Nur diese zwei Dateien -
-        # eine pauschale Ausnahme fuer App\Service verdeckte frueher Aufrufe
-        # auf Methoden, die es nicht gibt (MEM-317)
+        # Skizze, ausdruecklich nicht lauffaehig (Kopfkommentar der Datei):
+        # Datenquellen, die jedes Team selbst anbindet. Nur diese Datei - eine
+        # pauschale Ausnahme fuer App\Service verdeckte frueher Aufrufe auf
+        # Methoden, die es nicht gibt (MEM-317). OkrProgressService wird seit
+        # MEM-331 geprueft, gegen die Test-Doubles in tests/Unit/fixtures/ch15-*
         - chapters/15-langfristiger-plan/src/AnnualPerformanceReportService.php
-        - chapters/15-langfristiger-plan/src/OkrProgressService.php
 
     # Ein Muster, das nichts trifft, ist ein Fehler (MEM-332): 17 Muster trafen
     # nichts mehr, eines davon ("Strict comparison .+ will always evaluate to")
