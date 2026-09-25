@@ -55,7 +55,6 @@ use Shopware\Core\Framework\DataAbstractionLayer\Search\Filter\RangeFilter;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\Sorting\FieldSorting;
 use Shopware\Core\System\SalesChannel\SalesChannelContext;
 use Symfony\Component\Cache\Adapter\TagAwareAdapterInterface;
-use Symfony\Component\Cache\CacheItem;
 
 class CachedProductService
 {
@@ -133,9 +132,7 @@ class CachedProductService
 
         $cacheItem->set($data);
         $cacheItem->expiresAfter(self::CACHE_TTL);
-        if ($cacheItem instanceof CacheItem) {
-            $cacheItem->tag(['product', 'top-products', 'product-listing']);
-        }
+        $cacheItem->tag(['product', 'top-products', 'product-listing']);
 
         $this->cache->save($cacheItem);
 
@@ -194,9 +191,7 @@ class CachedProductService
 
         $cacheItem->set($stats);
         $cacheItem->expiresAfter(self::CACHE_TTL);
-        if ($cacheItem instanceof CacheItem) {
-            $cacheItem->tag(['product', 'category-' . $categoryId, 'category-stats']);
-        }
+        $cacheItem->tag(['product', 'category-' . $categoryId, 'category-stats']);
 
         $this->cache->save($cacheItem);
 

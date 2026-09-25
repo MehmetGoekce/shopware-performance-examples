@@ -123,6 +123,7 @@ class BatchProcessor
 
             $products = $this->productRepository->search($criteria, $context);
 
+            /** @var \Shopware\Core\Framework\DataAbstractionLayer\PartialEntity $product */
             foreach ($products as $product) {
                 $callback($product);
                 $processed++;
