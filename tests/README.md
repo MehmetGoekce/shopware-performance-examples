@@ -86,7 +86,7 @@ See `.github/workflows/test.yml` for configuration.
 ### Phase 2: Static Analysis (Done)
 - [x] ShellCheck alle 69 Scripts - 0 Warnings (40 Warnings gefixt)
 - [x] PHPStan Level 6 standalone - 0 Errors (922 → 0)
-- [x] PHPStan mit Shopware 6.6 - 0 Errors (54 API-Issues dokumentiert)
+- ~~PHPStan mit Shopware 6.6 - 0 Errors (54 API-Issues dokumentiert)~~ - `phpstan-shopware.neon` entfernt mit MEM-334 (lief nie in der CI, zuletzt 87 Fehler mit Shopware-Autoloader)
 - [x] ESLint Konfiguration - 0 Errors (24 JS-Dateien, nur Warnings fuer unused vars)
 - [x] Twig Linting - 0 Errors (13 Dateien, 2 Shopware-spezifische ausgeschlossen)
 
@@ -95,7 +95,6 @@ See `.github/workflows/test.yml` for configuration.
 | Config | Beschreibung | Command |
 |--------|--------------|---------|
 | `phpstan.neon` | Standalone (ohne Shopware) | `composer analyze` |
-| `phpstan-shopware.neon` | Mit Shopware 6.6 Autoloader | `composer analyze:shopware` |
 
 #### Bekannte Shopware 6.6 Inkompatibilitäten
 
@@ -178,7 +177,6 @@ composer test && npm test && npm run shellcheck
 
 # Nur Linting
 composer analyze               # PHPStan standalone
-composer analyze:shopware      # PHPStan mit Shopware 6.6 Types
 npm run lint
 npm run shellcheck
 

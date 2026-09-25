@@ -32,8 +32,6 @@ Die folgenden API-Aenderungen wurden in Shopware 6.6 eingefuehrt und sind im Cod
 | `Entity::getStock()` Type-Hint | CachedProductService.php | `ProductEntity` verwenden |
 | `Context::getSalesChannelId()` | CachedProductService.php | `SalesChannelContext` nutzen |
 
-Siehe `phpstan-shopware.neon` fuer die vollstaendige Liste der ignorierten Fehler.
-
 ## Test-Matrix
 
 ```
