@@ -98,7 +98,7 @@ See `.github/workflows/test.yml` for configuration.
 
 #### Bekannte Shopware 6.6 Inkompatibilitäten
 
-Die folgenden API-Änderungen wurden dokumentiert (temporär ignoriert):
+Die folgenden API-Änderungen wurden dokumentiert (historisch: ignoriert wurden sie in `phpstan-shopware.neon`, entfernt mit MEM-334):
 
 | Issue | Betroffene Dateien | Fix |
 |-------|-------------------|-----|

@@ -31,6 +31,7 @@ Die folgenden API-Aenderungen wurden in Shopware 6.6 eingefuehrt und sind im Cod
 | `CacheTagCollector` -> `CacheTagCollection` | CacheTagSubscriber.php | Gefixt |
 | `Entity::getStock()` Type-Hint | CachedProductService.php | `ProductEntity` verwenden |
 | `Context::getSalesChannelId()` | CachedProductService.php | `SalesChannelContext` nutzen |
+| `getDefinition()` der WriteCommands (deprecated ab 6.6.3, fehlt ab 6.7) | ChangesetAwareSubscriber.php | `getEntityName()` nutzen |
 
 ## Test-Matrix
 
