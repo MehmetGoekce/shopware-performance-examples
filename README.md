@@ -1,5 +1,30 @@
 # Shopware Performance Examples
 
+[![Tests](https://github.com/MehmetGoekce/shopware-performance-examples/actions/workflows/test.yml/badge.svg)](https://github.com/MehmetGoekce/shopware-performance-examples/actions/workflows/test.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+## English
+
+Companion code for the book **"Shop Performance in 30 Days"** (English) and
+**"Shop-Performance in 30 Tagen"** (German) by Mehmet Gökce: scripts, configs,
+plugin code and CI workflows for Shopware 6, organised by chapter under
+`chapters/`, each with its own README.
+
+- **English edition:** [leanpub.com/shopware-performance-en](https://leanpub.com/shopware-performance-en)
+- **German edition:** [leanpub.com/shopware-performance](https://leanpub.com/shopware-performance)
+
+**The code is commented in German, and the scripts print German output.** That is
+deliberate: the book prints what the tools actually output, so both editions show
+output you can reproduce. Commands, file names and configuration keys are the
+same in either language.
+
+Quick start and the chapter map follow below (in German). Found a bug, or an
+example that doesn't match your Shopware version? Please
+[open an issue](https://github.com/MehmetGoekce/shopware-performance-examples/issues);
+English is fine.
+
+## Deutsch
+
 Code-Beispiele zum Buch **"Shop-Performance in 30 Tagen"** von Mehmet Gökce.
 
 ## Quick Start
@@ -136,7 +161,8 @@ docker-compose -f docker-compose.redis.yml logs -f sentinel1
 
 ## Buch kaufen
 
-- **Leanpub:** [leanpub.com/shopware-performance](https://leanpub.com/shopware-performance)
+- **Leanpub (Deutsch):** [leanpub.com/shopware-performance](https://leanpub.com/shopware-performance)
+- **Leanpub (English):** [leanpub.com/shopware-performance-en](https://leanpub.com/shopware-performance-en)
 
 
 ## Support
